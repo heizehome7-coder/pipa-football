@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && node scripts/build-server.mjs",
     "build:single": "vite build --mode single",
     "preview": "vite preview --host",
     "sim": "tsx scripts/sim.ts",
@@ -13,7 +13,8 @@
     "server": "node server/realtime-server.mjs",
     "online": "npm run build && node server/realtime-server.mjs",
     "test:lobby": "tsx scripts/lobby-test.ts",
-    "start": "node server/realtime-server.mjs"
+    "start": "node server/realtime-server.mjs",
+    "test:match": "tsx scripts/match-test.ts"
   },
   "dependencies": {
     "react": "^18.3.1",
@@ -28,6 +29,7 @@
     "@types/three": "^0.170.0",
     "@types/ws": "^8.18.2",
     "@vitejs/plugin-react": "^4.7.0",
+    "esbuild": "^0.28.2",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vite": "^5.4.21",

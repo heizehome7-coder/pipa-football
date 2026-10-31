@@ -40,6 +40,18 @@ export interface Channel {
   /** a separate room for one match (future online play); null if unsupported */
   joinRoom(name: string): Promise<MatchRoom | null>;
   close(): void;
+  /**
+   * Server-authoritative online matches (PIPA's own server only). Absent on
+   * backends without a game server (claude.ai room, tests, local file).
+   */
+  match?: MatchLink;
+}
+
+export interface MatchLink {
+  send(msg: Record<string, unknown>): void;
+  onMessage(fn: (msg: Record<string, unknown>) => void): () => void;
+  /** fires after every (re)connect with the server-issued peer id */
+  onWelcome(fn: (peer: string) => void): () => void;
 }
 
 /** Used when no realtime backend exists for this copy of the game (e.g. opened as a local file). */

@@ -12,6 +12,9 @@
  *                    {t:'rpresence', room, p}                    presence inside a named room
  * A client that stops answering pings for ~20 s is dropped and disappears from
  * everyone's list (the "heartbeat").
+ *
+ * Online penalty matches (match:*, shot:*, keeper:*, time:ping) are handled by
+ * ./matches.mjs — the server is the authority for rounds, roles, score and results.
  */
 import http from 'node:http';
 import fs from 'node:fs';
@@ -19,6 +22,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
+import { createMatchManager } from './matches.mjs';
 
 const PORT = Number(process.env.PORT || 8787);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', process.env.PIPA_STATIC || 'dist');
@@ -29,7 +33,7 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url || '/', 'http://x');
   if (url.pathname === '/health') {
     res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, clients: clients.size }));
+    res.end(JSON.stringify({ ok: true, clients: clients.size, matches: matches.matches.size }));
     return;
   }
   let file = path.join(ROOT, decodeURIComponent(url.pathname));
@@ -54,6 +58,25 @@ const rooms = new Map([['', new Map()]]);
 const clients = new Map();
 
 const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 16 * 1024 });
+
+// the same penalty simulation the phones run, bundled by `npm run build`
+let judge;
+try {
+  judge = await import('./judge.gen.mjs');
+} catch {
+  console.error('server/judge.gen.mjs is missing — run `npm run build` first');
+  process.exit(1);
+}
+const matches = createMatchManager({
+  judge,
+  log: (line) => console.log(line),
+  // PIPA_SLOW_TEST=1: longer timers for automated browser tests on slow machines
+  rules: process.env.PIPA_SLOW_TEST ? { aimTimeoutMs: 180_000, resultShowMs: 7000, countdownMs: 6000 } : undefined,
+  send(peer, msg) {
+    const c = clients.get(peer);
+    if (c && c.ws.readyState === 1) c.ws.send(JSON.stringify(msg));
+  },
+});
 
 function list(room) {
   const m = rooms.get(room);
@@ -100,6 +123,7 @@ wss.on('connection', (ws) => {
     } catch {
       return;
     }
+    if (matches.handle(peer, m)) return;
     if (m.t === 'presence') setPresence('', peer, m.p);
     else if (m.t === 'join' && validRoom(m.room)) {
       client.rooms.add(m.room);
@@ -110,6 +134,7 @@ wss.on('connection', (ws) => {
     } else if (m.t === 'rpresence' && validRoom(m.room) && client.rooms.has(m.room)) setPresence(m.room, peer, m.p);
   });
   ws.on('close', () => {
+    matches.disconnect(peer);
     clients.delete(peer);
     for (const r of client.rooms) leave(r, peer);
     leave('', peer);

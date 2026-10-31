@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChallengePanel, NoticeStack } from './components/OnlineOverlays';
 import type { GameMode, PlayerProfile } from './game/core/types';
+import type { Channel } from './online/channel/Channel';
 import { createChannel, localUserId } from './online/createChannel';
 import { LobbyClient } from './online/LobbyClient';
 import { useLobby } from './online/useLobby';
 import { GameScreen } from './screens/GameScreen';
 import { LoginScreen } from './screens/LoginScreen';
-import { MatchFoundScreen } from './screens/MatchFoundScreen';
 import { ModeSelectScreen } from './screens/ModeSelectScreen';
 import { OnlineLobbyScreen } from './screens/OnlineLobbyScreen';
+import { OnlineMatchScreen } from './screens/OnlineMatchScreen';
 import { PlayTypeScreen } from './screens/PlayTypeScreen';
 
 type Screen =
@@ -23,6 +24,7 @@ export default function App() {
   const [user, setUser] = useState<PlayerProfile | null>(null);
   const [screen, setScreen] = useState<Screen>({ name: 'login' });
   const [lobby, setLobby] = useState<LobbyClient | null>(null);
+  const [channel, setChannel] = useState<Channel | null>(null);
   const snap = useLobby(lobby);
   const lastMatch = useRef<string | null>(null);
 
@@ -36,11 +38,13 @@ export default function App() {
     void client.start();
     (window as unknown as { __PIPA_LOBBY?: LobbyClient }).__PIPA_LOBBY = client; // test/debug hook
     setLobby(client);
+    setChannel(channel);
     setScreen({ name: 'playtype' });
   };
   const logout = () => {
     lobby?.stop();
     setLobby(null);
+    setChannel(null);
     setUser(null);
     setScreen({ name: 'login' });
   };
@@ -99,8 +103,8 @@ export default function App() {
     body = <GameScreen key={screen.mode} mode={screen.mode} user={user} onExit={() => setScreen({ name: 'modes' })} />;
   } else if (screen.name === 'lobby' && lobby && snap) {
     body = <OnlineLobbyScreen lobby={lobby} snap={snap} onBack={() => setScreen({ name: 'playtype' })} />;
-  } else if (screen.name === 'match' && lobby && snap?.match) {
-    body = <MatchFoundScreen lobby={lobby} match={snap.match} onLeave={leaveMatch} />;
+  } else if (screen.name === 'match' && lobby && channel && snap?.match) {
+    body = <OnlineMatchScreen lobby={lobby} channel={channel} match={snap.match} onLeave={leaveMatch} />;
   } else {
     body = <PlayTypeScreen user={user} onSolo={() => setScreen({ name: 'modes' })} onOnline={() => setScreen({ name: 'lobby' })} onLogout={logout} />;
   }

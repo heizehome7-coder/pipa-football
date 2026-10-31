@@ -20,13 +20,30 @@ npm run build:single   # dist-single/ — index.html 한 파일 (어디서나 �
 | 실행 방식 | 실시간 백엔드 |
 |---|---|
 | claude.ai에 게시된 페이지 | 아티팩트 `room` 기능 (로그인한, 페이지를 공유받은 사람끼리) |
-| `npm run online` (빌드 + 서버) | 내장 WebSocket 서버 `server/realtime-server.mjs` → http://localhost:8787 |
+| `npm run online` (빌드 + 서버) / Render | 내장 WebSocket 서버 `server/realtime-server.mjs` → http://localhost:8787 (온라인 경기까지) |
 | 파일로 직접 열기 | 온라인 비활성 (안내 표시) |
 
 - 프로토콜: `src/online/LobbyClient.ts` — 각 클라이언트가 presence 하나(닉네임·상태·보낸 신청·답변·매치)를 공유
 - 상태: `online` / `in_lobby` / `pending` / `in_match`, 신청: `pending` / `accepted` / `rejected` / `cancelled` / `expired`(30초)
 - 동시 신청 → 먼저 만들어진 신청 하나로 합쳐짐, 끊긴 사용자는 목록·신청·매치에서 자동 정리
 - 매치 ID = 신청 ID, 매치 전용 방(`pipa-m-<id>`)에 두 사람이 입장 → 다음 단계 온라인 경기에 사용
+
+## 온라인 페널티킥 경기 (2단계)
+
+MATCH FOUND → **[준비하기]** (둘 다) → 3·2·1·KICK OFF → 10라운드(각자 5번) → MATCH RESULT
+
+- **서버가 결정**(`server/matches.mjs`): roomId(`pipa_match_<id>`), 준비 상태, 시작 시각(`startAt`), 첫 키커(랜덤),
+  라운드·역할 교대·점수·슛 횟수·판정·최종 승자. 클라이언트는 의도만 보냄 (점수를 직접 올릴 수 없음)
+- **슛 1번 = 메시지 1개**: 그린 3D 경로 + 파워 → 서버 `shot:start {경로, runStart(서버 시각), seed}` →
+  두 폰이 같은 서버 시각에 같은 결정적 시뮬레이션으로 재생 (공 좌표를 프레임마다 보내지 않음)
+- **판정**: 서버가 같은 시뮬레이션(`src/online/match/penaltyRound.ts`를 빌드 때 `server/judge.gen.mjs`로 번들)으로
+  슛 + 골키퍼 다이빙을 재생해 GOAL/SAVE/MISS 결정 → `round:result`를 두 사람에게 동시에 전송
+- **골키퍼(사람)**: 스와이프 ←/→ 다이빙 · ↖/↗ 위 구석 · ↑ 점프 · ↓ 낮게 · 짧은 좌우 = 낮게 / PC는 방향키(↑+←/→ 동시 = 위 구석)
+  - 킥 전에 고르면 그 방향으로 고정(키커에게는 숨김), 킥 순간에 몸을 던짐. 한 번 고르면 변경 불가
+  - 킥 이후 입력은 그 시점에 다이빙 (반응 속도 그대로). 네트워크 지연을 넘는 과거 시각은 서버가 보정
+- 슛 제한시간 25초(안 차면 MISS), 결과 2.6초 표시 후 역할 교대, 동점은 DRAW (`MATCH_RULES.suddenDeath`로 확장 예정)
+- 경기 중 한쪽이 끊기면 즉시 "상대방의 연결이 종료되었습니다." + [온라인 로비로 돌아가기]
+- claude.ai에 게시된 페이지(서버 없음)에서는 1단계 매칭 화면까지만 동작
 
 ## 테스트
 
@@ -35,6 +52,8 @@ npm run sim                                   # 헤드리스 물리/판정 시�
 npm run build:single && python3 scripts/e2e.py  # 싱글플레이 모바일 E2E
 npm run test:lobby                            # 온라인 프로토콜 (여러 클라이언트, 가짜 시계)
 npm run online & python3 scripts/online-e2e.py  # 브라우저 3개 실시간 E2E (WebSocket 서버)
+npm run test:match                            # 서버 권한 경기 로직 (가짜 시계, 10라운드·판정·끊김)
+PIPA_SLOW_TEST=1 npm run server & python3 scripts/match-e2e.py  # 브라우저 2개로 온라인 경기 전체
 python3 scripts/artifact-room-e2e.py          # claude.ai room 어댑터 E2E (계약 스탠드인)
 ```
 

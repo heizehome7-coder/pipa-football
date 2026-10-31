@@ -1,4 +1,4 @@
-import type { Channel, ChannelPeer, MatchRoom } from './Channel';
+import type { Channel, ChannelPeer, MatchLink, MatchRoom } from './Channel';
 
 interface WirePeer {
   peer: string;
@@ -21,6 +21,25 @@ export class WebSocketChannel implements Channel {
   private closed = false;
   private retry = 0;
   private isOpen = false;
+  private msgSubs = new Set<(m: Record<string, unknown>) => void>();
+  private welcomeSubs = new Set<(peer: string) => void>();
+
+  /** online match messages ride on the same connection as presence */
+  readonly match: MatchLink = {
+    send: (m) => this.send(m),
+    onMessage: (fn) => {
+      this.msgSubs.add(fn);
+      return () => {
+        this.msgSubs.delete(fn);
+      };
+    },
+    onWelcome: (fn) => {
+      this.welcomeSubs.add(fn);
+      return () => {
+        this.welcomeSubs.delete(fn);
+      };
+    },
+  };
 
   constructor(private url: string) {}
 
@@ -60,7 +79,7 @@ export class WebSocketChannel implements Channel {
     this.ws = ws;
     let welcomed = false;
     ws.onmessage = (ev) => {
-      let msg: { t: string; peer?: string; room?: string; peers?: WirePeer[] };
+      let msg: { t: string; peer?: string; room?: string; peers?: WirePeer[] } & Record<string, unknown>;
       try {
         msg = JSON.parse(String(ev.data));
       } catch {
@@ -74,8 +93,11 @@ export class WebSocketChannel implements Channel {
         this.send({ t: 'presence', p: this.presence });
         for (const r of this.rooms) this.send({ t: 'join', room: r });
         onWelcome?.();
+        this.welcomeSubs.forEach((f) => f(msg.peer as string));
       } else if (msg.t === 'peers' && !msg.room && msg.peers) {
         this.applyPeers(msg.peers);
+      } else if (msg.t !== 'peers') {
+        this.msgSubs.forEach((f) => f(msg));
       }
     };
     ws.onclose = () => {

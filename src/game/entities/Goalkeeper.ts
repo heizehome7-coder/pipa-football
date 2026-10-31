@@ -312,6 +312,13 @@ export class Goalkeeper {
     if (tArr <= need || (close && tArr < 0.28)) this.commit(px, clamp(py, 0.12, 2.6));
   }
 
+  /** Online PvP: a person chose where to go — same body limits as the AI (speed, reach). */
+  diveTo(px: number, py: number) {
+    if (this.stage === 'action') return;
+    this.guess = null;
+    this.commit(clamp(px, -3.9, 3.9), clamp(py, 0.12, 2.6));
+  }
+
   // ── action (shared) ───────────────────────────────────────────────────
   private actionDuration(travel: number) {
     return clamp(this.k.diveBase + this.k.diveScale * travel, this.k.diveBase, this.k.diveBase + this.k.diveScale * this.k.maxHipTravel);

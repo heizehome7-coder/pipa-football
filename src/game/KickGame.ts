@@ -20,6 +20,15 @@ export interface KickGameOptions {
   visuals: boolean;
   nickname: string;
   seed: number;
+  /** online PvP: the keeper is a person (no AI guess / late reach); dives come from setKeeperDive */
+  humanKeeper?: boolean;
+}
+
+/** A person's dive: world target (x, y on the keeper's line) and when (s since the run-up started). */
+export interface KeeperDiveCommand {
+  x: number;
+  y: number;
+  at: number;
 }
 
 export interface KickGameListener {
@@ -68,6 +77,7 @@ export abstract class KickGame {
   private resultT = 0;
   private sideSpin = 0;
   private keeperLead = 0;
+  private humanDive: KeeperDiveCommand | null = null;
   private tmp = new THREE.Vector3();
 
   protected abstract pickSpot(attempt: number): KickSpot;
@@ -119,6 +129,7 @@ export abstract class KickGame {
     this.detail = '';
     this.flying = this.free = this.caught = false;
     this.flightT = this.freeT = this.resultT = this.acc = 0;
+    this.humanDive = null;
     this.setPhase('aim');
   }
 
@@ -138,6 +149,21 @@ export abstract class KickGame {
     this.keeperLead = this.rng() * this.cfg.keeper.leadMax;
     this.setPhase('runup');
     return true;
+  }
+
+  /**
+   * Online keeper input. Applied on the fixed step once the run-up clock reaches
+   * `at` — never before foot-ball contact (a keeper may not leave his line early),
+   * and only once (a committed dive cannot change direction).
+   */
+  setKeeperDive(cmd: KeeperDiveCommand) {
+    if (!this.opts.humanKeeper || this.humanDive || this.keeper.committed) return false;
+    this.humanDive = cmd;
+    return true;
+  }
+
+  get keeperDive() {
+    return this.humanDive;
   }
 
   canContinue() {
@@ -186,7 +212,9 @@ export abstract class KickGame {
     // gentle visual spin that matches the drawn bend — never adds curve by itself
     this.sideSpin = -this.plan.curve * 7;
     // free kick: the keeper starts reading the real ball now (never the drawn path)
-    if (this.style === 'freekick') this.keeper.startTracking(shotVelocityAt(this.plan, 0).length());
+    if (this.opts.humanKeeper) {
+      /* a person keeps goal: no AI reaction */
+    } else if (this.style === 'freekick') this.keeper.startTracking(shotVelocityAt(this.plan, 0).length());
     else this.keeper.watchAfterGuess();
     this.wall?.jump();
     this.setPhase('flight');
@@ -195,7 +223,13 @@ export abstract class KickGame {
 
   private step(h: number) {
     this.kicker.update(h);
-    if (this.style === 'penalty' && this.plan && !this.keeper.committed && this.phase !== 'aim' &&
+    if (this.opts.humanKeeper) {
+      const d = this.humanDive;
+      if (d && this.plan && !this.keeper.committed && this.phase !== 'aim' &&
+          this.kicker.elapsed >= Math.max(d.at, this.kicker.contactTime - 0.03)) {
+        this.keeper.diveTo(d.x, d.y);
+      }
+    } else if (this.style === 'penalty' && this.plan && !this.keeper.committed && this.phase !== 'aim' &&
         this.kicker.elapsed >= this.kicker.contactTime - this.keeperLead) {
       // penalty: guess from the kicker's body (strike direction + lean), not the path
       // the body read: hips/shoulders square up to where the ball is being sent over
