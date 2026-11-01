@@ -53,7 +53,7 @@ with sync_playwright() as p:
     def login(pg, nick):
         pg.goto(BASE)
         pg.fill('input[autocomplete=username]', nick)
-        pg.fill('input[type=password]', 'pw')
+        pg.fill('input[type=password]', 'pw1234')
         pg.click('text=게임 시작')
         pg.wait_for_selector('[data-testid=play-online]', timeout=5000)
 

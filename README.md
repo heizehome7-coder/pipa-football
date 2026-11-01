@@ -48,8 +48,16 @@ npm run build:single   # dist-single/ — index.html 한 파일 (어디서나 �
 - 스페셜은 버튼 없이 슛 모양으로 자동 발동 (감아차기 +20~35% 회전, 호날두 무회전 = 별도 물리 프로필: 작은 불규칙 흔들림)
 - 11단계 킥 모션 + 슛 타입별 변형(drive/instep/outside/knuckle/low), 왼발 선수는 좌우 반전 — `src/game/entities/Player.ts`
 - GK: 6방향 블렌딩 다이브, 능력 반영(팔 길이/이동 거리), 선방·실점 리액션 — `Goalkeeper.ts`
-- 선수별 골 세리머니 15종 + 실패(SAVE/MISS/POST/CROSSBAR) 리액션 — `reactions.ts`; 리액션 중 입력 잠금(~2초)
+- 골 세리머니: 모든 선수 공통 "두 손 들고 환호" + 실패(SAVE/MISS/POST/CROSSBAR) 리액션 — `reactions.ts`; 리액션 중 입력 잠금(~2초)
 - 카드 앞면 OVR + POWER/ACCURACY/CURVE, 상세에 전체 능력 + SPECIAL ABILITY. 등 이름 크기 확대
+
+## 계정 (닉네임 중복 방지 + 계정 저장) — `server/accounts.mjs`
+- 처음 쓰는 닉네임 + 비밀번호(4자 이상) → 계정 생성. 같은 닉네임(대소문자·전각 무시)은 비밀번호가 맞아야만 사용 가능
+- 서버에 저장: 닉네임, 비밀번호(scrypt 해시), 로그인 토큰(sha256), 스쿼드. 자동 로그인(이 기기), 다른 기기에서 로그인해도 스쿼드 유지
+- 로비 표시 이름은 서버가 토큰으로 확인한 계정 닉네임으로 고정 (다른 사람 닉네임 사칭 불가)
+- 저장소: `DATABASE_URL`(PostgreSQL, 예: Neon 무료) → 영구 / 없으면 JSON 파일(`server/data`, Render 무료는 재시작 때 초기화)
+- claude.ai 버전은 서버가 없어 기기 저장만 됨
+- 테스트: `node scripts/account-test.mjs` (PIPA_TEST_DB=postgres://… 로 DB 모드도 테스트)
 
 ## 온라인 페널티킥 경기 (2단계)
 

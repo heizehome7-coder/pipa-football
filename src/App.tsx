@@ -14,7 +14,8 @@ import { PlayTypeScreen } from './screens/PlayTypeScreen';
 import { SelectKickerScreen } from './screens/SelectKickerScreen';
 import { SquadScreen } from './screens/SquadScreen';
 import { getPlayer, type PlayerDef } from './players/players';
-import { DEFAULT_SQUAD, loadSquad, saveSquad, type Squad } from './players/squad';
+import { DEFAULT_SQUAD, loadSquad, saveSquad, validSquad, type Squad } from './players/squad';
+import { accountApi, storeSession } from './online/account';
 
 type Screen =
   | { name: 'login' }
@@ -39,7 +40,7 @@ export default function App() {
   // presence goes live right after login (so challenges can reach you anywhere)
   const login = (p: PlayerProfile) => {
     setUser(p);
-    const channel = createChannel();
+    const channel = createChannel(p.token);
     // inside claude.ai the platform itself removes people who leave; phones freeze
     // timers in the background, so never hide a still-connected player on a timer there
     const client = new LobbyClient(channel, { nickname: p.nickname, userId: localUserId() }, channel.kind === 'artifact' ? { staleMs: 30 * 60_000 } : {});
@@ -48,11 +49,18 @@ export default function App() {
     setLobby(client);
     setChannel(channel);
     // UPDATE 4: first time on this device → BUILD YOUR SQUAD (never forced again)
-    const saved = loadSquad(p.nickname);
+    // the account's squad (server) wins; a squad only on this device is uploaded once
+    const local = loadSquad(p.nickname);
+    const remote = validSquad(p.savedSquad) ? p.savedSquad : null;
+    const saved = remote ?? local;
+    if (remote) saveSquad(p.nickname, remote);
+    else if (local && p.token) accountApi.saveSquad(p.token, local).catch(() => {});
     setSquad(saved);
     setScreen(saved ? { name: 'playtype' } : { name: 'squad-setup' });
   };
   const logout = () => {
+    if (user?.token) accountApi.logout(user.token).catch(() => {});
+    storeSession(null);
     lobby?.stop();
     setLobby(null);
     setChannel(null);
@@ -92,6 +100,7 @@ export default function App() {
 
   const storeSquad = (s: Squad) => {
     if (user) saveSquad(user.nickname, s);
+    if (user?.token) accountApi.saveSquad(user.token, s).catch(() => {});
     setSquad(s);
     setScreen({ name: 'playtype' });
   };

@@ -16,7 +16,6 @@ export function kickerLookOf(p: PlayerDef | null | undefined): KickerLook | unde
     height: l.height,
     build: l.build,
     foot: p.foot,
-    celebration: p.id,
   };
 }
 

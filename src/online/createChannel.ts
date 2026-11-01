@@ -8,12 +8,13 @@ import { WebSocketChannel } from './channel/WebSocketChannel';
  *  - served over http(s)               → PIPA realtime server at /ws (or VITE_PIPA_WS_URL)
  *  - opened as a local file            → none (online shows as unavailable)
  */
-export function createChannel(): Channel {
+export function createChannel(token?: string): Channel {
   if (hasArtifactRuntime()) return new ArtifactRoomChannel();
   if (typeof location === 'undefined' || location.protocol === 'file:') return new NoChannel();
   const env = (import.meta.env.VITE_PIPA_WS_URL as string | undefined) || '';
   const url = env || `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
-  return new WebSocketChannel(url);
+  // a login token lets the server pin this connection's nickname (no impersonation)
+  return new WebSocketChannel(token ? `${url}${url.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}` : url);
 }
 
 /** a stable anonymous id for this browser (the claude.ai backend supplies its own) */

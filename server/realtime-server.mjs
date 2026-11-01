@@ -13,6 +13,9 @@
  * A client that stops answering pings for ~20 s is dropped and disappears from
  * everyone's list (the "heartbeat").
  *
+ * Accounts (unique nicknames, saved squad): ./accounts.mjs — POST /api/auth|session|squad|logout.
+ * The WebSocket may carry ?token=… ; a verified token pins that connection's lobby nickname.
+ *
  * Online penalty matches (match:*, shot:*, keeper:*, time:ping) are handled by
  * ./matches.mjs — the server is the authority for rounds, roles, score and results.
  */
@@ -23,19 +26,27 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { createMatchManager } from './matches.mjs';
+import { createAccounts } from './accounts.mjs';
 
 const PORT = Number(process.env.PORT || 8787);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', process.env.PIPA_STATIC || 'dist');
 const MAX_PRESENCE = 4096;
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json' };
 
+const accounts = await createAccounts({
+  databaseUrl: process.env.DATABASE_URL,
+  dataDir: process.env.PIPA_DATA_DIR,
+  log: (line) => console.log(line),
+});
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url || '/', 'http://x');
   if (url.pathname === '/health') {
     res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, clients: clients.size, matches: matches.matches.size }));
+    res.end(JSON.stringify({ ok: true, clients: clients.size, matches: matches.matches.size, accounts: accounts.kind }));
     return;
   }
+  if (url.pathname.startsWith('/api/') && accounts.handleHttp(req, res, url.pathname)) return;
   let file = path.join(ROOT, decodeURIComponent(url.pathname));
   if (!file.startsWith(ROOT)) {
     res.writeHead(403).end();
@@ -107,9 +118,25 @@ function leave(room, peer) {
 }
 const validRoom = (r) => typeof r === 'string' && /^[a-z0-9][a-z0-9_.-]{0,47}$/.test(r);
 
-wss.on('connection', (ws) => {
+/**
+ * Lobby presence: a logged-in connection always shows its account nickname; a
+ * connection without a valid token may not show a nickname that belongs to an account.
+ */
+async function lobbyPresence(client, peer, p) {
+  if (!p || typeof p !== 'object' || Array.isArray(p)) return;
+  const nick = await client.auth;
+  if (!clients.has(peer)) return;
+  if (typeof p.nickname === 'string') {
+    if (nick) p = { ...p, nickname: nick };
+    else if (await accounts.isRegistered(p.nickname).catch(() => false)) return;
+  }
+  setPresence('', peer, p);
+}
+
+wss.on('connection', (ws, req) => {
   const peer = crypto.randomBytes(8).toString('hex');
-  const client = { ws, rooms: new Set(), alive: true };
+  const token = new URL(req.url || '/', 'http://x').searchParams.get('token');
+  const client = { ws, rooms: new Set(), alive: true, auth: token ? accounts.nicknameFor(token).catch(() => null) : Promise.resolve(null), chain: Promise.resolve() };
   clients.set(peer, client);
   rooms.get('').set(peer, {});
   ws.send(JSON.stringify({ t: 'welcome', peer }));
@@ -124,7 +151,8 @@ wss.on('connection', (ws) => {
       return;
     }
     if (matches.handle(peer, m)) return;
-    if (m.t === 'presence') setPresence('', peer, m.p);
+    // chained so presence updates keep their order even while the token check is pending
+    if (m.t === 'presence') client.chain = client.chain.then(() => lobbyPresence(client, peer, m.p)).catch(() => {});
     else if (m.t === 'join' && validRoom(m.room)) {
       client.rooms.add(m.room);
       setPresence(m.room, peer, {});

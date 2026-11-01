@@ -33,4 +33,8 @@ export interface ShotRecord {
 
 export interface PlayerProfile {
   nickname: string;
+  /** server login token (Render copy); absent on device-only logins */
+  token?: string;
+  /** squad saved on the server for this account */
+  savedSquad?: unknown;
 }

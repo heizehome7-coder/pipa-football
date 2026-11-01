@@ -11,3 +11,6 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "22"
+      # 계정 영구 저장용 PostgreSQL 주소 (예: Neon 무료 DB). 비워두면 서버 재시작 때 계정이 초기화돼요.
+      - key: DATABASE_URL
+        sync: false

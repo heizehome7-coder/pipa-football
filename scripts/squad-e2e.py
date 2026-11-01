@@ -39,7 +39,7 @@ with sync_playwright() as p:
     def login(nick):
         pg.goto(BASE)
         pg.fill('input[autocomplete=username]', nick)
-        pg.fill('input[type=password]', 'pw')
+        pg.fill('input[type=password]', 'pw1234')
         pg.click('text=게임 시작')
 
     login('HAZE')
@@ -144,6 +144,64 @@ with sync_playwright() as p:
     login('HAZE')
     pg.wait_for_selector('[data-testid=play-squad]', timeout=8000)
     check('next login goes straight to home (no forced BUILD YOUR SQUAD)', pg.locator('[data-testid=squad-pick]').count() == 0)
+
+    # accounts: reopening the page logs straight in (saved session)
+    pg.goto(BASE)
+    pg.wait_for_selector('[data-testid=play-squad]', timeout=15000)
+    check('ACCOUNT: reopening the page → auto-login to home', pg.locator('input[type=password]').count() == 0)
+
+    # another device: same account → squad comes from the server
+    ctx2 = browser.new_context(viewport={'width': 390, 'height': 760}, device_scale_factor=1)
+    p2 = ctx2.new_page()
+    p2.goto(BASE)
+    p2.fill('input[autocomplete=username]', 'haze')
+    p2.fill('input[type=password]', 'wrong-pass')
+    p2.click('text=게임 시작')
+    p2.wait_for_function("document.querySelector('[data-testid=login-error]').innerText.includes('이미 사용 중')", timeout=15000)
+    check('ACCOUNT: same nickname + other password → "이미 사용 중인 닉네임"', True)
+    p2.fill('input[type=password]', 'pw1234')
+    p2.click('text=게임 시작')
+    p2.wait_for_selector('[data-testid=play-squad]', timeout=15000)
+    srv_sq = p2.evaluate("JSON.parse(localStorage.getItem('pipa.squad.v1.haze'))")
+    check('ACCOUNT: new device, right password → squad loaded from the server', srv_sq and 'haaland' in srv_sq['penaltyOrder'], srv_sq)
+    ctx2.close()
+
+    # mobile: touch scrolling on the squad screens
+    ctx3 = browser.new_context(viewport={'width': 360, 'height': 640}, device_scale_factor=1, is_mobile=True, has_touch=True)
+    p3 = ctx3.new_page()
+    p3.goto(BASE)
+    p3.fill('input[autocomplete=username]', 'MOBI')
+    p3.fill('input[type=password]', 'pw1234')
+    p3.tap('text=게임 시작')
+    p3.wait_for_selector('[data-testid=squad-pick]', timeout=15000)
+    cdp = ctx3.new_cdp_session(p3)
+    def swipe_scroll(sel):
+        box = p3.locator(sel).bounding_box()
+        before = p3.evaluate(f"document.querySelector('{sel}').scrollTop")
+        x, y = box['x'] + box['width'] / 2, box['y'] + box['height'] * 0.8
+        cdp.send('Input.dispatchTouchEvent', {'type': 'touchStart', 'touchPoints': [{'x': x, 'y': y}]})
+        for i in range(1, 16):
+            cdp.send('Input.dispatchTouchEvent', {'type': 'touchMove', 'touchPoints': [{'x': x, 'y': y - i * 16}]})
+            p3.wait_for_timeout(16)
+        cdp.send('Input.dispatchTouchEvent', {'type': 'touchEnd', 'touchPoints': []})
+        p3.wait_for_timeout(600)
+        return before, p3.evaluate(f"document.querySelector('{sel}').scrollTop")
+    b, a = swipe_scroll('.card-grid')
+    check('MOBILE: touch swipe scrolls the player cards (BUILD YOUR SQUAD)', a > b + 40, (b, a))
+    for pid in ['ronaldo', 'messi', 'son', 'mbappe', 'salah']:
+        p3.locator(f'[data-testid=player-card][data-id="{pid}"] .pcard-hit').tap()
+    p3.locator('[data-testid=player-card][data-id="courtois"] .pcard-hit').scroll_into_view_if_needed()
+    p3.locator('[data-testid=player-card][data-id="courtois"] .pcard-hit').tap()
+    p3.tap('[data-testid=squad-next]')
+    p3.wait_for_selector('[data-testid=squad-arrange]')
+    scrollable = p3.evaluate("(() => { const e = document.querySelector('[data-testid=squad-arrange]'); return e.scrollHeight > e.clientHeight + 1; })()")
+    if scrollable:
+        b, a = swipe_scroll('[data-testid=squad-arrange]')
+        check('MOBILE: touch swipe scrolls the order / free-kick screen', a > b + 20, (b, a))
+    else:
+        check('MOBILE: order screen fits without scrolling', True)
+    ctx3.close()
+
     check('no JS errors', not errors, errors[:3])
     browser.close()
 
