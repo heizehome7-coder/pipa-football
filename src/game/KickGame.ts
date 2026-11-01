@@ -78,6 +78,8 @@ export abstract class KickGame {
   private sideSpin = 0;
   private keeperLead = 0;
   private humanDive: KeeperDiveCommand | null = null;
+  /** hit the post/bar: outcome decided by where the rebound goes */
+  private woodwork: '' | 'post' | 'bar' = '';
   private tmp = new THREE.Vector3();
 
   protected abstract pickSpot(attempt: number): KickSpot;
@@ -130,6 +132,7 @@ export abstract class KickGame {
     this.flying = this.free = this.caught = false;
     this.flightT = this.freeT = this.resultT = this.acc = 0;
     this.humanDive = null;
+    this.woodwork = '';
     this.setPhase('aim');
   }
 
@@ -234,7 +237,7 @@ export abstract class KickGame {
       // penalty: guess from the kicker's body (strike direction + lean), not the path
       // the body read: hips/shoulders square up to where the ball is being sent over
       // the first metres (strike direction + early bend), plus lean-back for height
-      const early = this.plan.curve3.getPointAt(0.3);
+      const early = shotPositionAt(this.plan, this.plan.duration * 0.3, new THREE.Vector3());
       const heading = new THREE.Vector3(early.x - this.spot.ball.x, 0, early.z - this.spot.ball.z).normalize();
       const flat = Math.hypot(early.x - this.spot.ball.x, early.z - this.spot.ball.z) || 1;
       this.keeper.predictPenalty({ ball: this.spot.ball, heading, rise: (early.y - this.spot.ball.y) / flat });
@@ -279,8 +282,14 @@ export abstract class KickGame {
       shotVelocityAt(plan, t, this.ballVel);
       if (this.wall && this.collide(this.wall.colliders, 'wall')) break;
       if (this.collide(this.keeper.colliders, 'keeper')) break;
+      if (this.hitWoodwork()) {
+        this.free = true;
+        if (remaining > 0) this.integrateFree(remaining);
+        break;
+      }
       if (crossing) {
-        this.resolveGoalPlane();
+        if (plan.reaches) this.resolveGoalPlane();
+        else this.setOutcome('MISS', '골대까지 못 미침');
         this.free = true;
         if (remaining > 0) this.integrateFree(remaining);
         break;
@@ -329,6 +338,52 @@ export abstract class KickGame {
     return false;
   }
 
+  /**
+   * Posts and crossbar are real cylinders: the ball bounces off them with its
+   * actual velocity reflected about the contact normal (some energy lost).
+   * Returns true when the ball touched the woodwork this sub-step.
+   */
+  private hitWoodwork(): boolean {
+    const W = FIELD.goalHalfWidth;
+    const H = FIELD.goalHeight;
+    const rr = FIELD.postRadius + R;
+    const p = this.ballPos;
+    if (Math.abs(p.z) > rr || p.y > H + rr || Math.abs(p.x) > W + rr) return false;
+    const n = this.tmp;
+    let hit: '' | 'post' | 'bar' = '';
+    for (const s of [-1, 1]) {
+      // upright: vertical axis at x = ±W, z = 0
+      const dx = p.x - s * W;
+      const d = Math.hypot(dx, p.z);
+      if (p.y <= H && d < rr) {
+        n.set(dx, 0, p.z);
+        hit = 'post';
+        break;
+      }
+    }
+    if (!hit && Math.abs(p.x) <= W) {
+      // crossbar: horizontal axis at y = H, z = 0
+      const dy = p.y - H;
+      const d = Math.hypot(dy, p.z);
+      if (d < rr) {
+        n.set(0, dy, p.z);
+        hit = 'bar';
+      }
+    }
+    if (!hit) return false;
+    if (n.lengthSq() < 1e-10) n.set(0, 0, 1);
+    n.normalize();
+    // push out of the woodwork, reflect the normal velocity (restitution 0.6)
+    const axisDist = hit === 'post' ? Math.hypot(p.x - Math.sign(p.x) * W, p.z) : Math.hypot(p.y - H, p.z);
+    p.addScaledVector(n, rr - axisDist + 0.002);
+    const vn = this.ballVel.dot(n);
+    if (vn < 0) this.ballVel.addScaledVector(n, -1.6 * vn);
+    this.ballVel.multiplyScalar(0.9);
+    this.woodwork = hit;
+    this.goal.impact(p.x, p.y, Math.abs(vn));
+    return true;
+  }
+
   private resolveGoalPlane() {
     const W = FIELD.goalHalfWidth;
     const H = FIELD.goalHeight;
@@ -353,6 +408,15 @@ export abstract class KickGame {
 
   private integrateFree(h: number) {
     this.freeT += h;
+    if (this.woodwork && !this.outcome) {
+      const p = this.ballPos;
+      // rebound inside the goal → in off the woodwork; back out / away → miss
+      if (p.z < -R && Math.abs(p.x) < FIELD.goalHalfWidth - R && p.y < FIELD.goalHeight - R) {
+        this.setOutcome('GOAL', this.woodwork === 'bar' ? '크로스바 맞고 골!' : '골대 맞고 골!');
+      } else if (p.z < -R || p.z > 1.2 || this.freeT > 1.2) {
+        this.setOutcome('MISS', this.woodwork === 'bar' ? '크로스바 강타' : '골대 강타');
+      }
+    }
     if (this.freeT > 6) return;
     let rem = h;
     while (rem > 1e-9) {

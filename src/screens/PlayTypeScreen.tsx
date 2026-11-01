@@ -1,3 +1,4 @@
+import { VersionBadge } from '../components/VersionBadge';
 import type { PlayerProfile } from '../game/core/types';
 
 function SoloIcon() {
@@ -40,9 +41,12 @@ export function PlayTypeScreen({
     <div className="screen modes">
       <header className="modes-top">
         <div className="mini-logo">PIPA</div>
-        <button className="btn-ghost" onClick={onLogout}>
+        <div className="top-right">
+          <VersionBadge />
+          <button className="btn-ghost" onClick={onLogout}>
           로그아웃
-        </button>
+          </button>
+        </div>
       </header>
       <div className="modes-head">
         <p className="eyebrow">PLAY TYPE</p>

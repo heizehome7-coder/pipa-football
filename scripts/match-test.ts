@@ -4,6 +4,9 @@
  */
 // @ts-expect-error plain .mjs server module
 import { createMatchManager } from '../server/matches.mjs';
+import * as THREE from 'three';
+import { FIELD, MODES } from '../src/game/core/config';
+import { calculateShotParameters } from '../src/game/physics/BallPhysics';
 import * as judge from '../src/online/match/judge';
 import type { MatchState } from '../src/online/match/protocol';
 
@@ -44,12 +47,10 @@ function check(name: string, ok: boolean, info = '') {
   console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${info ? `  — ${info}` : ''}`);
 }
 
-const line = (x: number, y: number) =>
-  Array.from({ length: 25 }, (_, i) => {
-    const t = i / 24;
-    return [x * t, 0.11 + (y - 0.11) * t, 11 * (1 - t)] as [number, number, number];
-  });
-const shotTo = (x: number, y: number, power = 0.7) => ({ points: line(x, y), power });
+// a kicker's shot = the launch the shared physics solver computes from the drawn intent
+const SPOT = new THREE.Vector3(0, FIELD.ballRadius, FIELD.penaltySpot);
+const shotTo = (x: number, y: number, power = 0.7) =>
+  calculateShotParameters(SPOT, { target: new THREE.Vector3(x, y, 0), bow: 0, apex: y, power }, MODES.penalty);
 
 const A = 'peerA';
 const B = 'peerB';
@@ -86,25 +87,25 @@ check('countdown ends → round 1 aim', last(A)!.state!.phase === 'aim' && last(
 // 5. shot payload
 h(firstKeeper, { t: 'shot:submit', round: 1, shot: shotTo(0, 1) });
 check('the goalkeeper cannot shoot', last(A)!.state!.phase === 'aim');
-h(firstKicker, { t: 'shot:submit', round: 1, shot: { points: [[0, 0, 0]], power: 9 } });
+h(firstKicker, { t: 'shot:submit', round: 1, shot: { v: [0, 0, 90], spin: 3, power: 9 } });
 check('malformed shot rejected', last(firstKicker, 'match:error')?.code === 'bad_shot' && last(A)!.state!.phase === 'aim');
 // pre-shot dive is secret
-h(firstKeeper, { t: 'keeper:dive', round: 1, dir: 'left', at: -1 });
-check('a dive picked before the shot is hidden from the kicker', last(firstKicker)!.state!.dive === null && last(firstKeeper)!.state!.dive?.dir === 'left');
 h(firstKeeper, { t: 'keeper:dive', round: 1, dir: 'right', at: -1 });
-check('a committed dive cannot be changed', last(firstKeeper)!.state!.dive?.dir === 'left');
+check('a dive picked before the shot is hidden from the kicker', last(firstKicker)!.state!.dive === null && last(firstKeeper)!.state!.dive?.dir === 'right');
+h(firstKeeper, { t: 'keeper:dive', round: 1, dir: 'left', at: -1 });
+check('a committed dive cannot be changed', last(firstKeeper)!.state!.dive?.dir === 'right');
 h(firstKicker, { t: 'shot:submit', round: 1, shot: shotTo(2.6, 0.4) });
 const ss = last(A, 'shot:start')!.state!;
 const ssB = last(B, 'shot:start')!.state!;
 check('shot:start relayed to both with the same path / runStart / seed', JSON.stringify(ss.shot) === JSON.stringify(ssB.shot) && ss.shot!.runStart === T + judge.MATCH_RULES.shotLeadMs);
 check('one shot = one small message (no per-frame ball data)', JSON.stringify(ss.shot).length < 2500, `${JSON.stringify(ss.shot).length} bytes`);
-check('pre-picked dive revealed at the strike', ss.dive?.dir === 'left' && ss.dive.at === -1);
+check('pre-picked dive revealed at the strike', ss.dive?.dir === 'right' && ss.dive.at === -1);
 const n1 = (inbox[A] || []).length;
 advance(4000);
 const r1 = last(A, 'round:result')!.state!;
 const r1b = last(B, 'round:result')!.state!;
 check('8. server decides the round and sends the same result to both', !!r1.result && JSON.stringify(r1.result) === JSON.stringify(r1b.result), r1.result?.outcome);
-check('left-low shot + keeper guessed left → SAVE', r1.result!.outcome === 'SAVE', r1.result!.detail);
+check('low shot to the right side + keeper dived right (screen) → SAVE', r1.result!.outcome === 'SAVE', r1.result!.detail);
 check('score from the server only', r1.score[firstKicker] === 0 && r1.shots[firstKicker] === 1);
 check('no extra traffic during the flight (≤3 messages per player)', (inbox[A] || []).length - n1 <= 3, `${(inbox[A] || []).length - n1}`);
 
@@ -117,7 +118,7 @@ check('round 2: roles swapped', nx.round === 2 && nx.kicker === firstKeeper && n
 h(firstKeeper, { t: 'shot:submit', round: 2, shot: shotTo(-2.5, 0.5) });
 const run2 = last(A, 'shot:start')!.state!.shot!.runStart;
 T = run2 + 1800; // keeper's dive arrives as the ball is already crossing
-h(firstKicker, { t: 'keeper:dive', round: 2, dir: 'right', at: 0 }); // claims he dove at the run-up start
+h(firstKicker, { t: 'keeper:dive', round: 2, dir: 'left', at: 0 }); // claims he dove at the run-up start
 const kd = last(firstKeeper, 'keeper:dive')?.state?.dive;
 check('back-dated dive timestamps are not trusted (clamped to arrival − 0.5 s)', !!kd && Math.abs(kd.at - 1.3) < 1e-9, String(kd?.at));
 advance(3000);

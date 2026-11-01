@@ -1,3 +1,4 @@
+import { VersionBadge } from '../components/VersionBadge';
 import type { GameMode, PlayerProfile } from '../game/core/types';
 
 function PenaltyIcon() {
@@ -42,9 +43,12 @@ export function ModeSelectScreen({
     <div className="screen modes">
       <header className="modes-top">
         <div className="mini-logo">PIPA</div>
-        <button className="btn-ghost" onClick={onLogout}>
+        <div className="top-right">
+          <VersionBadge />
+          <button className="btn-ghost" onClick={onLogout}>
           {topActionLabel}
-        </button>
+          </button>
+        </div>
       </header>
       <div className="modes-head">
         <p className="eyebrow">MODE SELECT</p>

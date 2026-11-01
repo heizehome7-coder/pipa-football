@@ -6,14 +6,17 @@ export type ShotOutcome = 'GOAL' | 'SAVE' | 'MISS' | 'BLOCKED';
 export type Phase = 'aim' | 'runup' | 'flight' | 'result';
 
 /**
- * Network-ready description of a shot: the 3D path the player drew (world
- * metres, ball → goal plane) and the power from drawing speed. Together with the
- * spot and RNG seed this reproduces the exact same kick, so a future PvP server
- * can relay or validate it.
+ * A shot as a real ball launch (UPDATE 3): the initial velocity (m/s) and side
+ * spin computed from the drawn stroke. With the spot and the shared fixed-step
+ * physics (physics/BallPhysics) this reproduces the exact same flight on every
+ * phone and on the server — one small message per shot online.
  */
 export interface ShotInput {
-  points: [number, number, number][];
-  /** 0..1, from stroke speed */
+  /** initial velocity at the strike, world m/s */
+  v: [number, number, number];
+  /** side spin parameter (1/s): Magnus a = spin·(ŷ × v); + bends to the left of travel */
+  spin: number;
+  /** 0..1, from stroke speed (for display / telemetry) */
   power: number;
 }
 

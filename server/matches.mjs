@@ -310,7 +310,7 @@ export function createMatchManager(o) {
         send(peer, { t: 'match:error', code: 'bad_shot' });
         return true;
       }
-      const input = { points: msg.shot.points, power: msg.shot.power };
+      const input = { v: msg.shot.v.slice(0, 3), spin: msg.shot.spin, power: msg.shot.power };
       m.shot = { round: m.round, input, runStart: now() + R.shotLeadMs, seed };
       m.flightMs = Math.round(sim.decidedAt * 1000);
       m.phase = 'shot';

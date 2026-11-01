@@ -56,8 +56,12 @@ export interface ModeConfig {
   /** ball speed (m/s) at power 0 and 1 */
   minSpeed: number;
   maxSpeed: number;
-  /** horizontal air-drag constant (1/s) */
+  /** (legacy, unused since UPDATE 3 — air drag lives in physics/BallPhysics) */
   drag: number;
+  /** side-spin / Magnus strength vs the free kick (penalty ≈ 0.55: short distance, little bend) */
+  curveMultiplier: number;
+  /** highest a drawn lob may peak (m) */
+  maxApex: number;
   /** swipe speed (screen-heights / s) mapped to power 0 and 1 */
   swipeSpeedMin: number;
   swipeSpeedMax: number;
@@ -73,6 +77,8 @@ export const MODES: Record<GameMode, ModeConfig> = {
     minSpeed: 13,
     maxSpeed: 31,
     drag: 0.35,
+    curveMultiplier: 0.55,
+    maxApex: 3.6,
     swipeSpeedMin: 0.55,
     swipeSpeedMax: 3.0,
     keeper: {
@@ -107,6 +113,8 @@ export const MODES: Record<GameMode, ModeConfig> = {
     minSpeed: 15,
     maxSpeed: 31,
     drag: 0.3,
+    curveMultiplier: 1,
+    maxApex: 6,
     swipeSpeedMin: 0.55,
     swipeSpeedMax: 3.0,
     keeper: {
@@ -115,7 +123,7 @@ export const MODES: Record<GameMode, ModeConfig> = {
       diveBase: 0.36,
       diveScale: 0.17,
       maxHipTravel: 1.65,
-      readNoise: 0.6,
+      readNoise: 0.7,
       guessCorrect: 0,
       guessCentre: 0,
       leadMax: 0,

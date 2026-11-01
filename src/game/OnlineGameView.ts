@@ -20,7 +20,7 @@ export interface OnlineViewCallbacks {
   onHint(msg: string | null): void;
 }
 
-/** what the swipe direction means for the keeper (screen right = keeper's right) */
+/** what a swipe means for the keeper: dives the way the finger went on screen */
 export function classifyKeeperSwipe(dx: number, dy: number): DiveDir | null {
   const len = Math.hypot(dx, dy);
   if (len < 24) return null;
@@ -34,8 +34,12 @@ export function classifyKeeperSwipe(dx: number, dy: number): DiveDir | null {
 
 const STEP_CHUNK = 0.1;
 
-/** keeper camera: behind the goal, over the keeper's shoulders, facing the kicker */
-const KEEPER_CAM = { x: 0, z: -3.6, y: 3.35, lookX: 0, lookY: 0.5, lookZ: 11, frac: 1.15, maxFov: 80 };
+/**
+ * keeper camera (UPDATE 3): from the kicker's side, facing the goal head-on like the
+ * kicker's view — whole goal (both posts + bar) with margin, keeper seen from the
+ * front, ball and kicker in the foreground. FOV solved so the goal fills ~78% width.
+ */
+const KEEPER_CAM = { x: 0, z: 16.8, y: 2.55, lookX: 0, lookY: 0.95, lookZ: 0, frac: 0.78, minFov: 50, maxFov: 75 };
 
 /**
  * 3D view of one online penalty round, from either side:
@@ -253,7 +257,7 @@ export class OnlineGameView {
       frameCamera(this.camera, this.game, this.w, this.h);
       return;
     }
-    // GOALKEEPER: behind the goal, looking out at the kicker over the keeper's shoulders
+    // GOALKEEPER: same direction as the kicker's view, centred on the goal
     const k = { ...KEEPER_CAM, ...((window as unknown as { __PIPA_KEEPER_CAM?: Partial<typeof KEEPER_CAM> }).__PIPA_KEEPER_CAM || {}) };
     const cam = this.camera;
     cam.aspect = this.w / this.h;
@@ -275,7 +279,7 @@ export class OnlineGameView {
       if (frac > target) lo = mid;
       else hi = mid;
     }
-    cam.fov = Math.min(k.maxFov, (lo + hi) / 2);
+    cam.fov = Math.min(k.maxFov, Math.max(k.minFov, (lo + hi) / 2));
     cam.updateProjectionMatrix();
   }
 
@@ -425,6 +429,7 @@ export class OnlineGameView {
       outcome: g.outcome,
       simT: this.simT,
       runClock: this.runClock(),
+      runStartLocal: this.shot ? this.runStartLocal : null,
       shotRound: this.shot?.round ?? null,
       ball: this.worldToScreen(g.ballPos),
       ballWorld: g.ballPos.toArray(),

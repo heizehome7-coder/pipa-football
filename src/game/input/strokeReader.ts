@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { FIELD, type ModeConfig } from '../core/config';
 import { clamp, lerp } from '../core/math';
 import type { ShotInput } from '../core/types';
+import { calculateShotParameters, type ShotIntent } from '../physics/BallPhysics';
 
 export interface SwipeSample {
   x: number;
@@ -23,7 +24,10 @@ export interface StrokeContext {
 }
 
 export interface StrokeReading {
+  /** the physical launch (velocity + side spin) — what the game and the network use */
   input: ShotInput;
+  /** what the stroke asked for: direction/end point, main bend, height, power */
+  intent: ShotIntent;
   /** stroke drawing speed, screen-heights per second */
   speed: number;
 }
@@ -76,7 +80,15 @@ export function smoothStroke(samples: Pt[]): Pt[] {
 }
 
 /**
- * Converts the player's screen stroke into a 3D ball path.
+ * Converts the player's screen stroke into a shot (UPDATE 3: intent → physics).
+ *
+ * The stroke is read into a smooth 3D path first (below), but that path is no
+ * longer a rail: from it we only take the INTENT — where it ends on the goal, its
+ * one main sideways bend, how high it arcs, and the drawing speed — and
+ * calculateShotParameters() turns that into a real launch. The ball then flies by
+ * physics, so it lands where the stroke pointed with a believable shape.
+ *
+ * How the path is read:
  *
  * Every point of the (smoothed) stroke keeps its own screen position; we only
  * decide how far down the pitch it is. Depth comes from the stroke's arc-length
@@ -271,17 +283,16 @@ export function readStroke(samples: SwipeSample[], ctx: StrokeContext, cfg: Mode
     }
   }
 
-  // 6) the ball path: the fitted curve, sampled as spline control points
-  const ctrl: [number, number, number][] = [];
-  const CTRL = 24;
-  for (let i = 0; i <= CTRL; i++) {
-    if (i === 0) ctrl.push([B.x, B.y, B.z]);
-    else if (i === CTRL) ctrl.push([T.x, T.y, T.z]);
-    else {
-      const p = curveAt(i / CTRL, cp);
-      ctrl.push([p.x, clamp(p.y, R, 14), p.z]);
-    }
+  // 6) intent from the fitted path — ONE dominant bend (an S stroke can't make an S ball)
+  let bow = 0;
+  let apex = Math.max(B.y, T.y);
+  for (let i = 1; i < 40; i++) {
+    const p = curveAt(i / 40, cp);
+    const lat = right.x * (p.x - B.x) + right.z * (p.z - B.z);
+    if (Math.abs(lat) > Math.abs(bow)) bow = lat;
+    apex = Math.max(apex, clamp(p.y, R, 14));
   }
-
-  return { input: { points: ctrl.map((p) => p.map((v) => Math.round(v * 1000) / 1000) as [number, number, number]), power }, speed };
+  const intent: ShotIntent = { target: T.clone(), bow, apex, power };
+  const input = calculateShotParameters(B, intent, cfg);
+  return { input, intent, speed };
 }

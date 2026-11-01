@@ -57,6 +57,8 @@ with sync_playwright() as p:
     login(A, '제작자')
     A.screenshot(path=f'{OUT}/01_playtype.png')
     check('login → 혼자서 / 온라인 choice', A.is_visible('[data-testid=play-solo]') and A.is_visible('[data-testid=play-online]'))
+    badge = A.locator('[data-testid=version-badge]').bounding_box()
+    check('UPDATE 3 badge top-right on the play-type screen', A.inner_text('[data-testid=version-badge]') == 'UPDATE 3' and badge['x'] > 390 * 0.5 and badge['y'] < 80, badge)
     A.click('[data-testid=play-online]')
     A.wait_for_selector('.lobby')
     login(B, 'MINHO')

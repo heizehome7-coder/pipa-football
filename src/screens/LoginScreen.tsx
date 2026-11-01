@@ -1,3 +1,4 @@
+import { VersionBadge } from '../components/VersionBadge';
 import { useState, type FormEvent } from 'react';
 import type { PlayerProfile } from '../game/core/types';
 
@@ -33,6 +34,7 @@ export function LoginScreen({ onLogin }: { onLogin: (p: PlayerProfile) => void }
 
   return (
     <div className="screen login">
+      <VersionBadge floating />
       <svg className="pitch-art" viewBox="0 0 400 700" preserveAspectRatio="xMidYMid slice" aria-hidden>
         <g fill="none" stroke="currentColor" strokeWidth="2">
           <rect x="40" y="-2" width="320" height="704" />

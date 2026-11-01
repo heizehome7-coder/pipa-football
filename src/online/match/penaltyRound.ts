@@ -4,6 +4,7 @@ import type { ShotInput } from '../../game/core/types';
 import { KickGame, type KeeperDiveCommand, type KickSpot } from '../../game/KickGame';
 import type { DiveDir, RoundOutcome, WireDive } from './protocol';
 import { DIVE_DIRS } from './protocol';
+import { BALL } from '../../game/physics/BallPhysics';
 
 /**
  * One online penalty: same pitch, kicker, ball physics and drawn-path flight as the
@@ -24,19 +25,20 @@ export class OnlinePenaltyGame extends KickGame {
 }
 
 /**
- * Where each dive goes, in world metres on the keeper's line. The keeper faces the
- * kicker (+z), so HIS right is world −x — and on the keeper's screen (camera behind
- * him) screen-right is also world −x. Swipe right → dive to his right.
+ * Where each dive goes, in world metres on the keeper's line. Directions are SCREEN
+ * directions: both players look at the goal from the pitch (camera towards −z), so
+ * screen-left = world −x on both phones. Swipe left → the keeper flies to the left
+ * of the screen (his own right — he faces the camera).
  */
 const TARGETS: Record<DiveDir, [number, number]> = {
-  right: [-2.9, 0.5],
-  left: [2.9, 0.5],
-  upRight: [-2.45, 1.95],
-  upLeft: [2.45, 1.95],
+  left: [-2.9, 0.5],
+  right: [2.9, 0.5],
+  upLeft: [-2.45, 1.95],
+  upRight: [2.45, 1.95],
   up: [0, 2.3],
   down: [0, 0.3],
-  lowRight: [-1.6, 0.25],
-  lowLeft: [1.6, 0.25],
+  lowLeft: [-1.6, 0.25],
+  lowRight: [1.6, 0.25],
 };
 
 export const PENALTY_CONTACT_TIME = 0.93;
@@ -53,13 +55,13 @@ export const isDiveDir = (v: unknown): v is DiveDir => typeof v === 'string' && 
 export function validShot(v: unknown): v is ShotInput {
   if (!v || typeof v !== 'object') return false;
   const s = v as ShotInput;
-  if (typeof s.power !== 'number' || !(s.power >= 0 && s.power <= 1)) return false;
-  if (!Array.isArray(s.points) || s.points.length < 2 || s.points.length > 80) return false;
-  for (const p of s.points) {
-    if (!Array.isArray(p) || p.length !== 3) return false;
-    if (!p.every((n) => typeof n === 'number' && Number.isFinite(n) && Math.abs(n) < 60)) return false;
-  }
-  return true;
+  const num = (n: unknown) => typeof n === 'number' && Number.isFinite(n);
+  if (!num(s.power) || !(s.power >= 0 && s.power <= 1)) return false;
+  if (!num(s.spin) || Math.abs(s.spin) > BALL.spinMax + 1e-6) return false;
+  if (!Array.isArray(s.v) || s.v.length !== 3 || !s.v.every(num)) return false;
+  const sp = Math.hypot(s.v[0], s.v[1], s.v[2]);
+  // a real strike: towards the goal, no faster than the game allows
+  return sp > 2 && sp <= BALL.maxSpeed && s.v[2] < 0;
 }
 
 export interface RoundSimulation {

@@ -1,3 +1,4 @@
+import { VersionBadge } from '../components/VersionBadge';
 import { useEffect } from 'react';
 import type { LobbyClient, LobbySnapshot, PlayerView } from '../online/LobbyClient';
 
@@ -39,7 +40,9 @@ export function OnlineLobbyScreen({ lobby, snap, onBack }: { lobby: LobbyClient;
           <span className="mini-logo">PIPA</span>
           <span className="lobby-tag">ONLINE</span>
         </div>
-        <span className="lobby-spacer" />
+        <span className="lobby-spacer">
+          <VersionBadge />
+        </span>
       </header>
 
       <section className="me-card" data-testid="me-card">

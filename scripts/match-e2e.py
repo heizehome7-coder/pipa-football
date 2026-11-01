@@ -125,8 +125,12 @@ with sync_playwright() as p:
     kd = (A if ra == 'kicker' else B).evaluate('window.__PIPA_ONLINE.debug()')
     gd = (A if ra == 'keeper' else B).evaluate('window.__PIPA_ONLINE.debug()')
     check('4. kicker view = penalty camera (goal wide, kicker lower-left)', 0.6 < (kd['goal']['right'] - kd['goal']['left']) / kd['w'] < 0.85, f"{(kd['goal']['right'] - kd['goal']['left']) / kd['w']:.2f}")
-    check('4. keeper view faces the kicker (kicker above the keeper on screen, goal mirrored)',
-          gd['kickerScreen']['y'] < gd['keeperScreen']['y'] and gd['goal']['left'] > gd['goal']['right'], f"kicker y {gd['kickerScreen']['y']:.0f} keeper y {gd['keeperScreen']['y']:.0f}")
+    gfrac = (gd['goal']['right'] - gd['goal']['left']) / gd['w']
+    check('4. keeper view looks at the goal from the pitch like the kicker (not mirrored, keeper seen from the front)',
+          gd['goal']['left'] < gd['goal']['right'] and gd['keeperScreen']['y'] < gd['kickerScreen']['y'], f"keeper y {gd['keeperScreen']['y']:.0f} kicker y {gd['kickerScreen']['y']:.0f}")
+    check('4. keeper view: whole goal on screen — both posts with margin, crossbar below the HUD, 70–85% wide',
+          gd['goal']['left'] > 8 and gd['goal']['right'] < gd['w'] - 8 and gd['goal']['top'] > 90 and 0.70 <= gfrac <= 0.85 and 50 <= gd['fov'] <= 75,
+          f"posts {gd['goal']['left']:.0f}–{gd['goal']['right']:.0f}/{gd['w']} · bar y {gd['goal']['top']:.0f} · {gfrac:.2f} · fov {gd['fov']:.0f}")
 
     plan = [  # (shot side on the kicker's screen, height, swipe ms, keeper action)
         ('L', 0.25, 160, 'swipe-left-correct'),
@@ -156,8 +160,8 @@ with sync_playwright() as p:
         if r == 2:
             check('HUD shows ROUND n/10 and role', hud_k == 'ROUND 2/10' and K.inner_text('[data-testid=role-label]') == 'KICKER' and G.inner_text('[data-testid=role-label]') == 'GOALKEEPER', hud_k)
         time.sleep(0.25)
-        # keeper's mirrored screen: kicker's L (world -x) is the keeper's right
-        keeper_right_is = {'L': 'right', 'R': 'left', 'C': 'down'}[side]
+        # both look at the goal from the pitch: the shot's screen side = the keeper's swipe side
+        keeper_right_is = {'L': 'left', 'R': 'right', 'C': 'down'}[side]
         if keeper_act == 'swipe-left-correct' or keeper_act == 'swipe-right-correct':
             dx = 160 if keeper_right_is == 'right' else -160
             G.mouse.move(195, 500)
@@ -182,6 +186,10 @@ with sync_playwright() as p:
         v, _ = wait_for(lambda: A.evaluate('window.__PIPA_ONLINE.debug().shotRound') == r and B.evaluate('window.__PIPA_ONLINE.debug().shotRound') == r, 5, 0.02)
         if r == 1:
             check('5. kicker’s drawn shot reaches the keeper’s screen via the server', bool(v))
+            # when each phone starts the run-up (local clock = server runStart − its measured offset)
+            sa_ = A.evaluate("[window.__PIPA_ONLINE.debug().runStartLocal, window.__PIPA_MATCH.serverNow() - Date.now()]")
+            sb_ = B.evaluate("[window.__PIPA_ONLINE.debug().runStartLocal, window.__PIPA_MATCH.serverNow() - Date.now()]")
+            check('6. both phones start the kick on the same server timestamp (within 50 ms)', abs(sa_[0] - sb_[0]) < 50, f'{abs(sa_[0] - sb_[0]):.0f} ms · offsets {sa_[1]:.0f}/{sb_[1]:.0f} ms')
         if keeper_act in ('key-wrong', 'key-correct'):
             # react with arrow keys during the run-up (PC controls)
             wait_for(lambda: G.evaluate('window.__PIPA_ONLINE.debug().runClock') > 0.55, 3, 0.01)
@@ -198,9 +206,6 @@ with sync_playwright() as p:
             time.sleep(0.12)
             K.screenshot(path=f'{OUT}/07_kicker_flight.png')
             G.screenshot(path=f'{OUT}/08_keeper_flight.png')
-            ca = A.evaluate('window.__PIPA_ONLINE.runClock()')
-            cb = B.evaluate('window.__PIPA_ONLINE.runClock()')
-            check('6. both phones play the kick on the same server clock (run-up clocks within 150 ms)', abs(ca - cb) < 0.15, f'{abs(ca - cb) * 1000:.0f} ms')
         hist = lambda pg: pg.evaluate('window.__PIPA_MATCH.getSnapshot().state.history')
         v, _ = wait_for(lambda: len(hist(A)) >= r and len(hist(B)) >= r, 20, 0.1)
         ha, hb = hist(A), hist(B)
@@ -265,6 +270,7 @@ with sync_playwright() as p:
     A.click('[data-testid=back-to-lobby]')
     v, _ = wait_for(lambda: A.is_visible('.lobby'))
     check('[온라인 로비로 돌아가기] → ONLINE LOBBY', bool(v))
+    check('UPDATE badge on the lobby after the match', A.inner_text('[data-testid=version-badge]').startswith('UPDATE'))
     check('no JS errors', not errors, errors[:3])
     print(f'   clock offsets A {off_a:.0f} ms, B {off_b:.0f} ms')
     browser.close()

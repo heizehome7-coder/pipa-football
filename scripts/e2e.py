@@ -176,7 +176,8 @@ with sync_playwright() as p:
     print('fast', round(fast['speed'], 2), 'H/s', round(fast_plan['speed'], 1), 'm/s | slow', round(slow['speed'], 2), 'H/s', round(slow_plan['speed'], 1), 'm/s')
     check('fast stroke → faster shot than slow stroke', fast_plan['speed'] > slow_plan['speed'] * 1.6 and fast['input']['power'] > 0.8 and slow['input']['power'] < 0.2)
     check('straight stroke → ~no curve', abs(fast_plan['curve']) < 0.1, fast_plan['curve'])
-    check('same stroke shape at different speeds → same path', fast['input']['points'] == slow['input']['points'])
+    check('same stroke at different speeds → same aim (physics decides the arc)', abs(fast_plan['target'][0] - slow_plan['target'][0]) < 0.3, (fast_plan['target'], slow_plan['target']))
+    check('UPDATE 3: slower shot needs a higher arc (gravity)', slow_plan['apex'] > fast_plan['apex'], (slow_plan['apex'], fast_plan['apex']))
     if dd['phase'] == 'runup':
         check('keeper idle during run-up', dd['keeper']['action'] == 'none', dd['keeper'])
     wait_phase('result')

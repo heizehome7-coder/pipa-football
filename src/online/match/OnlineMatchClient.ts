@@ -79,8 +79,16 @@ export class OnlineMatchClient {
         this.joinTimer = null;
       }
     }, 1500);
-    for (let i = 0; i < 5; i++) setTimeout(() => this.ping(), i * 160);
-    this.pingTimer = setInterval(() => this.ping(), 8000);
+    // clock sync: a burst now, then every 1.5 s for the first 30 s, then every 8 s
+    for (let i = 0; i < 6; i++) setTimeout(() => this.ping(), i * 120);
+    let n = 0;
+    this.pingTimer = setInterval(() => {
+      this.ping();
+      if (++n === 20 && this.pingTimer) {
+        clearInterval(this.pingTimer);
+        this.pingTimer = setInterval(() => this.ping(), 8000);
+      }
+    }, 1500);
   }
 
   stop() {
@@ -159,9 +167,11 @@ export class OnlineMatchClient {
     if (this.stopped) return;
     if (m.t === 'time:pong' && typeof m.c === 'number' && typeof m.s === 'number') {
       const rtt = Date.now() - m.c;
-      // keep the estimate from the quickest round trip (least queueing noise)
-      if (rtt <= this.bestRtt * 1.3 || rtt < 60) {
-        this.bestRtt = Math.min(this.bestRtt, rtt);
+      // NTP-style: trust only the quickest round trips (a busy phone answers late and
+      // would skew the estimate); the best RTT slowly ages so the clock can be re-learnt
+      this.bestRtt = Math.min(this.bestRtt * 1.02 + 1, Infinity);
+      if (rtt <= this.bestRtt) {
+        this.bestRtt = rtt;
         this.offset = m.s - (m.c + rtt / 2);
       }
       return;
