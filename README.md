@@ -42,6 +42,15 @@ npm run build:single   # dist-single/ — index.html 한 파일 (어디서나 �
 - 3D: 헤어스타일·수염·피부톤·키/체형(키커만)·등번호/이름 — 외형만 바뀌고 충돌체·타이밍은 그대로
   (GK 체형은 고정 → 선방 범위 동일, 온라인 판정 결정성 유지)
 
+## 선수 능력 & 애니메이션 (UPDATE 5)
+- 필드 능력 7종(POWER/ACCURACY/CURVE/KNUCKLE/LOW SHOT/FREE KICK/COMPOSURE), GK 능력 7종(REFLEX/DIVING/REACH/POSITIONING/PENALTY READ/LOW SAVE/HIGH SAVE) — `src/players/players.ts`
+- 능력은 작은 보정(유저 입력 ~70%, 선수 ~30%) — `src/players/abilities.ts` (속도·회전 배율, 결정론적 조준 오차, 무회전)
+- 스페셜은 버튼 없이 슛 모양으로 자동 발동 (감아차기 +20~35% 회전, 호날두 무회전 = 별도 물리 프로필: 작은 불규칙 흔들림)
+- 11단계 킥 모션 + 슛 타입별 변형(drive/instep/outside/knuckle/low), 왼발 선수는 좌우 반전 — `src/game/entities/Player.ts`
+- GK: 6방향 블렌딩 다이브, 능력 반영(팔 길이/이동 거리), 선방·실점 리액션 — `Goalkeeper.ts`
+- 선수별 골 세리머니 15종 + 실패(SAVE/MISS/POST/CROSSBAR) 리액션 — `reactions.ts`; 리액션 중 입력 잠금(~2초)
+- 카드 앞면 OVR + POWER/ACCURACY/CURVE, 상세에 전체 능력 + SPECIAL ABILITY. 등 이름 크기 확대
+
 ## 온라인 페널티킥 경기 (2단계)
 
 MATCH FOUND → **[준비하기]** (둘 다) → 3·2·1·KICK OFF → 10라운드(각자 5번) → MATCH RESULT

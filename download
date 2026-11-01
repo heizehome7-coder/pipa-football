@@ -1,0 +1,8 @@
+node_modules/
+dist/
+dist-single/
+e2e-shots/
+online-shots/
+*.log
+.DS_Store
+server/judge.gen.mjs
