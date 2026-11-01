@@ -5,8 +5,11 @@ import { MODES } from '../game/core/config';
 import type { GameMode, Phase, PlayerProfile, ShotOutcome } from '../game/core/types';
 import { GameView } from '../game/GameView';
 import { LocalSession } from '../game/session/MatchSession';
+import { NameBanner } from '../components/NameBanner';
+import { kickerLookOf } from '../players/looks';
+import type { PlayerDef } from '../players/players';
 
-export function GameScreen({ mode, user, onExit }: { mode: GameMode; user: PlayerProfile; onExit: () => void }) {
+export function GameScreen({ mode, user, player = null, onExit }: { mode: GameMode; user: PlayerProfile; player?: PlayerDef | null; onExit: () => void }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [phase, setPhase] = useState<Phase>('aim');
   const [result, setResult] = useState<{ outcome: ShotOutcome; detail: string } | null>(null);
@@ -30,7 +33,7 @@ export function GameScreen({ mode, user, onExit }: { mode: GameMode; user: Playe
         },
         onOutcome: (o, detail) => setResult({ outcome: o, detail }),
         onHint: setHint,
-      });
+      }, { kicker: kickerLookOf(player) });
     } catch (e) {
       console.error(e);
       setError('이 기기에서 3D(WebGL)를 시작할 수 없습니다.');
@@ -39,7 +42,7 @@ export function GameScreen({ mode, user, onExit }: { mode: GameMode; user: Playe
       unsub();
       view?.dispose();
     };
-  }, [mode, user]);
+  }, [mode, user, player]);
 
   useEffect(() => {
     if (!hint) return;
@@ -53,6 +56,7 @@ export function GameScreen({ mode, user, onExit }: { mode: GameMode; user: Playe
       <div className="game-host" ref={hostRef} />
       <GameHUD label={cfg.label} goals={score.goals} shots={score.shots} nickname={user.nickname} onBack={onExit} />
       {result && <ResultBanner outcome={result.outcome} detail={result.detail} />}
+      <NameBanner player={player} show={player ? `solo:${mode}:${player.id}` : ''} label={mode === 'freekick' ? 'FREE KICK TAKER' : 'PENALTY TAKER'} />
       {phase === 'aim' && tutorial && !hint && (
         <div className="coach">
           <b>공을 누른 채 슛 경로를 그려보세요</b>

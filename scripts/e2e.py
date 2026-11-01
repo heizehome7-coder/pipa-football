@@ -9,6 +9,9 @@ import time
 
 from playwright.sync_api import sync_playwright
 
+sys.path.insert(0, os.path.dirname(__file__))
+from squad_seed import seed_script  # noqa: E402
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 URL = 'file://' + os.path.join(ROOT, 'dist-single', 'index.html')
 OUT = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, 'e2e-shots')
@@ -31,6 +34,7 @@ with sync_playwright() as p:
         viewport={'width': 390, 'height': 844}, device_scale_factor=1, is_mobile=True, has_touch=True,
         user_agent='Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
     )
+    ctx.add_init_script(seed_script({'HAZE': None}))  # UPDATE 4: saved squad → no first-login setup
     page = ctx.new_page()
     errors = []
     page.on('pageerror', lambda e: errors.append(str(e)))
@@ -111,6 +115,8 @@ with sync_playwright() as p:
 
     # ── penalty ─────────────────────────────────────────────────────────
     page.tap('text=PENALTY KICK')
+    page.wait_for_selector('[data-testid=select-kicker]', timeout=5000)  # UPDATE 4: SELECT KICKER
+    page.tap('[data-testid=player-card] .pcard-hit')
     page.wait_for_function('window.__PIPA && window.__PIPA.debug().phase === "aim"', timeout=15000)
     time.sleep(1.5)
     page.screenshot(path=f'{OUT}/03_penalty.png')

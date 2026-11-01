@@ -11,12 +11,19 @@ import { ModeSelectScreen } from './screens/ModeSelectScreen';
 import { OnlineLobbyScreen } from './screens/OnlineLobbyScreen';
 import { OnlineMatchScreen } from './screens/OnlineMatchScreen';
 import { PlayTypeScreen } from './screens/PlayTypeScreen';
+import { SelectKickerScreen } from './screens/SelectKickerScreen';
+import { SquadScreen } from './screens/SquadScreen';
+import { getPlayer, type PlayerDef } from './players/players';
+import { DEFAULT_SQUAD, loadSquad, saveSquad, type Squad } from './players/squad';
 
 type Screen =
   | { name: 'login' }
+  | { name: 'squad-setup' }
+  | { name: 'squad' }
+  | { name: 'select-kicker' }
   | { name: 'playtype' }
   | { name: 'modes' }
-  | { name: 'game'; mode: GameMode }
+  | { name: 'game'; mode: GameMode; player: PlayerDef | null }
   | { name: 'lobby' }
   | { name: 'match' };
 
@@ -25,6 +32,7 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>({ name: 'login' });
   const [lobby, setLobby] = useState<LobbyClient | null>(null);
   const [channel, setChannel] = useState<Channel | null>(null);
+  const [squad, setSquad] = useState<Squad | null>(null);
   const snap = useLobby(lobby);
   const lastMatch = useRef<string | null>(null);
 
@@ -39,12 +47,16 @@ export default function App() {
     (window as unknown as { __PIPA_LOBBY?: LobbyClient }).__PIPA_LOBBY = client; // test/debug hook
     setLobby(client);
     setChannel(channel);
-    setScreen({ name: 'playtype' });
+    // UPDATE 4: first time on this device → BUILD YOUR SQUAD (never forced again)
+    const saved = loadSquad(p.nickname);
+    setSquad(saved);
+    setScreen(saved ? { name: 'playtype' } : { name: 'squad-setup' });
   };
   const logout = () => {
     lobby?.stop();
     setLobby(null);
     setChannel(null);
+    setSquad(null);
     setUser(null);
     setScreen({ name: 'login' });
   };
@@ -78,35 +90,55 @@ export default function App() {
     setScreen({ name: 'lobby' });
   };
 
+  const storeSquad = (s: Squad) => {
+    if (user) saveSquad(user.nickname, s);
+    setSquad(s);
+    setScreen({ name: 'playtype' });
+  };
+  const mySquad = squad ?? DEFAULT_SQUAD;
+  const home = (
+    <PlayTypeScreen
+      user={user ?? { nickname: '' }}
+      squad={squad}
+      onSolo={() => setScreen({ name: 'modes' })}
+      onOnline={() => setScreen({ name: 'lobby' })}
+      onSquad={() => setScreen({ name: 'squad' })}
+      onLogout={logout}
+    />
+  );
+
   let body;
   if (screen.name === 'login' || !user) {
     body = <LoginScreen onLogin={login} />;
+  } else if (screen.name === 'squad-setup') {
+    body = <SquadScreen initial={null} firstTime onSave={storeSquad} />;
+  } else if (screen.name === 'squad') {
+    body = <SquadScreen initial={squad} firstTime={false} onSave={storeSquad} onBack={() => setScreen({ name: 'playtype' })} />;
   } else if (screen.name === 'playtype') {
-    body = (
-      <PlayTypeScreen
-        user={user}
-        onSolo={() => setScreen({ name: 'modes' })}
-        onOnline={() => setScreen({ name: 'lobby' })}
-        onLogout={logout}
-      />
-    );
+    body = home;
   } else if (screen.name === 'modes') {
     body = (
       <ModeSelectScreen
         user={user}
-        onSelect={(mode) => setScreen({ name: 'game', mode })}
+        onSelect={(mode) =>
+          mode === 'penalty'
+            ? setScreen({ name: 'select-kicker' })
+            : setScreen({ name: 'game', mode, player: getPlayer(mySquad.freeKickTakerId) })
+        }
         onLogout={() => setScreen({ name: 'playtype' })}
         topActionLabel="‹ 뒤로"
       />
     );
+  } else if (screen.name === 'select-kicker') {
+    body = <SelectKickerScreen squad={mySquad} onPick={(p) => setScreen({ name: 'game', mode: 'penalty', player: p })} onBack={() => setScreen({ name: 'modes' })} />;
   } else if (screen.name === 'game') {
-    body = <GameScreen key={screen.mode} mode={screen.mode} user={user} onExit={() => setScreen({ name: 'modes' })} />;
+    body = <GameScreen key={`${screen.mode}:${screen.player?.id ?? ''}`} mode={screen.mode} user={user} player={screen.player} onExit={() => setScreen({ name: 'modes' })} />;
   } else if (screen.name === 'lobby' && lobby && snap) {
     body = <OnlineLobbyScreen lobby={lobby} snap={snap} onBack={() => setScreen({ name: 'playtype' })} />;
   } else if (screen.name === 'match' && lobby && channel && snap?.match) {
-    body = <OnlineMatchScreen lobby={lobby} channel={channel} match={snap.match} onLeave={leaveMatch} />;
+    body = <OnlineMatchScreen lobby={lobby} channel={channel} match={snap.match} squad={mySquad} onLeave={leaveMatch} />;
   } else {
-    body = <PlayTypeScreen user={user} onSolo={() => setScreen({ name: 'modes' })} onOnline={() => setScreen({ name: 'lobby' })} onLogout={logout} />;
+    body = home;
   }
 
   return (

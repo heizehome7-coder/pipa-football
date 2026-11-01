@@ -8,7 +8,7 @@
  *
  * client → server                                 server → client (every event carries `state`)
  *   match:join   {matchId, opponentPeer, nickname,   match:state                  (any change / join)
- *                 userId}                            match:start                  (both ready → countdown)
+ *                 userId, squad}                     match:start                  (both ready → countdown)
  *   match:ready  {matchId, ready}                    shot:start                   (kicker's shot + run-up time)
  *   shot:submit  {matchId, round, shot}              keeper:dive                  (keeper's dive, for both views)
  *   keeper:dive  {matchId, round, dir, at}           round:result                 (authoritative GOAL/SAVE/MISS)
@@ -38,10 +38,18 @@ export const DIVE_DIRS: DiveDir[] = ['left', 'right', 'upLeft', 'upRight', 'up',
 export type MatchPhase = 'waiting' | 'countdown' | 'aim' | 'shot' | 'result' | 'finished' | 'aborted';
 export type RoundOutcome = Extract<ShotOutcome, 'GOAL' | 'SAVE' | 'MISS'>;
 
+export interface WireSquad {
+  /** 5 field-player ids in penalty order */
+  penaltyOrder: string[];
+  goalkeeperId: string;
+}
+
 export interface WirePlayer {
   peer: string;
   nickname: string;
   userId: string;
+  /** UPDATE 4: ids only — both phones share the same 20-player database */
+  squad?: WireSquad | null;
   ready: boolean;
   rematch: boolean;
   connected: boolean;

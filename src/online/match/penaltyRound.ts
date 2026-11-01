@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { FIELD, MODES } from '../../game/core/config';
 import type { ShotInput } from '../../game/core/types';
-import { KickGame, type KeeperDiveCommand, type KickSpot } from '../../game/KickGame';
+import { KickGame, type KeeperDiveCommand, type KickGameOptions, type KickSpot } from '../../game/KickGame';
 import type { DiveDir, RoundOutcome, WireDive } from './protocol';
 import { DIVE_DIRS } from './protocol';
 import { BALL } from '../../game/physics/BallPhysics';
@@ -12,8 +12,8 @@ import { BALL } from '../../game/physics/BallPhysics';
  * (both players) and on the server (the authoritative judge).
  */
 export class OnlinePenaltyGame extends KickGame {
-  constructor(nickname: string, seed: number, visuals: boolean) {
-    super(MODES.penalty, { visuals, nickname, seed, humanKeeper: true });
+  constructor(nickname: string, seed: number, visuals: boolean, looks: Pick<KickGameOptions, 'kickerLook' | 'keeperLook'> = {}) {
+    super(MODES.penalty, { visuals, nickname, seed, humanKeeper: true, ...looks });
   }
 
   protected pickSpot(): KickSpot {

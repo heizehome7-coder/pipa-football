@@ -12,6 +12,15 @@
  */
 
 const ID_RE = /^[A-Za-z0-9]{4,40}$/;
+const PLAYER_ID_RE = /^[a-z]{2,20}$/;
+
+/** UPDATE 4: a player's squad as ids only (clients share the same player database) */
+function cleanSquad(s) {
+  if (!s || typeof s !== 'object') return null;
+  const order = Array.isArray(s.penaltyOrder) ? s.penaltyOrder.filter((x) => typeof x === 'string' && PLAYER_ID_RE.test(x)).slice(0, 5) : [];
+  const gk = typeof s.goalkeeperId === 'string' && PLAYER_ID_RE.test(s.goalkeeperId) ? s.goalkeeperId : '';
+  return { penaltyOrder: order, goalkeeperId: gk };
+}
 
 /**
  * @param {{ send:(peer:string,msg:object)=>void, judge:any, now?:()=>number,
@@ -45,7 +54,7 @@ export function createMatchManager(o) {
       id: m.id,
       roomId: m.roomId,
       phase: m.phase,
-      players: m.players.map(({ peer, nickname, userId, ready, rematch, connected }) => ({ peer, nickname, userId, ready, rematch, connected })),
+      players: m.players.map(({ peer, nickname, userId, ready, rematch, connected, squad }) => ({ peer, nickname, userId, ready, rematch, connected, squad })),
       round: m.round,
       totalRounds,
       kicker: k ? k.peer : null,
@@ -196,6 +205,7 @@ export function createMatchManager(o) {
     if (typeof id !== 'string' || !ID_RE.test(id) || typeof msg.opponentPeer !== 'string') return send(peer, { t: 'match:error', code: 'bad_request' });
     const nickname = String(msg.nickname || 'PLAYER').slice(0, 20);
     const userId = String(msg.userId || '').slice(0, 64);
+    const squad = cleanSquad(msg.squad);
     let m = matches.get(id);
     if (!m) {
       const prev = byPeer.get(peer);
@@ -206,7 +216,7 @@ export function createMatchManager(o) {
       m = {
         id,
         roomId: `pipa_match_${id.toLowerCase()}`,
-        players: [{ peer, nickname, userId, ready: false, rematch: false, connected: true, score: 0, shots: 0 }],
+        players: [{ peer, nickname, userId, squad, ready: false, rematch: false, connected: true, score: 0, shots: 0 }],
         expect: msg.opponentPeer,
         phase: 'waiting',
         round: 0,
@@ -242,7 +252,7 @@ export function createMatchManager(o) {
     if (m.players.length !== 1 || m.phase !== 'waiting' || peer !== m.expect || msg.opponentPeer !== first.peer) {
       return send(peer, { t: 'match:error', code: 'not_allowed' });
     }
-    m.players.push({ peer, nickname, userId, ready: false, rematch: false, connected: true, score: 0, shots: 0 });
+    m.players.push({ peer, nickname, userId, squad, ready: false, rematch: false, connected: true, score: 0, shots: 0 });
     byPeer.set(peer, id);
     emit(m, 'match:state');
   }

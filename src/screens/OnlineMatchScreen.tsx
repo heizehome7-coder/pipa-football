@@ -5,6 +5,10 @@ import type { LobbyClient, MatchInfo } from '../online/LobbyClient';
 import { OnlineMatchClient, type MatchView } from '../online/match/OnlineMatchClient';
 import type { DiveDir, MatchState, WireResult } from '../online/match/protocol';
 import { MatchFoundScreen } from './MatchFoundScreen';
+import { NameBanner } from '../components/NameBanner';
+import { keeperLookOf, kickerLookOf } from '../players/looks';
+import { getPlayer } from '../players/players';
+import { sanitizeSquad, type Squad } from '../players/squad';
 
 const DIVE_TEXT: Record<DiveDir, string> = {
   left: '← 왼쪽 다이빙',
@@ -33,14 +37,16 @@ export function OnlineMatchScreen({
   lobby,
   channel,
   match,
+  squad,
   onLeave,
 }: {
   lobby: LobbyClient;
   channel: Channel;
   match: MatchInfo;
+  squad: Squad;
   onLeave: () => void;
 }) {
-  const client = useMemo(() => new OnlineMatchClient(channel, match), [channel, match.matchId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const client = useMemo(() => new OnlineMatchClient(channel, match, squad), [channel, match.matchId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     client.start();
     (window as unknown as { __PIPA_MATCH?: OnlineMatchClient }).__PIPA_MATCH = client;
@@ -125,6 +131,8 @@ function MatchPlay({ v, s, client, onLeave }: { v: MatchView; s: MatchState; cli
 
   const kickerNick = s.players.find((p) => p.peer === s.kicker)?.nickname ?? '';
   const role = v.role;
+  // UPDATE 4: each side uses its own squad — the kicker's next taker in order, the keeper's GK
+  const { kickerPlayer, keeperPlayer } = roundPlayers(s);
 
   // the 3D view lives for the whole match
   useEffect(() => {
@@ -154,10 +162,15 @@ function MatchPlay({ v, s, client, onLeave }: { v: MatchView; s: MatchState; cli
   const roundKey = `${s.startAt}:${s.round}`;
   useEffect(() => {
     if (!role) return;
-    viewRef.current?.setRound({ role, kickerNick, canShoot: false });
+    viewRef.current?.setRound({
+      role,
+      kickerNick,
+      canShoot: false,
+      looks: { kickerLook: kickerLookOf(kickerPlayer), keeperLook: keeperLookOf(keeperPlayer) },
+    });
     if (s.round > 1) setIntro({ round: s.round, until: Date.now() + 1500 });
     else setIntro(null);
-  }, [roundKey, role, kickerNick]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [roundKey, role, kickerNick, kickerPlayer?.id, keeperPlayer?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // kicker may draw only while the server says "aim" (and after kick-off)
   const kickOff = s.phase === 'aim' || s.phase === 'shot' || s.phase === 'result';
@@ -238,6 +251,15 @@ function MatchPlay({ v, s, client, onLeave }: { v: MatchView; s: MatchState; cli
         </div>
       )}
 
+      {(s.phase === 'aim' || s.phase === 'countdown') && (
+        <NameBanner
+          player={kickerPlayer}
+          show={kickerPlayer ? `${roundKey}:${kickerPlayer.id}` : ''}
+          label={s.kicker === v.myPeer ? 'YOUR KICKER' : 'KICKER'}
+          sub={keeperPlayer ? `GK · ${keeperPlayer.name.toUpperCase()}` : null}
+        />
+      )}
+
       {res && (
         <div className={`result result-${res.outcome.toLowerCase()} online-result ${myResult}`} data-testid="result" data-outcome={res.outcome}>
           <div className="result-word">{OUTCOME_WORD[res.outcome]}</div>
@@ -260,6 +282,17 @@ function MatchPlay({ v, s, client, onLeave }: { v: MatchView; s: MatchState; cli
       )}
     </div>
   );
+}
+
+/** which real players appear this round (ids from the server state, same DB on both phones) */
+function roundPlayers(s: MatchState) {
+  const kicker = s.players.find((p) => p.peer === s.kicker);
+  const keeper = s.players.find((p) => p.peer === s.keeper);
+  // kicker's n-th kick in this match → n-th taker in his order (wraps after 5)
+  const n = s.history.filter((h) => h.kicker === s.kicker && h.round < s.round).length;
+  const ks = sanitizeSquad(kicker?.squad ? { ...kicker.squad, freeKickTakerId: kicker.squad.penaltyOrder?.[0] } : null);
+  const gs = sanitizeSquad(keeper?.squad ? { ...keeper.squad, freeKickTakerId: keeper.squad.penaltyOrder?.[0] } : null);
+  return { kickerPlayer: getPlayer(ks.penaltyOrder[n % ks.penaltyOrder.length]), keeperPlayer: getPlayer(gs.goalkeeperId) };
 }
 
 function PlayerScore({ name, score, history, peer, you, testid }: { name: string; score: number; history: WireResult[]; peer: string; you?: boolean; testid: string }) {

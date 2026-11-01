@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { KeeperTuning } from '../core/config';
 import { clamp, easeOutCubic, gauss, lerp, smoothstep } from '../core/math';
-import { blendPose, Humanoid, type MarkerName, type Pose } from './Humanoid';
+import { blendPose, Humanoid, type Kit, type MarkerName, type Pose } from './Humanoid';
 
 export interface Collider {
   pos: THREE.Vector3;
@@ -147,8 +147,13 @@ export class Goalkeeper {
   private lateOnly = false;
   private adjusted = false;
 
-  constructor() {
-    this.body = new Humanoid(KEEPER_KIT);
+  /** UPDATE 4: a real keeper's looks (hair, beard, skin, name/number) — never his size */
+  constructor(look?: { shirt: string; number: string; skin: number; hair: number; hairStyle: Kit['hairStyle']; beard: Kit['beard'] }) {
+    this.body = new Humanoid(
+      look
+        ? { ...KEEPER_KIT, skin: look.skin, hair: look.hair, hairStyle: look.hairStyle, beard: look.beard, backName: look.shirt, backNumber: look.number }
+        : KEEPER_KIT,
+    );
     this.body.root.rotation.y = Math.PI; // faces the kicker (+z)
     this.colliders = MARKERS.map(([, r]) => ({ pos: new THREE.Vector3(), r }));
     this.reset();

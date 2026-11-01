@@ -11,6 +11,17 @@ import time
 
 from playwright.sync_api import sync_playwright
 
+sys.path.insert(0, os.path.dirname(__file__))
+from squad_seed import seed_script  # noqa: E402
+
+SQUADS = {
+    'HAZE': {'penaltyOrder': ['ronaldo', 'messi', 'son', 'mbappe', 'salah'], 'goalkeeperId': 'courtois', 'freeKickTakerId': 'messi'},
+    'FRIEND': {'penaltyOrder': ['haaland', 'kane', 'yamal', 'neymar', 'vinicius'], 'goalkeeperId': 'martinez', 'freeKickTakerId': 'kane'},
+}
+NAMES = {'ronaldo': 'CRISTIANO RONALDO', 'messi': 'LIONEL MESSI', 'son': 'SON HEUNG-MIN', 'mbappe': 'KYLIAN MBAPPÉ', 'salah': 'MOHAMED SALAH',
+         'haaland': 'ERLING HAALAND', 'kane': 'HARRY KANE', 'yamal': 'LAMINE YAMAL', 'neymar': 'NEYMAR JR.', 'vinicius': 'VINÍCIUS JÚNIOR',
+         'courtois': 'THIBAUT COURTOIS', 'martinez': 'EMILIANO MARTÍNEZ'}
+
 BASE = os.environ.get('PIPA_URL', 'http://localhost:8787/')
 OUT = sys.argv[1] if len(sys.argv) > 1 else 'match-shots'
 os.makedirs(OUT, exist_ok=True)
@@ -64,8 +75,16 @@ with sync_playwright() as p:
         if (el && window.__banners[window.__banners.length - 1] !== k) window.__banners.push(k);
       }).observe(document, { subtree: true, childList: true }); })()"""
 
+    NAMES_JS = """(() => { window.__names = []; new MutationObserver(() => {
+        const el = document.querySelector('[data-testid=name-banner]');
+        const t = el && el.innerText.replace(/\\s+/g, ' ').trim();
+        if (t && window.__names[window.__names.length - 1] !== t) window.__names.push(t);
+      }).observe(document, { subtree: true, childList: true }); })()"""
+
     def page(ctx, label):
         ctx.add_init_script(BANNER_JS)
+        ctx.add_init_script(NAMES_JS)
+        ctx.add_init_script(seed_script(SQUADS))
         pg = ctx.new_page()
         pg.on('pageerror', lambda e: errors.append(f'{label}: {e}'))
         return pg
@@ -233,6 +252,20 @@ with sync_playwright() as p:
     bb = B.evaluate('window.__banners')
     want = [f'{o}@{i}' for i, o in enumerate(outcomes, start=1)]
     check('8. both screens showed the same GOAL!/SAVE!/MISS! banner every round (= server result)', ba == want and bb == want, f'A {ba} · B {bb}')
+    # UPDATE 4: each side's own squad — the kicker's takers in order, the other side's GK
+    side_nick = {'A': 'HAZE', 'B': 'FRIEND'}
+    kicks = {'A': 0, 'B': 0}
+    want_names = []
+    for side in roles_seen:
+        sq = SQUADS[side_nick[side]]
+        other = SQUADS[side_nick['B' if side == 'A' else 'A']]
+        want_names.append((NAMES[sq['penaltyOrder'][kicks[side] % 5]], NAMES[other['goalkeeperId']]))
+        kicks[side] += 1
+    na = ' | '.join(A.evaluate('window.__names'))
+    nb = ' | '.join(B.evaluate('window.__names'))
+    missing = [k for k, g in want_names if k not in na or k not in nb]
+    check('UPDATE 4: every round shows the right kicker (each side’s own order) on both phones', not missing, missing or want_names[:4])
+    check('UPDATE 4: the defending side’s own GK is shown (COURTOIS / MARTÍNEZ)', 'GK · THIBAUT COURTOIS' in na and 'GK · EMILIANO MARTÍNEZ' in na)
     check('9. roles alternate every round (A,B,A,B…)', all(roles_seen[i] != roles_seen[i + 1] for i in range(len(roles_seen) - 1)) and len(roles_seen) == 10, ''.join(roles_seen))
     check('8. all 10 results identical on both screens', len(outcomes) == 10)
     check('6. each phone’s own replay matched the server’s result (deterministic sync)', synced_local >= 9, f'{synced_local}/{len(outcomes)} · A {la} · B {lb}')

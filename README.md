@@ -1,4 +1,4 @@
-# PIPA · FOOTBALL GAME  — UPDATE 3
+# PIPA · FOOTBALL GAME  — UPDATE 4
 
 > 버전 표시는 `src/version.ts`의 `GAME_VERSION` 하나로 관리 (다음 큰 업데이트 때 숫자만 올리기)
 
@@ -30,6 +30,18 @@ npm run build:single   # dist-single/ — index.html 한 파일 (어디서나 �
 - 동시 신청 → 먼저 만들어진 신청 하나로 합쳐짐, 끊긴 사용자는 목록·신청·매치에서 자동 정리
 - 매치 ID = 신청 ID, 매치 전용 방(`pipa-m-<id>`)에 두 사람이 입장 → 다음 단계 온라인 경기에 사용
 
+## 선수 & 스쿼드 (UPDATE 4) — `src/players/`
+
+- 선수 20명(필드 15 + GK 5) DB: `players.ts` — 이름·포지션·국가·등번호·외형. **능력치 없음** (UPDATE 5 예정, 모든 선수 같은 물리/조작)
+- 첫 로그인(이 기기에 스쿼드 없음) → **BUILD YOUR SQUAD**: 키커 5명 + GK 1명 → MY SQUAD(순서 ▲▼, ⭐ 프리킥 키커) → SAVE SQUAD
+- 홈: 혼자서 / 온라인 / **SQUAD** (언제든 변경) · 저장: 이 기기 `localStorage` (`pipa.squad.v1.<닉네임>`:
+  `penaltyOrder`, `selectedPlayers`, `goalkeeperId`, `freeKickTakerId`)
+- 혼자서 PENALTY → **SELECT KICKER**(내 5명 중 선택) / FREE KICK → 지정한 프리킥 키커 / 등장 시 이름 표시(약 1.7초)
+- 온라인: `match:join`에 스쿼드 id만 전송 → 서버가 state에 포함 → 각자 자기 순서대로 키커, 상대는 자기 GK
+- 카드: PIPA 전용 세로형 카드(SVG 일러스트 아바타·그린 국기) — 실사 사진/외부 이미지 사용 안 함
+- 3D: 헤어스타일·수염·피부톤·키/체형(키커만)·등번호/이름 — 외형만 바뀌고 충돌체·타이밍은 그대로
+  (GK 체형은 고정 → 선방 범위 동일, 온라인 판정 결정성 유지)
+
 ## 온라인 페널티킥 경기 (2단계)
 
 MATCH FOUND → **[준비하기]** (둘 다) → 3·2·1·KICK OFF → 10라운드(각자 5번) → MATCH RESULT
@@ -57,7 +69,8 @@ npm run sim                                   # 헤드리스 물리/판정 시�
 npm run build:single && python3 scripts/e2e.py  # 싱글플레이 모바일 E2E
 npm run test:lobby                            # 온라인 프로토콜 (여러 클라이언트, 가짜 시계)
 npm run online & python3 scripts/online-e2e.py  # 브라우저 3개 실시간 E2E (WebSocket 서버)
-npm run test:match                            # 서버 권한 경기 로직 (가짜 시계, 10라운드·판정·끊김)
+npm run test:match                            # 서버 권한 경기 로직 (가짜 시계, 10라운드·판정·끊김·스쿼드)
+npm run server & python3 scripts/squad-e2e.py # UPDATE 4 스쿼드 흐름 (카드·순서·저장·선수 등장)
 PIPA_SLOW_TEST=1 npm run server & python3 scripts/match-e2e.py  # 브라우저 2개로 온라인 경기 전체
 python3 scripts/artifact-room-e2e.py          # claude.ai room 어댑터 E2E (계약 스탠드인)
 ```

@@ -10,6 +10,7 @@ import { samplePlan, type ShotPlan } from './physics/ShotModel';
 import { TrajectoryOverlay, type Pt } from './render/Trajectory';
 import type { MatchSession } from './session/MatchSession';
 import { buildStadium } from './world/Stadium';
+import type { KickerLook } from './entities/Player';
 import { cameraServices, frameCamera } from './render/cameraFraming';
 
 export interface GameViewCallbacks {
@@ -56,6 +57,7 @@ export class GameView {
     mode: GameMode,
     private session: MatchSession,
     private cb: GameViewCallbacks,
+    looks: { kicker?: KickerLook } = {},
   ) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -71,7 +73,7 @@ export class GameView {
     host.appendChild(this.overlay.canvas);
 
     buildStadium(this.scene, mode);
-    const opts = { visuals: true, nickname: session.player.nickname, seed: session.nextSeed() };
+    const opts = { visuals: true, nickname: session.player.nickname, seed: session.nextSeed(), kickerLook: looks.kicker };
     this.game = mode === 'penalty' ? new PenaltyGame(opts) : new FreeKickGame(opts);
     this.scene.add(this.game.group);
     this.game.listener = {

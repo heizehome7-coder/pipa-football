@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { lerpAngle, smoothstep } from '../core/math';
-import { Humanoid, mirrorPose, sampleKeyframes, type Keyframe, type Pose } from './Humanoid';
+import { Humanoid, mirrorPose, sampleKeyframes, type Keyframe, type Kit, type Pose } from './Humanoid';
 
 export type KickStyle = 'penalty' | 'freekick';
 
@@ -91,6 +91,18 @@ export const KICKER_KIT = {
   printColor: '#c8ff3d',
 };
 
+/** UPDATE 4: how a real player looks on the pitch (cosmetic only) */
+export interface KickerLook {
+  shirt: string;
+  number: string;
+  skin: number;
+  hair: number;
+  hairStyle: Kit['hairStyle'];
+  beard: Kit['beard'];
+  height: number;
+  build: number;
+}
+
 const yawOf = (d: THREE.Vector3) => Math.atan2(-d.x, -d.z);
 
 /** The kicker. Runs up, plants, swings and fires `onContact` when the boot meets the ball. */
@@ -110,8 +122,15 @@ export class Kicker {
   private aimYaw = 0;
   private pose: Pose = {};
 
-  constructor(nickname: string) {
-    this.body = new Humanoid({ ...KICKER_KIT, backName: nickname, backNumber: '10' });
+  constructor(nickname: string, look?: KickerLook) {
+    this.body = new Humanoid({
+      ...KICKER_KIT,
+      backName: look?.shirt ?? nickname,
+      backNumber: look?.number ?? '10',
+      ...(look ? { skin: look.skin, hair: look.hair, hairStyle: look.hairStyle, beard: look.beard } : {}),
+    });
+    // UPDATE 4: height/build are cosmetic — the run-up and strike timing stay identical
+    if (look) this.body.root.scale.set(look.build, look.height, look.build);
   }
 
   /** seconds since the kick animation started (0 when idle) */

@@ -5,7 +5,7 @@ import type { Phase, ShotInput, ShotOutcome } from './core/types';
 import { Ball } from './entities/Ball';
 import { DefensiveWall } from './entities/DefensiveWall';
 import { Goalkeeper, type Collider } from './entities/Goalkeeper';
-import { Kicker, type KickStyle } from './entities/Player';
+import { Kicker, type KickerLook, type KickStyle } from './entities/Player';
 import { buildShotPlan, shotPositionAt, shotVelocityAt, type ShotPlan } from './physics/ShotModel';
 import { GoalFrame } from './world/Goal';
 
@@ -22,6 +22,9 @@ export interface KickGameOptions {
   seed: number;
   /** online PvP: the keeper is a person (no AI guess / late reach); dives come from setKeeperDive */
   humanKeeper?: boolean;
+  /** UPDATE 4: the chosen players' looks (cosmetic only — physics and timing are identical) */
+  kickerLook?: KickerLook;
+  keeperLook?: ConstructorParameters<typeof Goalkeeper>[0];
 }
 
 /** A person's dive: world target (x, y on the keeper's line) and when (s since the run-up started). */
@@ -94,8 +97,8 @@ export abstract class KickGame {
     this.rng = mulberry32(opts.seed);
     this.goal = new GoalFrame(opts.visuals);
     this.ball = new Ball(opts.visuals);
-    this.kicker = new Kicker(opts.nickname);
-    this.keeper = new Goalkeeper();
+    this.kicker = new Kicker(opts.nickname, opts.kickerLook);
+    this.keeper = new Goalkeeper(opts.keeperLook);
     this.wall = this.createWall();
     this.group.add(this.goal.group, this.ball.group, this.kicker.body.root, this.keeper.body.root);
     if (this.wall) this.group.add(this.wall.group);

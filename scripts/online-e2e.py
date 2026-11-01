@@ -9,6 +9,9 @@ import time
 
 from playwright.sync_api import sync_playwright
 
+sys.path.insert(0, os.path.dirname(__file__))
+from squad_seed import seed_script  # noqa: E402
+
 BASE = os.environ.get('PIPA_URL', 'http://localhost:8787/')
 OUT = sys.argv[1] if len(sys.argv) > 1 else 'online-shots'
 os.makedirs(OUT, exist_ok=True)
@@ -38,6 +41,8 @@ with sync_playwright() as p:
     A_ctx = browser.new_context(viewport={'width': 1280, 'height': 800})
     B_ctx = browser.new_context(viewport={'width': 390, 'height': 844}, is_mobile=True, has_touch=True, device_scale_factor=2)
     C_ctx = browser.new_context(viewport={'width': 390, 'height': 844}, is_mobile=True, has_touch=True)
+    for c in (A_ctx, B_ctx, C_ctx):
+        c.add_init_script(seed_script({'제작자': None, 'MINHO': None, 'JIN': None}))
     errors = []
 
     def page(ctx, label):
@@ -58,7 +63,7 @@ with sync_playwright() as p:
     A.screenshot(path=f'{OUT}/01_playtype.png')
     check('login → 혼자서 / 온라인 choice', A.is_visible('[data-testid=play-solo]') and A.is_visible('[data-testid=play-online]'))
     badge = A.locator('[data-testid=version-badge]').bounding_box()
-    check('UPDATE 3 badge top-right on the play-type screen', A.inner_text('[data-testid=version-badge]') == 'UPDATE 3' and badge['x'] > 390 * 0.5 and badge['y'] < 80, badge)
+    check('UPDATE badge top-right on the play-type screen', A.inner_text('[data-testid=version-badge]').startswith('UPDATE ') and badge['x'] > 390 * 0.5 and badge['y'] < 80, badge)
     A.click('[data-testid=play-online]')
     A.wait_for_selector('.lobby')
     login(B, 'MINHO')

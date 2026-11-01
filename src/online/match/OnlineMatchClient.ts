@@ -1,7 +1,7 @@
 import type { ShotInput } from '../../game/core/types';
 import type { Channel } from '../channel/Channel';
 import type { MatchInfo } from '../LobbyClient';
-import type { DiveDir, MatchState, ServerMessage, WireDive, WirePlayer } from './protocol';
+import type { DiveDir, MatchState, ServerMessage, WireDive, WirePlayer, WireSquad } from './protocol';
 
 export interface MatchView {
   /** 'unsupported' = this copy of the game has no match server (e.g. claude.ai page) */
@@ -42,6 +42,7 @@ export class OnlineMatchClient {
   constructor(
     private channel: Channel,
     private info: MatchInfo,
+    private squad: WireSquad | null = null,
   ) {
     this.view = {
       status: channel.match ? 'connecting' : 'unsupported',
@@ -123,7 +124,14 @@ export class OnlineMatchClient {
   }
 
   private join() {
-    this.send({ t: 'match:join', opponentPeer: this.info.opponent.peer, nickname: this.info.me.nickname, userId: this.info.me.userId });
+    this.send({
+      t: 'match:join',
+      opponentPeer: this.info.opponent.peer,
+      nickname: this.info.me.nickname,
+      userId: this.info.me.userId,
+      // UPDATE 4: only the ids of my penalty order + keeper
+      squad: this.squad ? { penaltyOrder: this.squad.penaltyOrder, goalkeeperId: this.squad.goalkeeperId } : null,
+    });
   }
 
   private ping() {

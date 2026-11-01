@@ -8,6 +8,9 @@ onPeers snapshots incl. sameTab, clear-on-leave), shared via BroadcastChannel.
 import os, sys, time
 from playwright.sync_api import sync_playwright
 
+sys.path.insert(0, os.path.dirname(__file__))
+from squad_seed import seed_script  # noqa: E402
+
 URL = 'file://' + os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'dist-single', 'index.html')
 FAKE = r"""
 (() => {
@@ -58,6 +61,7 @@ def wait(fn, t=10):
 with sync_playwright() as p:
     b = p.chromium.launch(executable_path='/usr/bin/google-chrome', args=['--use-angle=swiftshader', '--enable-unsafe-swiftshader'])
     ctx = b.new_context(viewport={'width': 390, 'height': 844}, is_mobile=True, has_touch=True)
+    ctx.add_init_script(seed_script({'제작자': None, 'MINHO': None}))
     ctx.add_init_script(FAKE)
     errs = []
     def login(nick):

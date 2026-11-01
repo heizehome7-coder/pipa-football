@@ -8,6 +8,7 @@ import { cameraServices, frameCamera } from './render/cameraFraming';
 import { TrajectoryOverlay, type Pt } from './render/Trajectory';
 import { buildStadium } from './world/Stadium';
 import { diveCommand, OnlinePenaltyGame } from '../online/match/penaltyRound';
+import type { KickGameOptions } from './KickGame';
 import type { DiveDir, WireDive, WireShot } from '../online/match/protocol';
 
 export type OnlineRole = 'kicker' | 'keeper';
@@ -68,6 +69,8 @@ export class OnlineGameView {
   private v = new THREE.Vector3();
   private v2 = new THREE.Vector3();
   private kickerNick = '';
+  /** UPDATE 4: this round's players (cosmetic) */
+  private looks: Pick<KickGameOptions, 'kickerLook' | 'keeperLook'> = {};
   private canShoot = false;
   /** shot being replayed: local Date.now() of run-up start */
   private shot: WireShot | null = null;
@@ -145,7 +148,7 @@ export class OnlineGameView {
 
   // ── round control (driven by server state) ────────────────────────────
   private makeGame(nick: string, seed: number) {
-    const g = new OnlinePenaltyGame(nick, seed, true);
+    const g = new OnlinePenaltyGame(nick, seed, true, this.looks ?? {});
     g.start();
     return g;
   }
@@ -157,7 +160,8 @@ export class OnlineGameView {
   }
 
   /** new round: fresh pitch, roles from the server */
-  setRound(r: { role: OnlineRole; kickerNick: string; canShoot: boolean }) {
+  setRound(r: { role: OnlineRole; kickerNick: string; canShoot: boolean; looks?: Pick<KickGameOptions, 'kickerLook' | 'keeperLook'> }) {
+    this.looks = r.looks ?? {};
     this.role = r.role;
     this.kickerNick = r.kickerNick;
     this.canShoot = r.canShoot;

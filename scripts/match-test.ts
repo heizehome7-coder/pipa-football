@@ -59,7 +59,7 @@ const id = 'cmatch123abc';
 const h = (peer: string, m: Record<string, unknown>) => mgr.handle(peer, { matchId: id, ...m });
 
 // 1. room id
-h(A, { t: 'match:join', opponentPeer: B, nickname: 'A', userId: 'ua' });
+h(A, { t: 'match:join', opponentPeer: B, nickname: 'A', userId: 'ua', squad: { penaltyOrder: ['ronaldo', 'messi', 'son', 'mbappe', 'salah'], goalkeeperId: 'courtois', junk: 'x'.repeat(5000) } });
 h(X, { t: 'match:join', opponentPeer: A, nickname: 'X', userId: 'ux' });
 check('a third person cannot enter the match', last(X, 'match:error')?.code === 'not_allowed' && !last(X));
 h(B, { t: 'match:join', opponentPeer: A, nickname: 'B', userId: 'ub' });
@@ -67,6 +67,9 @@ const sa = last(A)!.state!;
 const sb = last(B)!.state!;
 check('both players get the same server matchId / roomId', sa.id === sb.id && sa.roomId === sb.roomId && sa.roomId === `pipa_match_${id.toLowerCase()}`, sa.roomId);
 check('both players listed, phase waiting', sa.players.length === 2 && sa.phase === 'waiting');
+const sqA = sb.players.find((p) => p.peer === A)!.squad;
+check('UPDATE 4: squad ids relayed to the opponent (ids only, junk dropped)', JSON.stringify(sqA) === JSON.stringify({ penaltyOrder: ['ronaldo', 'messi', 'son', 'mbappe', 'salah'], goalkeeperId: 'courtois' }), JSON.stringify(sqA));
+check('UPDATE 4: a player without a squad still plays (null → default on the clients)', sb.players.find((p) => p.peer === B)!.squad === null);
 
 // 2–3. ready → server starts
 h(A, { t: 'match:ready', ready: true });
