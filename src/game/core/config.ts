@@ -62,6 +62,8 @@ export interface ModeConfig {
   curveMultiplier: number;
   /** highest a drawn lob may peak (m) */
   maxApex: number;
+  /** metres of extra peak height per screen-height the stroke rises above its end (loft) */
+  loftPerScreen: number;
   /** swipe speed (screen-heights / s) mapped to power 0 and 1 */
   swipeSpeedMin: number;
   swipeSpeedMax: number;
@@ -74,11 +76,12 @@ export const MODES: Record<GameMode, ModeConfig> = {
     id: 'penalty',
     label: 'PENALTY',
     labelKo: '페널티킥',
-    minSpeed: 13,
+    minSpeed: 17,
     maxSpeed: 31,
     drag: 0.35,
-    curveMultiplier: 0.55,
-    maxApex: 3.6,
+    curveMultiplier: 0.8,
+    maxApex: 3.0,
+    loftPerScreen: 9,
     swipeSpeedMin: 0.55,
     swipeSpeedMax: 3.0,
     keeper: {
@@ -110,11 +113,12 @@ export const MODES: Record<GameMode, ModeConfig> = {
     id: 'freekick',
     label: 'FREE KICK',
     labelKo: '프리킥',
-    minSpeed: 15,
-    maxSpeed: 31,
+    minSpeed: 19,
+    maxSpeed: 32,
     drag: 0.3,
     curveMultiplier: 1,
-    maxApex: 6,
+    maxApex: 4.6,
+    loftPerScreen: 14,
     swipeSpeedMin: 0.55,
     swipeSpeedMax: 3.0,
     keeper: {

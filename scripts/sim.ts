@@ -202,8 +202,75 @@ function physicsReport(pl: ReturnType<KickGame['planFor']>) {
   }
   const curl = readStroke(timed(strokeOf3D(F.svc, mk3(BF, new THREE.Vector3(-2.5, 1.5, 0), -2, 0.8, 0)), 200), F.ctx, F.game.cfg)!;
   const pen = readStroke(timed(strokeOf3D(P.svc, mk3(B0, new THREE.Vector3(-2.5, 1.5, 0), -2, 0.8, 0)), 200), P.ctx, P.game.cfg)!;
-  check('free kick bends clearly more than a penalty (curve multiplier)', Math.abs(F.game.planFor(curl.input).curve) > Math.abs(P.game.planFor(pen.input).curve) * 1.5,
+  check('free kick allows more spin than a penalty (curve multiplier)', Math.abs(F.game.planFor(curl.input).curve) > Math.abs(P.game.planFor(pen.input).curve) * 1.15,
     { fk: +F.game.planFor(curl.input).curve.toFixed(2), pen: +P.game.planFor(pen.input).curve.toFixed(2) });
+}
+
+// ── 1b. shot shapes: straight / curled / outside-foot, low & forward ─────────
+{
+  /** sideways bend at the goal vs. the straight launch line, descent angle, pace kept */
+  const shapeOf = (pl: ReturnType<KickGame['planFor']>) => {
+    const v0 = shotVelocityAt(pl, 0);
+    const v1 = shotVelocityAt(pl, pl.duration);
+    const tz = (pl.origin.z - pl.target.z) / -v0.z;
+    const defl = pl.target.x - (pl.origin.x + v0.x * tz);
+    const descent = Math.atan2(-v1.y, Math.hypot(v1.x, v1.z)) * (180 / Math.PI);
+    const r = physicsReport(pl);
+    return { defl: +defl.toFixed(2), apex: +pl.apex.toFixed(2), descent: Math.round(descent), keep: +(v1.length() / v0.length()).toFixed(2), turn: +r.turn.toFixed(1), flips: r.flips, end: [+pl.target.x.toFixed(2), +pl.target.y.toFixed(2)] };
+  };
+  const pen = (fx: number, fy: number, bend: number, dur = 220) =>
+    shapeOf(P.game.planFor(readStroke(timed(screenStroke(ballS, goalPt(fx, fy), bend), dur), P.ctx, P.game.cfg)!.input));
+  const low = pen(0.85, 0.15, 0, 150);
+  check('PEN low straight drive: low, fast, no curve', low.apex < 1.0 && Math.abs(low.defl) < 0.05 && low.keep > 0.8, low);
+  const cl = pen(0.25, 0.5, 45);
+  check('PEN curl to the left (instep): bends left ≥ 0.6 m, one way, not lifted', cl.defl < -0.6 && cl.flips === 0 && cl.apex < 1.8, cl);
+  const cr = pen(0.75, 0.5, -45);
+  check('PEN curl to the right (outside foot): bends right ≥ 0.6 m', cr.defl > 0.6 && cr.flips === 0 && cr.apex < 1.8, cr);
+  const weak = pen(0.3, 0.5, 16);
+  const strong = pen(0.3, 0.5, 70);
+  check('PEN weak vs strong curve: light bend < strong bend, strong still < 15° turn', Math.abs(weak.defl) > 0.2 && Math.abs(strong.defl) > Math.abs(weak.defl) * 1.8 && strong.turn < 15, { weak, strong });
+  const top = pen(0.92, 0.88, 0, 160);
+  check('PEN top-corner shot: arrives high but under the bar, no balloon', top.end[1] > 1.9 && top.end[1] < 2.4 && top.apex < 2.5, top);
+  // most ordinary penalty strokes stay inside goal height
+  let over = 0;
+  const rr = mulberry32(77);
+  for (let i = 0; i < 100; i++) {
+    const r = readStroke(timed(screenStroke(ballS, goalPt(0.05 + rr() * 0.9, 0.05 + rr() * 0.85), (rr() * 2 - 1) * 60), 120 + rr() * 380), P.ctx, P.game.cfg)!;
+    if (P.game.planFor(r.input).apex > 2.6) over++;
+  }
+  check('PEN strokes aimed inside the goal never balloon (apex > 2.6 m)', over === 0, `${over}/100`);
+
+  const F = setup(freekick, 5, 2);
+  const fl = F.svc.project(new THREE.Vector3(-FIELD.goalHalfWidth, 0, 0));
+  const fr = F.svc.project(new THREE.Vector3(FIELD.goalHalfWidth, 0, 0));
+  const ft = F.svc.project(new THREE.Vector3(0, FIELD.goalHeight, 0));
+  const fb = F.svc.project(F.game.ballPos);
+  const fgp = (fx: number, fy: number): Pt => ({ x: fl.x + (fr.x - fl.x) * fx, y: fl.y + (ft.y - fl.y) * fy });
+  const fk = (pts: Pt[], dur: number) => {
+    const g = setup(freekick, 5, 2).game;
+    const rd = readStroke(timed(pts, dur), F.ctx, g.cfg)!;
+    const sh = shapeOf(g.planFor(rd.input));
+    g.shoot(rd.input);
+    for (let k = 0; k < 900 && !g.outcome; k++) g.update(1 / 120);
+    return { ...sh, outcome: g.outcome, profile: rd.intent.profile };
+  };
+  const arch = (fx: number, fy: number, up: number) => {
+    const e = fgp(fx, fy);
+    return Array.from({ length: 41 }, (_, i) => {
+      const t = i / 40;
+      return { x: fb.x + (e.x - fb.x) * t, y: fb.y + (e.y - fb.y) * t - up * 4 * t * (1 - t) };
+    });
+  };
+  const ow = fk(arch(0.3, 0.78, 60), 240);
+  check('FK straight over the wall: no spin, clears the wall, comes down moving forward (descent < 35°)', ow.profile === 'STRAIGHT' && ow.outcome !== 'BLOCKED' && ow.descent < 35 && ow.keep > 0.6, ow);
+  const aw = fk(screenStroke(fb, fgp(0.85, 0.5), 70), 220);
+  check('FK curl round the wall side: visible curl (≥ 2 m), not lifted', aw.profile === 'CURLED' && Math.abs(aw.defl) > 2 && aw.apex < 3.5, aw);
+  const si = fk(screenStroke(fb, fgp(0.15, 0.6), 110), 220);
+  check('FK strong instep curl: strong (≥ 3.5 m) but smooth, one way, < 35° turn', Math.abs(si.defl) > 3.5 && si.turn < 35 && si.flips === 0, si);
+  const of = fk(screenStroke(fb, fgp(0.85, 0.5), -90), 220);
+  check('FK outside-foot curl: bends the other way (right), smooth', of.profile === 'OUTSIDE_FOOT' && of.defl > 2 && of.flips === 0 && of.turn < 35, of);
+  const slow = fk(arch(0.3, 0.78, 60), 420);
+  check('FK slow stroke: still a forward flight (no vertical drop, keeps ≥ 55% pace)', slow.descent < 35 && slow.keep > 0.55 && slow.apex < 4.7, slow);
 }
 
 // ── 2. power, loft, preview = flight ───────────────────────────────────────
@@ -236,19 +303,19 @@ function physicsReport(pl: ReturnType<KickGame['planFor']>) {
     !readStroke(timed(screenStroke(ballS, { x: ballS.x, y: ballS.y + 80 }), 80), P.ctx, P.game.cfg));
   const left = P.game.planFor(readStroke(timed(screenStroke(ballS, goalPt(0.5, 0.5), -70), 200), P.ctx, P.game.cfg)!.input);
   const right = P.game.planFor(readStroke(timed(screenStroke(ballS, goalPt(0.5, 0.5), 70), 200), P.ctx, P.game.cfg)!.input);
-  check('stroke bowing left/right → gentle curl that way (penalty: small)', left.curve < 0 && right.curve > 0 && Math.abs(left.curve) <= 0.56 && Math.abs(right.curve) <= 0.56,
+  check('stroke bowing left/right → curl that way (outside foot / instep)', left.curve < 0 && right.curve > 0 && Math.abs(left.curve) >= 0.3 && Math.abs(right.curve) >= 0.3,
     { left: +left.curve.toFixed(2), right: +right.curve.toFixed(2) });
 
   // posts: a shot straight at the post bounces off it
   const sp = setup(penalty, 11);
   const W = FIELD.goalHalfWidth;
-  const atPost = calculateShotParameters(sp.game.ballPos, { target: new THREE.Vector3(W, 1.0, 0), bow: 0, apex: 1, power: 0.7 }, sp.game.cfg);
+  const atPost = calculateShotParameters(sp.game.ballPos, { target: new THREE.Vector3(W, 1.0, 0), spin: 0, profile: 'STRAIGHT', curveLevel: 0, apex: null, power: 0.7 }, sp.game.cfg);
   const fl = flight(sp.game, atPost);
   for (let i = 0; i < 120; i++) sp.game.update(STEP_SIM);
   const vz = sp.game.ballVel.z;
   check('ball hitting the post rebounds (velocity turned back, 골대 result)', /골대/.test(sp.game.detail) && fl.pos.length > 0 && (vz > 0 || /골!/.test(sp.game.detail)), `${sp.game.outcome} · ${sp.game.detail} · vz ${vz.toFixed(1)}`);
   const sb = setup(penalty, 12);
-  const atBar = calculateShotParameters(sb.game.ballPos, { target: new THREE.Vector3(3.15, FIELD.goalHeight + 0.03, 0), bow: 0, apex: 2.5, power: 0.85 }, sb.game.cfg);
+  const atBar = calculateShotParameters(sb.game.ballPos, { target: new THREE.Vector3(3.15, FIELD.goalHeight + 0.03, 0), spin: 0, profile: 'STRAIGHT', curveLevel: 0, apex: null, power: 0.85 }, sb.game.cfg);
   flight(sb.game, atBar);
   check('ball hitting the crossbar is deflected (크로스바 result)', /크로스바/.test(sb.game.detail), `${sb.game.outcome} · ${sb.game.detail}`);
 }

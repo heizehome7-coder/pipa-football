@@ -121,6 +121,8 @@ export class Kicker {
   private approachYaw = 0;
   private aimYaw = 0;
   private pose: Pose = {};
+  /** how the boot meets the ball (matches the shot's spin) */
+  private strike: 'drive' | 'instep' | 'outside' = 'drive';
 
   constructor(nickname: string, look?: KickerLook) {
     this.body = new Humanoid({
@@ -161,9 +163,15 @@ export class Kicker {
     this.time = 0;
     this.fired = false;
     this.onContact = null;
+    this.strike = 'drive';
     this.body.root.position.copy(this.start);
     this.body.root.rotation.set(0, this.approachYaw, 0);
     this.body.applyPose(STANCE);
+  }
+
+  /** instep curl (toes out, wraps round the ball) vs outside of the boot (toes turned in) */
+  setStrike(s: 'drive' | 'instep' | 'outside') {
+    this.strike = s;
   }
 
   kick(ball: THREE.Vector3, aim: THREE.Vector3, onContact: () => void) {
@@ -185,6 +193,16 @@ export class Kicker {
     }
     this.time += dt;
     const root = sampleKeyframes(this.kfs, this.time, this.pose);
+    if (this.strike !== 'drive') {
+      // swing window around contact: rotate the striking foot (and a touch of hip)
+      const ct = this.contactTime;
+      const w = smoothstep((this.time - (ct - 0.28)) / 0.18) * (1 - smoothstep((this.time - (ct + 0.12)) / 0.25));
+      const dir = this.strike === 'outside' ? 1 : -1;
+      const a = this.pose.rAnkle ?? [0, 0, 0];
+      const h = this.pose.rHip ?? [0, 0, 0];
+      this.pose.rAnkle = [a[0], a[1] + dir * 0.75 * w, a[2] + dir * 0.35 * w];
+      this.pose.rHip = [h[0], h[1] + dir * 0.32 * w, h[2]];
+    }
     this.body.applyPose(this.pose);
 
     const p = this.body.root.position;

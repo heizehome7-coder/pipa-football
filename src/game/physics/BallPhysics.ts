@@ -26,13 +26,13 @@ export const BALL = {
   g: FIELD.gravity,
   /** fixed physics step */
   dt: 1 / 480,
-  /** quadratic drag k (1/m): a = −k·|v|·v  (ρ·Cd·A / 2m for a size-5 ball ≈ 0.011) */
-  drag: 0.0105,
+  /** quadratic drag k (1/m): a = −k·|v|·v — light, so the ball keeps its pace to the goal */
+  drag: 0.0085,
   /** side-spin decay per step (≈ e^(−0.5/s)) */
   spinDecay: 0.99896,
   /** largest side-spin parameter (1/s) and Magnus acceleration (m/s²) at curve multiplier 1 */
-  spinMax: 0.32,
-  magnusMax: 9,
+  spinMax: 0.5,
+  magnusMax: 10,
   /** ground contact */
   bounce: 0.5,
   bounceFriction: 0.85,
@@ -40,16 +40,36 @@ export const BALL = {
   maxSpeed: 40,
 } as const;
 
-/** What the player meant, read from the drawn stroke. */
+export type ShotProfile = 'STRAIGHT' | 'CURLED' | 'OUTSIDE_FOOT';
+
+/** What the player meant, read from the drawn stroke (curve and loft are separate). */
 export interface ShotIntent {
   /** where the stroke ends on the goal plane (z = 0) */
   target: THREE.Vector3;
-  /** dominant sideways bow of the stroke from its chord, metres (+ = to the right of travel) */
-  bow: number;
-  /** highest point of the drawn path (m) */
-  apex: number;
+  /** side spin (1/s): + curls left (right-foot instep), − curls right (outside of the right foot) */
+  spin: number;
+  profile: ShotProfile;
+  /** 0 straight · 1 light · 2 medium · 3 strong */
+  curveLevel: number;
+  /** drawn peak height for a lofted shot, or null for a driven shot */
+  apex: number | null;
   /** 0..1 from drawing speed */
   power: number;
+}
+
+/**
+ * Stroke bend (dominant bow ÷ chord, + = bulges right) → shot profile + side spin.
+ * Three strengths so a light bend stays nearly straight and a big one really curls;
+ * the kicker is right-footed: bulging right = curls back left = instep (CURLED),
+ * bulging left = curls right = outside of the foot (OUTSIDE_FOOT).
+ */
+export function shotProfile(bend: number, cfg: ModeConfig): { profile: ShotProfile; spin: number; level: number } {
+  const a = Math.abs(bend);
+  const level = a < 0.04 ? 0 : a < 0.09 ? 1 : a < 0.15 ? 2 : 3;
+  if (!level) return { profile: 'STRAIGHT', spin: 0, level };
+  const frac = [0, 0.35, 0.65, 0.9][level];
+  const spin = Math.sign(bend) * frac * curveLimits(cfg).spinMax;
+  return { profile: bend > 0 ? 'CURLED' : 'OUTSIDE_FOOT', spin: Math.round(spin * 10000) / 10000, level };
 }
 
 export interface Trajectory {
@@ -256,12 +276,12 @@ const round = (v: number) => Math.round(v * 10000) / 10000;
 
 /**
  * Turns the drawn intent into a launch a real ball could have:
- *  - one side spin from the stroke's main bend (an S stroke still gives one curve),
- *    clamped per mode (penalty bends much less than a free kick)
- *  - drawn arc higher than a driven shot would fly → a lofted shot / lob:
- *    the launch that peaks at the drawn height (capped) and drops at the target
- *  - otherwise a driven shot at the drawn speed, aimed so that — curve, gravity and
- *    drag included — it arrives where the stroke ended
+ *  - side spin comes straight from the stroke's curve (already chosen, per mode)
+ *  - driven (default): speed from the drawing speed, aimed so that — spin, gravity and
+ *    drag included — it arrives where the stroke ended; low/mid by default
+ *  - lofted (only when the stroke rises above its end): peaks at the drawn height
+ *    (capped per mode) and still travels forward as it drops; drawing it fast keeps
+ *    it a driven, dipping shot
  */
 export function calculateShotParameters(ball: THREE.Vector3, intent: ShotIntent, cfg: ModeConfig): ShotInput {
   const B = ball.clone();
@@ -274,56 +294,48 @@ export function calculateShotParameters(ball: THREE.Vector3, intent: ShotIntent,
   const speed = lerp(cfg.minSpeed, cfg.maxSpeed, power);
   const psi0 = Math.atan2(dx, -dz);
   const g = BALL.g;
-
-  // first guess of the flight time (no spin) → spin needed for the drawn bow
-  const theta0 = Math.atan2(T.y - B.y + (g * dist * dist) / (2 * speed * speed), dist);
-  const first = crossing(B, launch(psi0, theta0, speed), 0, cfg);
-  const tf = Math.max(0.25, first.t);
-  // a constant sideways pull a bows the path from its chord by a·t²/8; a = s·v
-  let spin = clamp((8 * intent.bow) / (tf * tf * Math.max(8, speed * Math.cos(theta0))), -lim.spinMax, lim.spinMax);
+  const spin = clamp(intent.spin, -lim.spinMax, lim.spinMax);
 
   // driven shot: aim (yaw, pitch) at the drawn end point
+  const theta0 = Math.atan2(T.y - B.y + (g * dist * dist) / (2 * speed * speed), dist);
   const drive = newton(
     [psi0, theta0],
     (u) => {
       const c = crossing(B, launch(u[0], u[1], speed), spin, cfg);
       return [c.x - T.x, c.y - T.y];
     },
-    [psi0 - 0.6, -0.08],
-    [psi0 + 0.6, 0.8],
+    [psi0 - 0.7, -0.08],
+    [psi0 + 0.7, 0.6],
     10,
   );
   let v = launch(drive.u[0], drive.u[1], speed);
   const driven = crossing(B, v, spin, cfg);
 
-  // lofted: the drawn arc peaks clearly above what the driven shot does.
-  // Drawing speed still counts: a fast arched stroke stays a driven, dipping shot;
-  // a slow one floats up to the drawn height (a high, slow ball needs less speed).
-  const drawnApex = Math.min(intent.apex, lim.maxApex);
-  const wantApex = driven.apex + (drawnApex - driven.apex) * (1 - 0.8 * power);
-  if (wantApex > Math.max(driven.apex, T.y) + 0.35 && wantApex > B.y + 0.9) {
-    const vy0 = Math.sqrt(2 * g * (wantApex - B.y));
-    const tUp = vy0 / g;
-    const tDn = Math.sqrt((2 * Math.max(0.05, wantApex - T.y)) / g);
-    const vh0 = dist / (tUp + tDn);
-    // the slower, higher shot hangs longer → same drawn bow needs less spin
-    const tl = tUp + tDn;
-    spin = clamp((8 * intent.bow) / (tl * tl * Math.max(8, vh0)), -lim.spinMax, lim.spinMax);
-    const vel = (u: number[]): [number, number, number] => [Math.sin(u[0]) * u[1], u[2], -Math.cos(u[0]) * u[1]];
-    const lob = newton(
-      [psi0, vh0 * 1.08, vy0 * 1.03],
-      (u) => {
-        const c = crossing(B, vel(u), spin, cfg);
-        return [c.x - T.x, c.y - T.y, (c.apex - wantApex) * 0.7];
-      },
-      [psi0 - 0.6, 4, 1],
-      [psi0 + 0.6, BALL.maxSpeed, 16],
-      12,
-    );
-    v = vel(lob.u);
-    const sp = Math.hypot(v[0], v[1], v[2]);
-    if (sp > cfg.maxSpeed) v = v.map((c) => (c * cfg.maxSpeed) / sp) as [number, number, number];
+  if (intent.apex !== null) {
+    // lofted: peak at the drawn height (capped). Drawing fast keeps it closer to a
+    // driven, dipping shot; drawing slowly floats it up to the drawn height.
+    const drawnApex = Math.min(intent.apex, lim.maxApex);
+    const wantApex = driven.apex + (drawnApex - driven.apex) * (1 - 0.7 * power);
+    if (wantApex > Math.max(driven.apex, T.y) + 0.3) {
+      const vy0 = Math.sqrt(2 * g * (wantApex - B.y));
+      const tUp = vy0 / g;
+      const tDn = Math.sqrt((2 * Math.max(0.05, wantApex - T.y)) / g);
+      const vh0 = Math.max(dist / (tUp + tDn), cfg.minSpeed * 0.8); // keeps real forward pace
+      const vel = (u: number[]): [number, number, number] => [Math.sin(u[0]) * u[1], u[2], -Math.cos(u[0]) * u[1]];
+      const lob = newton(
+        [psi0, vh0, vy0],
+        (u) => {
+          const c = crossing(B, vel(u), spin, cfg);
+          return [c.x - T.x, c.y - T.y, (c.apex - wantApex) * 0.7];
+        },
+        [psi0 - 0.7, cfg.minSpeed * 0.75, 1],
+        [psi0 + 0.7, BALL.maxSpeed, 14],
+        12,
+      );
+      v = vel(lob.u);
+    }
   }
+  const sp = Math.hypot(v[0], v[1], v[2]);
+  if (sp > cfg.maxSpeed) v = v.map((c) => (c * cfg.maxSpeed) / sp) as [number, number, number];
   return { v: [round(v[0]), round(v[1]), round(v[2])], spin: round(spin), power: round(power) };
 }
-

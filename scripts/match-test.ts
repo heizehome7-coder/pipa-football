@@ -50,7 +50,7 @@ function check(name: string, ok: boolean, info = '') {
 // a kicker's shot = the launch the shared physics solver computes from the drawn intent
 const SPOT = new THREE.Vector3(0, FIELD.ballRadius, FIELD.penaltySpot);
 const shotTo = (x: number, y: number, power = 0.7) =>
-  calculateShotParameters(SPOT, { target: new THREE.Vector3(x, y, 0), bow: 0, apex: y, power }, MODES.penalty);
+  calculateShotParameters(SPOT, { target: new THREE.Vector3(x, y, 0), spin: 0, profile: 'STRAIGHT', curveLevel: 0, apex: null, power }, MODES.penalty);
 
 const A = 'peerA';
 const B = 'peerB';

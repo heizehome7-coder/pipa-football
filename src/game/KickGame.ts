@@ -149,6 +149,8 @@ export abstract class KickGame {
     this.lastInput = input;
     this.plan = this.planFor(input);
     const aim = new THREE.Vector3(this.plan.forward.x, 0, this.plan.forward.z);
+    // the foot matches the spin: instep curl (+), outside of the boot (−), driven (0)
+    this.kicker.setStrike(this.plan.spin > 0.01 ? 'instep' : this.plan.spin < -0.01 ? 'outside' : 'drive');
     this.kicker.kick(this.spot.ball, aim, () => this.launch());
     // keeper gets set as the run-up starts; penalty keepers commit a hair before contact
     this.keeper.prepare(this.cfg.keeper, this.rng);
