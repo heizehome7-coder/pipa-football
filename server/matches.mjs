@@ -146,7 +146,7 @@ export function createMatchManager(o) {
       m.timers = m.timers.filter((x) => x !== m.judgeTimer);
       m.judgeTimer = null;
       if (matches.get(m.id) !== m || m.phase !== 'shot' || m.round !== round) return;
-      const sim = judge.simulateRound(m.shot.seed, m.shot.input, m.dive);
+      const sim = judge.simulateRound(m.shot.seed, m.shot.input, m.dive, keeperOf(m).squad?.goalkeeperId ?? null);
       log(`[${m.id}] round ${round}: ${sim.outcome} (${sim.detail})${m.dive ? ` dive ${m.dive.dir}@${m.dive.at.toFixed(2)}` : ' no dive'}`);
       finishRound(m, sim.outcome, sim.detail);
     }, Math.max(0, at - now()));
@@ -315,12 +315,16 @@ export function createMatchManager(o) {
       const seed = judge.roundSeed(m.id, m.round);
       let sim;
       try {
-        sim = judge.simulateRound(seed, msg.shot, null);
+        sim = judge.simulateRound(seed, msg.shot, null, keeperOf(m).squad?.goalkeeperId ?? null);
       } catch {
         send(peer, { t: 'match:error', code: 'bad_shot' });
         return true;
       }
       const input = { v: msg.shot.v.slice(0, 3), spin: msg.shot.spin, power: msg.shot.power };
+      if (msg.shot.knuckle > 0) {
+        input.knuckle = msg.shot.knuckle;
+        input.kseed = msg.shot.kseed >>> 0;
+      }
       m.shot = { round: m.round, input, runStart: now() + R.shotLeadMs, seed };
       m.flightMs = Math.round(sim.decidedAt * 1000);
       m.phase = 'shot';

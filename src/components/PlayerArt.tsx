@@ -1,5 +1,5 @@
 import type { CountryCode, PlayerDef } from '../players/players';
-import { accentHue, COUNTRY_NAME } from '../players/players';
+import { accentHue, COUNTRY_NAME, FIELD_STAT_LABELS, GK_STAT_LABELS, ovr, SPECIALS } from '../players/players';
 
 const hex = (n: number) => `#${n.toString(16).padStart(6, '0')}`;
 
@@ -210,6 +210,34 @@ export function PlayerAvatar({ player, size = 110 }: { player: PlayerDef; size?:
   );
 }
 
+/** UPDATE 5: all seven abilities + the special, for the detail view */
+export function StatSheet({ player }: { player: PlayerDef }) {
+  const rows: [string, number][] = player.stats
+    ? FIELD_STAT_LABELS.map(([k, l]) => [l, player.stats![k]])
+    : player.gk
+      ? GK_STAT_LABELS.map(([k, l]) => [l, player.gk![k]])
+      : [];
+  const sp = SPECIALS[player.special];
+  return (
+    <div className="stat-sheet" data-testid="stat-sheet">
+      {rows.map(([l, v]) => (
+        <div key={l} className="stat-row">
+          <span>{l}</span>
+          <i>
+            <s style={{ width: `${Math.max(0, (v - 60) / 39) * 100}%` }} className={v >= 95 ? 'elite' : ''} />
+          </i>
+          <b>{v}</b>
+        </div>
+      ))}
+      <div className="special" data-testid="special">
+        <em>SPECIAL ABILITY</em>
+        <b>{sp.name}</b>
+        <span>{sp.desc}</span>
+      </div>
+    </div>
+  );
+}
+
 export function PlayerCard({
   player,
   selected,
@@ -238,8 +266,14 @@ export function PlayerCard({
     >
       <button className="pcard-hit" onClick={onToggle} aria-pressed={selected} aria-label={`${player.name} ${selected ? '선택 해제' : '선택'}`} />
       <div className="pcard-top">
-        <span className="pcard-num">{player.number}</span>
-        <Flag code={player.country} size={14} />
+        <span className="pcard-ovr" data-testid="card-ovr">
+          <b>{ovr(player)}</b>
+          <em>OVR</em>
+        </span>
+        <span className="pcard-topr">
+          <Flag code={player.country} size={14} />
+          <span className="pcard-num">#{player.number}</span>
+        </span>
       </div>
       {order !== undefined && <span className="pcard-order">{order}</span>}
       {freeKick && <span className="pcard-fk">⭐ FREE KICK</span>}
@@ -253,6 +287,19 @@ export function PlayerCard({
       <div className="pcard-meta">
         <span className="pcard-pos">{player.positions.join(' / ')}</span>
         <span className="pcard-country">{COUNTRY_NAME[player.country]}</span>
+      </div>
+      <div className="pcard-stats">
+        {(player.stats
+          ? ([['PWR', player.stats.power], ['ACC', player.stats.accuracy], ['CUR', player.stats.curve]] as const)
+          : player.gk
+            ? ([['REF', player.gk.reflex], ['DIV', player.gk.diving], ['RCH', player.gk.reach]] as const)
+            : []
+        ).map(([k, v]) => (
+          <span key={k}>
+            <em>{k}</em>
+            <b>{v}</b>
+          </span>
+        ))}
       </div>
       <div className="pcard-state">{selected ? '✓ SELECTED' : 'SELECT'}</div>
       {onInfo && (

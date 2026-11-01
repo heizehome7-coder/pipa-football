@@ -68,19 +68,30 @@ function mat(color: number) {
   return m;
 }
 
+/**
+ * Shirt back: name + number on a 256² texture (UPDATE 5: name ~45 % larger and crisp;
+ * long names are squeezed to fit the shoulders, never cut or mirrored).
+ */
 function backTexture(k: Kit) {
-  return canvasTexture(128, 128, (ctx, w) => {
+  return canvasTexture(256, 256, (ctx, w) => {
     ctx.clearRect(0, 0, w, w);
     ctx.fillStyle = k.printColor ?? '#ffffff';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     if (k.backName) {
-      ctx.font = '700 19px "Barlow Condensed", "Arial Narrow", Arial, sans-serif';
-      ctx.fillText(k.backName.toUpperCase().slice(0, 12), w / 2, 20);
+      const name = k.backName.toUpperCase().slice(0, 14);
+      ctx.font = '800 56px "Barlow Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif';
+      const tw = ctx.measureText(name).width;
+      const maxW = w * 0.94;
+      ctx.save();
+      ctx.translate(w / 2, 40);
+      if (tw > maxW) ctx.scale(maxW / tw, 1);
+      ctx.fillText(name, 0, 0);
+      ctx.restore();
     }
     if (k.backNumber) {
-      ctx.font = '800 78px "Barlow Condensed", Arial, sans-serif';
-      ctx.fillText(k.backNumber, w / 2, 80);
+      ctx.font = '800 150px "Barlow Condensed", "Arial Narrow", Arial, sans-serif';
+      ctx.fillText(k.backNumber, w / 2, 168);
     }
   });
 }
@@ -138,7 +149,7 @@ export class Humanoid {
       const tex = backTexture(k);
       if (tex) {
         const plane = new THREE.Mesh(
-          geo('backPlane', () => new THREE.PlaneGeometry(0.24, 0.26)),
+          geo('backPlane', () => new THREE.PlaneGeometry(0.27, 0.28)),
           new THREE.MeshLambertMaterial({ map: tex, transparent: true, depthWrite: false }),
         );
         plane.position.set(0, 0.25, 0.124);

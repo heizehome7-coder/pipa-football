@@ -5,6 +5,7 @@ import { KickGame, type KeeperDiveCommand, type KickGameOptions, type KickSpot }
 import type { DiveDir, RoundOutcome, WireDive } from './protocol';
 import { DIVE_DIRS } from './protocol';
 import { BALL } from '../../game/physics/BallPhysics';
+import { getPlayer } from '../../players/players';
 
 /**
  * One online penalty: same pitch, kicker, ball physics and drawn-path flight as the
@@ -12,7 +13,7 @@ import { BALL } from '../../game/physics/BallPhysics';
  * (both players) and on the server (the authoritative judge).
  */
 export class OnlinePenaltyGame extends KickGame {
-  constructor(nickname: string, seed: number, visuals: boolean, looks: Pick<KickGameOptions, 'kickerLook' | 'keeperLook'> = {}) {
+  constructor(nickname: string, seed: number, visuals: boolean, looks: Pick<KickGameOptions, 'kickerLook' | 'keeperLook' | 'keeperStats'> = {}) {
     super(MODES.penalty, { visuals, nickname, seed, humanKeeper: true, ...looks });
   }
 
@@ -57,7 +58,9 @@ export function validShot(v: unknown): v is ShotInput {
   const s = v as ShotInput;
   const num = (n: unknown) => typeof n === 'number' && Number.isFinite(n);
   if (!num(s.power) || !(s.power >= 0 && s.power <= 1)) return false;
-  if (!num(s.spin) || Math.abs(s.spin) > BALL.spinMax + 1e-6) return false;
+  if (!num(s.spin) || Math.abs(s.spin) > BALL.spinLimit + 1e-6) return false;
+  if (s.knuckle !== undefined && (!num(s.knuckle) || s.knuckle < 0 || s.knuckle > 1)) return false;
+  if (s.kseed !== undefined && (!Number.isInteger(s.kseed) || s.kseed < 0 || s.kseed > 0xffffffff)) return false;
   if (!Array.isArray(s.v) || s.v.length !== 3 || !s.v.every(num)) return false;
   const sp = Math.hypot(s.v[0], s.v[1], s.v[2]);
   // a real strike: towards the goal, no faster than the game allows
@@ -79,8 +82,14 @@ const STEP = 1 / 120;
  * Plays one penalty headlessly with the given shot and (optional) dive and returns
  * the result — the server's authoritative judge, and the clients' prediction.
  */
-export function simulateRound(seed: number, shot: ShotInput, dive: WireDive | { dir: DiveDir; at: number } | null): RoundSimulation {
-  const g = new OnlinePenaltyGame('KICKER', seed, false);
+export function simulateRound(
+  seed: number,
+  shot: ShotInput,
+  dive: WireDive | { dir: DiveDir; at: number } | null,
+  /** UPDATE 5: the defending player's goalkeeper (his DIVING/REACH apply; never a direction) */
+  keeperId?: string | null,
+): RoundSimulation {
+  const g = new OnlinePenaltyGame('KICKER', seed, false, { keeperStats: getPlayer(keeperId)?.gk });
   g.start();
   if (!g.shoot(shot)) throw new Error('shot rejected');
   if (dive) g.setKeeperDive(diveCommand(dive));

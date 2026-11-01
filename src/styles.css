@@ -1906,3 +1906,207 @@ input {
 .squad.arrange {
   overflow-y: auto;
 }
+
+/* ── UPDATE 5: abilities on cards ─────────────────────── */
+.pcard-ovr {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 0.85;
+}
+.pcard-ovr b {
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 900;
+  font-size: 26px;
+  color: var(--lime);
+  text-shadow: 0 0 10px rgba(200, 255, 61, 0.35);
+}
+.pcard.gk .pcard-ovr b {
+  color: var(--orange);
+  text-shadow: none;
+}
+.pcard-ovr em {
+  font-style: normal;
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 8.5px;
+  letter-spacing: 0.18em;
+  color: var(--muted);
+}
+.pcard-topr {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+}
+.pcard-topr .pcard-num {
+  font-size: 13px;
+  text-shadow: none;
+  color: #dbe7df;
+}
+.pcard-stats {
+  display: flex;
+  gap: 4px;
+  margin-top: 5px;
+}
+.pcard-stats span {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 30px;
+  padding: 2px 3px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  line-height: 1;
+}
+.pcard-stats em {
+  font-style: normal;
+  font-size: 7.5px;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+.pcard-stats b {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 13px;
+  color: #fff;
+}
+.pcard-state {
+  margin-top: 5px;
+}
+.detail-card {
+  width: min(340px, 100%);
+  padding: 16px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #0f2a21, #07130f);
+  border: 1px solid rgba(200, 255, 61, 0.3);
+}
+.detail-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.detail-ava {
+  flex: 0 0 64px;
+  height: 72px;
+  overflow: hidden;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+}
+.detail-ava .avatar {
+  width: 64px;
+  height: auto;
+}
+.detail-head .detail-text {
+  flex: 1;
+  min-width: 0;
+  align-items: flex-start;
+}
+.detail-ovr {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 0.85;
+}
+.detail-ovr b {
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 900;
+  font-size: 40px;
+  color: var(--lime);
+}
+.detail-ovr em {
+  font-style: normal;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  color: var(--muted);
+}
+.stat-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.stat-row {
+  display: grid;
+  grid-template-columns: 92px 1fr 28px;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.stat-row span {
+  font-family: var(--display);
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: #cfe0d5;
+}
+.stat-row i {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+.stat-row s {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: #8fb83a;
+}
+.stat-row s.elite {
+  background: var(--lime);
+  box-shadow: 0 0 8px rgba(200, 255, 61, 0.6);
+}
+.stat-row b {
+  text-align: right;
+  font-family: var(--display);
+  font-weight: 900;
+  font-size: 15px;
+}
+.special {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 216, 74, 0.45);
+  background: rgba(255, 216, 74, 0.07);
+}
+.special em {
+  font-style: normal;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  color: #ffd84a;
+}
+.special b {
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 900;
+  font-size: 20px;
+  color: #fff;
+}
+.special span {
+  font-size: 12px;
+  color: var(--muted);
+}
+/* special-shot toast in game */
+.special-pop {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  top: 22%;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(10, 10, 6, 0.75);
+  border: 1px solid #ffd84a;
+  color: #ffd84a;
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 900;
+  font-size: 18px;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: banner 1.6s ease both;
+}

@@ -13,6 +13,7 @@ import type { KickGame } from '../src/game/KickGame';
 import { PenaltyGame } from '../src/game/PenaltyGame';
 import { samplePlan, shotPositionAt, shotVelocityAt } from '../src/game/physics/ShotModel';
 import { calculateShotParameters } from '../src/game/physics/BallPhysics';
+import { getPlayer } from '../src/players/players';
 import type { ShotInput } from '../src/game/core/types';
 import { cameraServices, frameCamera } from '../src/game/render/cameraFraming';
 
@@ -60,7 +61,7 @@ function strokeOf3D(svc: ReturnType<typeof cameraServices>, pts: THREE.Vector3[]
 
 function play(game: KickGame, samples: SwipeSample[], ctx: Parameters<typeof readStroke>[1]) {
   const r = readStroke(samples, ctx, game.cfg);
-  if (!r) return { outcome: null as string | null, detail: 'no-shot', reading: null, keeperMovedBeforeLaunch: false, phases: [] as string[] };
+  if (!r) return { lockedDuringReaction: false, outcome: null as string | null, detail: 'no-shot', reading: null, keeperMovedBeforeLaunch: false, phases: [] as string[] };
   const phases: string[] = [];
   game.listener = { onPhase: (p) => phases.push(p) };
   let keeperMovedBeforeLaunch = false;
@@ -71,7 +72,9 @@ function play(game: KickGame, samples: SwipeSample[], ctx: Parameters<typeof rea
     if (game.phase === 'runup' && early && (game.keeper.committed || Math.abs(game.keeper.hipsWorldX()) > 0.02)) keeperMovedBeforeLaunch = true;
   }
   for (let i = 0; i < 60; i++) game.update(1 / 60);
-  return { outcome: game.outcome as string | null, detail: game.detail, reading: r, keeperMovedBeforeLaunch, phases };
+  const lockedDuringReaction = !game.canContinue();
+  for (let i = 0; i < 80; i++) game.update(1 / 60);
+  return { lockedDuringReaction, outcome: game.outcome as string | null, detail: game.detail, reading: r, keeperMovedBeforeLaunch, phases };
 }
 
 let failures = 0;
@@ -177,7 +180,7 @@ function physicsReport(pl: ReturnType<KickGame['planFor']>) {
     }
     const pl = P.game.planFor(rr.input);
     const r = physicsReport(pl);
-    check(`penalty ${name}: no sharp turn (${r.turn.toFixed(1)}° ≤ 8°), one curve direction, no S`, r.turn <= 8 && r.flips === 0, r);
+    check(`penalty ${name}: no sharp turn (${r.turn.toFixed(1)}° ≤ 18°), one curve direction, no S`, r.turn <= 18 && r.flips === 0, r);
   }
   const lob = physicsReport(P.game.planFor(readStroke(timed(strokeOf3D(P.svc, mk3(B0, new THREE.Vector3(0.8, 2.0, 0), 0, 3.2)), 300), P.ctx, P.game.cfg)!.input));
   check('gravity always acts: the ball never climbs again after launch (vertical accel ≤ −g·0.9)', lob.rises === 0 && lob.maxAy <= -FIELD.gravity * 0.9, lob);
@@ -273,6 +276,118 @@ function physicsReport(pl: ReturnType<KickGame['planFor']>) {
   check('FK slow stroke: still a forward flight (no vertical drop, keeps ≥ 55% pace)', slow.descent < 35 && slow.keep > 0.55 && slow.apex < 4.7, slow);
 }
 
+// ── 1c. UPDATE 5: players feel different (same stroke, different player) ──────
+{
+  const pl = (id: string | null, pts: Pt[], dur: number, S = P) => {
+    const rd = readStroke(timed(pts, dur), S.ctx, S.game.cfg, getPlayer(id))!;
+    return { rd, plan: S.game.planFor(rd.input) };
+  };
+  const powerStroke = screenStroke(ballS, goalPt(0.8, 0.3), 0);
+  const base = pl(null, powerStroke, 95);
+  const mb = pl('mbappe', powerStroke, 95);
+  const ha = pl('haaland', powerStroke, 95);
+  const me = pl('messi', powerStroke, 95);
+  check('MBAPPÉ: a hard straight stroke is clearly faster (POWER BURST, ≥ +6 %)', mb.plan.speed > base.plan.speed * 1.06 && mb.rd.intent.special === 'POWER_BURST', `${base.plan.speed.toFixed(1)} → ${mb.plan.speed.toFixed(1)} m/s`);
+  check('HAALAND: top shot speed of the squad (POWER FINISH)', ha.plan.speed >= mb.plan.speed && ha.plan.speed > 33, `${ha.plan.speed.toFixed(1)} m/s`);
+  check('MESSI: less pure power than Haaland/Mbappé', me.plan.speed < mb.plan.speed - 1.5, `${me.plan.speed.toFixed(1)} m/s`);
+
+  // RONALDO knuckle: straight + powerful → spinless, a small irregular wobble (no zig-zag)
+  const cr = pl('ronaldo', powerStroke, 95);
+  const smooth = P.game.planFor({ ...cr.rd.input, knuckle: 0 });
+  let wob = 0;
+  let turns = 0;
+  let prevSign = 0;
+  for (let t = 0; t < cr.plan.duration; t += 0.01) {
+    const d = shotPositionAt(cr.plan, t).x - shotPositionAt(smooth, t).x;
+    wob = Math.max(wob, shotPositionAt(cr.plan, t).distanceTo(shotPositionAt(smooth, t)));
+    const sg = Math.abs(d) > 0.01 ? Math.sign(d) : 0;
+    if (sg && prevSign && sg !== prevSign) turns++;
+    if (sg) prevSign = sg;
+  }
+  check('RONALDO: KNUCKLE DRIVE — no spin, visible but small wobble (5–25 cm), no zig-zag', cr.rd.input.spin === 0 && (cr.rd.input.knuckle ?? 0) > 0.8 && wob > 0.05 && wob < 0.25 && turns <= 2,
+    { wob: +wob.toFixed(3), turns, knuckle: cr.rd.input.knuckle });
+  check('Knuckle ≠ curl: a curled stroke never knuckles', !pl('ronaldo', screenStroke(ballS, goalPt(0.3, 0.5), 60), 120).rd.input.knuckle);
+
+  // MESSI finesse: his instep (left foot → curls right) bends most, smoothly, never wobbles
+  const curlL = screenStroke(ballS, goalPt(0.75, 0.5), -60);
+  const mFin = pl('messi', curlL, 200);
+  const nFin = pl(null, curlL, 200);
+  const mr = physicsReport(mFin.plan);
+  check('MESSI: FINESSE MASTER — stronger smooth instep curl (one way, no knuckle)', mFin.rd.intent.special === 'FINESSE_MASTER' && Math.abs(mFin.plan.spin) > Math.abs(nFin.plan.spin) * 1.15 && mr.flips === 0 && !mFin.rd.input.knuckle,
+    { messi: mFin.plan.spin, neutral: nFin.plan.spin });
+  const sa = pl('salah', curlL, 200);
+  check('SALAH: LEFT FINESSE — his left-foot curl is strong and smooth', sa.rd.intent.special === 'LEFT_FINESSE' && Math.abs(sa.plan.spin) > Math.abs(nFin.plan.spin) && physicsReport(sa.plan).flips === 0);
+  const sonL = pl('son', curlL, 200);
+  const sonR = pl('son', screenStroke(ballS, goalPt(0.25, 0.5), 60), 200);
+  check('SON: TWO-FOOT FINESSE — both directions curl the same', sonL.rd.intent.profile === 'CURLED' && sonR.rd.intent.profile === 'CURLED' && Math.abs(Math.abs(sonL.plan.spin) - Math.abs(sonR.plan.spin)) < 0.02);
+  const haC = pl('haaland', curlL, 200);
+  check('HAALAND curls less than MESSI (power player, not a finesse player)', Math.abs(haC.plan.spin) < Math.abs(mFin.plan.spin) * 0.75);
+
+  // NEYMAR low disguise: a low corner shot, most accurate
+  const lowS = screenStroke(ballS, goalPt(0.92, 0.08), 0);
+  const ne = pl('neymar', lowS, 160);
+  const ref = readStroke(timed(lowS, 160), P.ctx, P.game.cfg)!;
+  const errN = Math.hypot(ne.rd.intent.target.x - ref.intent.target.x, ne.rd.intent.target.y - ref.intent.target.y);
+  const ha2 = pl('haaland', lowS, 160);
+  const errH = Math.hypot(ha2.rd.intent.target.x - ref.intent.target.x, ha2.rd.intent.target.y - ref.intent.target.y);
+  check('NEYMAR: LOW DISGUISE — low, fast and on target in the corner', ne.rd.intent.special === 'LOW_DISGUISE' && ne.plan.apex < 0.7 && errN < 0.08 && ne.plan.target.y < 0.5, { err: +errN.toFixed(3), apex: +ne.plan.apex.toFixed(2) });
+  check('ACCURACY matters a little (Neymar\'s low shot error < Haaland\'s)', errN <= errH, { neymar: +errN.toFixed(3), haaland: +errH.toFixed(3) });
+
+  // DE BRUYNE free kick: power + curl together, still accurate
+  const F5 = setup(freekick, 5, 2);
+  const fl = F5.svc.project(new THREE.Vector3(-FIELD.goalHalfWidth, 0, 0));
+  const fr = F5.svc.project(new THREE.Vector3(FIELD.goalHalfWidth, 0, 0));
+  const ft = F5.svc.project(new THREE.Vector3(0, FIELD.goalHeight, 0));
+  const fb = F5.svc.project(F5.game.ballPos);
+  const fkStroke = screenStroke(fb, { x: fl.x + (fr.x - fl.x) * 0.15, y: fl.y + (ft.y - fl.y) * 0.6 }, 110);
+  const kdb = pl('debruyne', fkStroke, 140, F5);
+  const fkRef = readStroke(timed(fkStroke, 140), F5.ctx, F5.game.cfg)!;
+  const kdbErr = Math.hypot(kdb.rd.intent.target.x - fkRef.intent.target.x, kdb.rd.intent.target.y - fkRef.intent.target.y);
+  check('DE BRUYNE: DRIVEN CURVE at a free kick — fast, strong curl, accurate', kdb.rd.intent.special === 'DRIVEN_CURVE' && kdb.plan.speed > 31 && Math.abs(kdb.plan.spin) > Math.abs(F5.game.planFor(fkRef.input).spin) && kdbErr < 0.2,
+    { speed: +kdb.plan.speed.toFixed(1), spin: kdb.plan.spin, err: +kdbErr.toFixed(3) });
+
+  // ANIMATION: the ball leaves exactly when the boot reaches it
+  const g = setup(penalty, 21, 0).game;
+  g.shoot(base.rd.input);
+  let launchAt = -1;
+  let footGap = 9;
+  for (let k = 0; k < 300 && launchAt < 0; k++) {
+    g.update(1 / 120);
+    if (g.phase === 'flight') {
+      launchAt = g.kicker.elapsed;
+      g.kicker.body.root.updateMatrixWorld(true);
+      footGap = g.kicker.body.markerWorld('rFoot', new THREE.Vector3()).distanceTo(g.spot.ball);
+    }
+  }
+  check('ANIMATION: ball launch on the contact frame, boot at the ball (< 35 cm)', Math.abs(launchAt - g.kicker.contactTime) < 1 / 100 && footGap < 0.35, { launchAt: +launchAt.toFixed(3), footGap: +footGap.toFixed(2) });
+
+  // GK: no teleport — the hips move gradually (step + push before the flight)
+  const gk = setup(penalty, 33, 0).game;
+  gk.shoot(base.rd.input);
+  let x0 = NaN;
+  let maxStep = 0;
+  let committedAt = -1;
+  let early = 0;
+  for (let k = 0; k < 240; k++) {
+    gk.update(1 / 120);
+    const x = gk.keeper.hipsWorldX();
+    if (!Number.isNaN(x0)) maxStep = Math.max(maxStep, Math.abs(x - x0) * 120);
+    x0 = x;
+    if (gk.keeper.committed && committedAt < 0) committedAt = k;
+    if (committedAt >= 0 && k - committedAt === 12) early = Math.abs(x);
+  }
+  check('GOALKEEPER: dive is gradual (hip speed < 9 m/s, < 0.6 m in the first 0.1 s)', maxStep < 9 && early < 0.6, { maxHipSpeed: +maxStep.toFixed(1), after0_1s: +early.toFixed(2) });
+
+  // RESULT: GOAL → celebration, SAVE/MISS → frustration
+  const goalRun = setup(penalty, 41);
+  const rg = play(goalRun.game, timed(screenStroke(ballS, goalPt(0.95, 0.15)), 95), goalRun.ctx);
+  const kickerMode = (gm: KickGame) => (gm.kicker as unknown as { mode: string; react: unknown }).mode;
+  check('RESULT: GOAL → the kicker celebrates', rg.outcome !== 'GOAL' || kickerMode(goalRun.game) === 'react', rg.outcome);
+  const missRun = setup(penalty, 42);
+  const rm = play(missRun.game, timed(screenStroke(ballS, goalPt(1.3, 0.5)), 150), missRun.ctx);
+  check('RESULT: MISS → a frustrated reaction', rm.outcome === 'MISS' && kickerMode(missRun.game) === 'react');
+}
+
 // ── 2. power, loft, preview = flight ───────────────────────────────────────
 {
   const shape = screenStroke(ballS, goalPt(0.7, 0.4), 40);
@@ -326,6 +441,7 @@ function physicsReport(pl: ReturnType<KickGame['planFor']>) {
   const res = play(s.game, timed(screenStroke(ballS, goalPt(0.85, 0.5), 0), 150), s.ctx);
   check('state machine aim→runup→flight→result', res.phases.join(',') === 'runup,flight,result', res.phases.join(','));
   check('penalty keeper does not move before the kicker reaches the ball', !res.keeperMovedBeforeLaunch);
+  check('no next shot during the celebration / reaction (~2 s)', res.lockedDuringReaction);
   check('result can be dismissed → next attempt', s.game.canContinue());
   s.game.next();
   check('reset puts game back to aim', s.game.phase === 'aim' && s.game.outcome === null);

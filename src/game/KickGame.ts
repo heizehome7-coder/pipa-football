@@ -5,6 +5,7 @@ import type { Phase, ShotInput, ShotOutcome } from './core/types';
 import { Ball } from './entities/Ball';
 import { DefensiveWall } from './entities/DefensiveWall';
 import { Goalkeeper, type Collider } from './entities/Goalkeeper';
+import type { GkStats } from '../players/players';
 import { Kicker, type KickerLook, type KickStyle } from './entities/Player';
 import { buildShotPlan, shotPositionAt, shotVelocityAt, type ShotPlan } from './physics/ShotModel';
 import { GoalFrame } from './world/Goal';
@@ -25,6 +26,8 @@ export interface KickGameOptions {
   /** UPDATE 4: the chosen players' looks (cosmetic only — physics and timing are identical) */
   kickerLook?: KickerLook;
   keeperLook?: ConstructorParameters<typeof Goalkeeper>[0];
+  /** UPDATE 5: the keeper's abilities (reflex/diving/reach/… — AI and human alike) */
+  keeperStats?: GkStats;
 }
 
 /** A person's dive: world target (x, y on the keeper's line) and when (s since the run-up started). */
@@ -43,6 +46,8 @@ export interface KickGameListener {
 const R = FIELD.ballRadius;
 const G = FIELD.gravity;
 const STEP = 1 / 120; // fixed simulation step → deterministic, frame-rate independent
+/** seconds after the result before the players react (celebration / frustration / keeper) */
+const REACT_DELAY = 0.35;
 const SUB = 0.003; // ball collision sub-step (≈9 cm at top speed, no tunnelling)
 
 /**
@@ -77,7 +82,7 @@ export abstract class KickGame {
   private caught = false;
   private flightT = 0;
   private freeT = 0;
-  private resultT = 0;
+  resultT = 0;
   private sideSpin = 0;
   private keeperLead = 0;
   private humanDive: KeeperDiveCommand | null = null;
@@ -98,7 +103,7 @@ export abstract class KickGame {
     this.goal = new GoalFrame(opts.visuals);
     this.ball = new Ball(opts.visuals);
     this.kicker = new Kicker(opts.nickname, opts.kickerLook);
-    this.keeper = new Goalkeeper(opts.keeperLook);
+    this.keeper = new Goalkeeper(opts.keeperLook, opts.keeperStats);
     this.wall = this.createWall();
     this.group.add(this.goal.group, this.ball.group, this.kicker.body.root, this.keeper.body.root);
     if (this.wall) this.group.add(this.wall.group);
@@ -149,8 +154,14 @@ export abstract class KickGame {
     this.lastInput = input;
     this.plan = this.planFor(input);
     const aim = new THREE.Vector3(this.plan.forward.x, 0, this.plan.forward.z);
-    // the foot matches the spin: instep curl (+), outside of the boot (−), driven (0)
-    this.kicker.setStrike(this.plan.spin > 0.01 ? 'instep' : this.plan.spin < -0.01 ? 'outside' : 'drive');
+    // the foot matches the shot: instep curl / outside of the boot (per strong foot),
+    // knuckle punch, low drive or a plain laces drive
+    const sp = this.plan.spin;
+    const foot = this.opts.kickerLook?.foot ?? 'R';
+    const instep = foot === 'B' || (foot === 'L' ? sp < 0 : sp > 0);
+    this.kicker.setStrike(
+      this.plan.knuckle > 0 ? 'knuckle' : Math.abs(sp) > 0.01 ? (instep ? 'instep' : 'outside') : this.plan.target.y < 0.7 && this.plan.apex < 1 ? 'low' : 'drive',
+    );
     this.kicker.kick(this.spot.ball, aim, () => this.launch());
     // keeper gets set as the run-up starts; penalty keepers commit a hair before contact
     this.keeper.prepare(this.cfg.keeper, this.rng);
@@ -174,8 +185,9 @@ export abstract class KickGame {
     return this.humanDive;
   }
 
+  /** next shot only once the celebration / reaction has played (UPDATE 5) */
   canContinue() {
-    return this.phase === 'result' && this.resultT > 0.7;
+    return this.phase === 'result' && this.resultT > REACT_DELAY + 1.6;
   }
 
   cameraRig(pos: THREE.Vector3, look: THREE.Vector3) {
@@ -202,6 +214,18 @@ export abstract class KickGame {
   private setPhase(p: Phase) {
     this.phase = p;
     this.listener.onPhase?.(p);
+  }
+
+  /** UPDATE 5: celebration / frustration / keeper reaction — purely visual */
+  private startReactions() {
+    const o = this.outcome;
+    if (!o) return;
+    const wood = /골대|크로스바/.test(this.detail);
+    const kind = o === 'GOAL' ? 'GOAL' : o === 'SAVE' ? 'SAVE' : wood ? 'WOODWORK' : 'MISS';
+    // variety without touching the game RNG (keeps online replays identical)
+    const pick = Math.floor(Math.abs(this.ballPos.x * 1000 + this.ballPos.y * 100 + this.attempt * 7));
+    this.kicker.reactTo(kind, pick);
+    this.keeper.react(o === 'SAVE' ? 'save' : o === 'GOAL' ? 'goal' : 'miss');
   }
 
   private setOutcome(o: ShotOutcome, detail: string) {
@@ -249,7 +273,11 @@ export abstract class KickGame {
     }
     this.keeper.update(h);
     this.wall?.update(h);
-    if (this.phase === 'result') this.resultT += h;
+    if (this.phase === 'result') {
+      const before = this.resultT;
+      this.resultT += h;
+      if (before < REACT_DELAY && this.resultT >= REACT_DELAY) this.startReactions();
+    }
     if (this.flying) {
       this.stepBall(h);
       if (!this.free && !this.caught) this.keeper.observe(this.ballPos, this.ballVel, h);

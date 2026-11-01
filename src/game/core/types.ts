@@ -18,6 +18,9 @@ export interface ShotInput {
   spin: number;
   /** 0..1, from stroke speed (for display / telemetry) */
   power: number;
+  /** UPDATE 5: knuckle (spinless) wobble strength 0..1 and its deterministic seed */
+  knuckle?: number;
+  kseed?: number;
 }
 
 export interface ShotRecord {

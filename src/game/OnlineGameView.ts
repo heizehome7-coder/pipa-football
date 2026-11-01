@@ -9,6 +9,7 @@ import { TrajectoryOverlay, type Pt } from './render/Trajectory';
 import { buildStadium } from './world/Stadium';
 import { diveCommand, OnlinePenaltyGame } from '../online/match/penaltyRound';
 import type { KickGameOptions } from './KickGame';
+import type { PlayerDef } from '../players/players';
 import type { DiveDir, WireDive, WireShot } from '../online/match/protocol';
 
 export type OnlineRole = 'kicker' | 'keeper';
@@ -19,6 +20,7 @@ export interface OnlineViewCallbacks {
   /** the keeper chose a dive; `at` = s since the run-up started (synced clock) */
   onDive(dir: DiveDir, at: number): void;
   onHint(msg: string | null): void;
+  onSpecial?(id: string): void;
 }
 
 /** what a swipe means for the keeper: dives the way the finger went on screen */
@@ -70,7 +72,7 @@ export class OnlineGameView {
   private v2 = new THREE.Vector3();
   private kickerNick = '';
   /** UPDATE 4: this round's players (cosmetic) */
-  private looks: Pick<KickGameOptions, 'kickerLook' | 'keeperLook'> = {};
+  private looks: Pick<KickGameOptions, 'kickerLook' | 'keeperLook' | 'keeperStats'> & { kickerPlayer?: PlayerDef | null } = {};
   private canShoot = false;
   /** shot being replayed: local Date.now() of run-up start */
   private shot: WireShot | null = null;
@@ -148,7 +150,8 @@ export class OnlineGameView {
 
   // ── round control (driven by server state) ────────────────────────────
   private makeGame(nick: string, seed: number) {
-    const g = new OnlinePenaltyGame(nick, seed, true, this.looks ?? {});
+    const { kickerLook, keeperLook, keeperStats } = this.looks ?? {};
+    const g = new OnlinePenaltyGame(nick, seed, true, { kickerLook, keeperLook, keeperStats });
     g.start();
     return g;
   }
@@ -160,7 +163,7 @@ export class OnlineGameView {
   }
 
   /** new round: fresh pitch, roles from the server */
-  setRound(r: { role: OnlineRole; kickerNick: string; canShoot: boolean; looks?: Pick<KickGameOptions, 'kickerLook' | 'keeperLook'> }) {
+  setRound(r: { role: OnlineRole; kickerNick: string; canShoot: boolean; looks?: Pick<KickGameOptions, 'kickerLook' | 'keeperLook' | 'keeperStats'> & { kickerPlayer?: PlayerDef | null } }) {
     this.looks = r.looks ?? {};
     this.role = r.role;
     this.kickerNick = r.kickerNick;
@@ -330,13 +333,13 @@ export class OnlineGameView {
       return;
     }
     const svc = cameraServices(this.camera, this.w, this.h);
-    const r = readStroke(samples, { viewportH: this.h, ball: this.game.ballPos.clone(), ...svc }, this.game.cfg);
+    const r = readStroke(samples, { viewportH: this.h, ball: this.game.ballPos.clone(), ...svc }, this.game.cfg, this.looks.kickerPlayer ?? null);
     if (!r) {
       this.cb.onHint('골대 쪽으로 슛 경로를 조금 더 길게 그려주세요');
       return;
     }
     this.cb.onHint(null);
-    this.submitShot(r.input);
+    if (this.submitShot(r.input) && r.intent.special) this.cb.onSpecial?.(r.intent.special);
   }
 
   private submitShot(input: ShotInput) {

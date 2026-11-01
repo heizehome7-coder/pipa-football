@@ -6,7 +6,9 @@ import type { GameMode, Phase, PlayerProfile, ShotOutcome } from '../game/core/t
 import { GameView } from '../game/GameView';
 import { LocalSession } from '../game/session/MatchSession';
 import { NameBanner } from '../components/NameBanner';
-import { kickerLookOf } from '../players/looks';
+import { keeperLookOf, kickerLookOf } from '../players/looks';
+import { GOALKEEPERS } from '../players/players';
+import { useSpecialPop } from '../components/SpecialPop';
 import type { PlayerDef } from '../players/players';
 
 export function GameScreen({ mode, user, player = null, onExit }: { mode: GameMode; user: PlayerProfile; player?: PlayerDef | null; onExit: () => void }) {
@@ -17,6 +19,9 @@ export function GameScreen({ mode, user, player = null, onExit }: { mode: GameMo
   const [hint, setHint] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tutorial, setTutorial] = useState(true);
+  const special = useSpecialPop();
+  // UPDATE 5: single player faces a real keeper (random each session) — his abilities count
+  const [keeper] = useState(() => GOALKEEPERS[Math.floor(Math.random() * GOALKEEPERS.length)]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -33,7 +38,8 @@ export function GameScreen({ mode, user, player = null, onExit }: { mode: GameMo
         },
         onOutcome: (o, detail) => setResult({ outcome: o, detail }),
         onHint: setHint,
-      }, { kicker: kickerLookOf(player) });
+        onSpecial: special.show,
+      }, { kicker: kickerLookOf(player), kickerPlayer: player, keeperLook: keeperLookOf(keeper), keeperStats: keeper.gk });
     } catch (e) {
       console.error(e);
       setError('이 기기에서 3D(WebGL)를 시작할 수 없습니다.');
@@ -56,7 +62,13 @@ export function GameScreen({ mode, user, player = null, onExit }: { mode: GameMo
       <div className="game-host" ref={hostRef} />
       <GameHUD label={cfg.label} goals={score.goals} shots={score.shots} nickname={user.nickname} onBack={onExit} />
       {result && <ResultBanner outcome={result.outcome} detail={result.detail} />}
-      <NameBanner player={player} show={player ? `solo:${mode}:${player.id}` : ''} label={mode === 'freekick' ? 'FREE KICK TAKER' : 'PENALTY TAKER'} />
+      <NameBanner
+        player={player}
+        show={player ? `solo:${mode}:${player.id}` : ''}
+        label={mode === 'freekick' ? 'FREE KICK TAKER' : 'PENALTY TAKER'}
+        sub={`GK · ${keeper.name.toUpperCase()}`}
+      />
+      {special.el}
       {phase === 'aim' && tutorial && !hint && (
         <div className="coach">
           <b>공을 누른 채 슛 경로를 그려보세요</b>

@@ -3,6 +3,8 @@ import { FIELD, type ModeConfig } from '../core/config';
 import { clamp, lerp } from '../core/math';
 import type { ShotInput } from '../core/types';
 import { calculateShotParameters, shotProfile, type ShotIntent } from '../physics/BallPhysics';
+import { isInstep, shotModifiers, strokeHash } from '../../players/abilities';
+import type { PlayerDef } from '../../players/players';
 
 export interface SwipeSample {
   x: number;
@@ -91,7 +93,7 @@ export function smoothStroke(samples: Pt[]): Pt[] {
  * calculateShotParameters() turns that into a real launch; the ball then flies by
  * physics (gravity, drag, Magnus) and arrives where the stroke ended.
  */
-export function readStroke(samples: SwipeSample[], ctx: StrokeContext, cfg: ModeConfig): StrokeReading | null {
+export function readStroke(samples: SwipeSample[], ctx: StrokeContext, cfg: ModeConfig, kicker?: PlayerDef | null): StrokeReading | null {
   if (samples.length < 3) return null;
   const H = ctx.viewportH;
   const S = samples[0];
@@ -185,13 +187,33 @@ export function readStroke(samples: SwipeSample[], ctx: StrokeContext, cfg: Mode
   // being arched: discount that part so an arch over the wall stays a straight shot
   const arch = archPx / chord;
   const shot = shotProfile(Math.sign(bend) * Math.max(0, Math.abs(bend) - Math.min(0.06, arch * 0.6)), cfg);
+  // 6) UPDATE 5: the kicker's abilities — small modifiers, never overriding the stroke
+  const seed = strokeHash(samples);
+  const low = !lofted && T.y < 0.75;
+  const mods = shotModifiers(kicker, { mode: cfg.id, power, level: shot.level, spinSign: Math.sign(shot.spin), lofted, low });
+  const aim = T.clone();
+  if (mods.err > 0) {
+    // aim error (deterministic from the stroke, so the dashed preview is still the real flight)
+    const e1 = ((seed & 0xffff) / 0xffff) * 2 - 1;
+    const e2 = (((seed >>> 16) & 0xffff) / 0xffff) * 2 - 1;
+    aim.x += mods.err * e1;
+    aim.y = clamp(aim.y + mods.err * 0.6 * e2, R, 9);
+  }
+  const knuckle = shot.level === 0 ? mods.knuckle : 0;
+  let profile = shot.profile;
+  if (shot.level > 0 && kicker) profile = isInstep(kicker, Math.sign(shot.spin)) ? 'CURLED' : 'OUTSIDE_FOOT';
+  if (knuckle > 0) profile = 'KNUCKLE';
   const intent: ShotIntent = {
-    target: T.clone(),
-    spin: shot.spin,
-    profile: shot.profile,
+    target: aim,
+    spin: shot.spin * mods.spinMul,
+    profile,
     curveLevel: shot.level,
     apex: lofted ? Math.min(cfg.maxApex, Math.max(B.y, T.y) + rise * cfg.loftPerScreen) : null,
     power,
+    speedMul: mods.speedMul,
+    knuckle,
+    kseed: seed,
+    special: mods.special,
   };
   const input = calculateShotParameters(B, intent, cfg);
   return { input, intent, speed };

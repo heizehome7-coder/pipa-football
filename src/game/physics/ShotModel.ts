@@ -22,6 +22,8 @@ export interface ShotPlan {
   speed: number;
   power: number;
   spin: number;
+  /** UPDATE 5: knuckle wobble strength (0 = none) */
+  knuckle: number;
   /** normalised bend, −1..1 (+ = bulges right / curls back left; visual spin) */
   curve: number;
   /** highest point of the flight (m) */
@@ -33,7 +35,7 @@ export interface ShotPlan {
 }
 
 export function buildShotPlan(origin: THREE.Vector3, input: ShotInput, cfg: ModeConfig): ShotPlan {
-  const traj = simulateBallPhysics(origin, input.v, input.spin, cfg, { maxT: 6 });
+  const traj = simulateBallPhysics(origin, input.v, input.spin, cfg, { maxT: 6, knuckle: input.knuckle ?? 0, kseed: input.kseed ?? 0 });
   const k = (traj.n - 1) * 3;
   const target = new THREE.Vector3(traj.pos[k], traj.pos[k + 1], traj.pos[k + 2]);
   const forward = new THREE.Vector3(input.v[0], 0, input.v[2]);
@@ -47,6 +49,7 @@ export function buildShotPlan(origin: THREE.Vector3, input: ShotInput, cfg: Mode
     speed: Math.hypot(input.v[0], input.v[1], input.v[2]),
     power: clamp(input.power, 0, 1),
     spin: input.spin,
+    knuckle: input.knuckle ?? 0,
     curve: clamp(input.spin / BALL.spinMax || 0, -1, 1),
     apex: traj.apex,
     duration: traj.tEnd,

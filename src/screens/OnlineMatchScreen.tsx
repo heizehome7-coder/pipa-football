@@ -6,6 +6,7 @@ import { OnlineMatchClient, type MatchView } from '../online/match/OnlineMatchCl
 import type { DiveDir, MatchState, WireResult } from '../online/match/protocol';
 import { MatchFoundScreen } from './MatchFoundScreen';
 import { NameBanner } from '../components/NameBanner';
+import { useSpecialPop } from '../components/SpecialPop';
 import { keeperLookOf, kickerLookOf } from '../players/looks';
 import { getPlayer } from '../players/players';
 import { sanitizeSquad, type Squad } from '../players/squad';
@@ -127,6 +128,7 @@ function MatchPlay({ v, s, client, onLeave }: { v: MatchView; s: MatchState; cli
   const [hint, setHint] = useState<string | null>(null);
   const [fatal, setFatal] = useState<string | null>(null);
   const [intro, setIntro] = useState<{ round: number; until: number } | null>(null);
+  const special = useSpecialPop();
   useTicker(true);
 
   const kickerNick = s.players.find((p) => p.peer === s.kicker)?.nickname ?? '';
@@ -146,6 +148,7 @@ function MatchPlay({ v, s, client, onLeave }: { v: MatchView; s: MatchState; cli
           client.dive(dir, at);
         },
         onHint: setHint,
+        onSpecial: (id) => special.show(id),
       });
     } catch (e) {
       console.error(e);
@@ -166,7 +169,7 @@ function MatchPlay({ v, s, client, onLeave }: { v: MatchView; s: MatchState; cli
       role,
       kickerNick,
       canShoot: false,
-      looks: { kickerLook: kickerLookOf(kickerPlayer), keeperLook: keeperLookOf(keeperPlayer) },
+      looks: { kickerLook: kickerLookOf(kickerPlayer), keeperLook: keeperLookOf(keeperPlayer), keeperStats: keeperPlayer?.gk, kickerPlayer },
     });
     if (s.round > 1) setIntro({ round: s.round, until: Date.now() + 1500 });
     else setIntro(null);
@@ -272,6 +275,7 @@ function MatchPlay({ v, s, client, onLeave }: { v: MatchView; s: MatchState; cli
         <Coach role={role} v={v} s={s} shotClock={shotClock} opponentNick={opp?.nickname ?? ''} />
       )}
       {hint && <div className="coach coach-hint">{hint}</div>}
+      {special.el}
       {fatal && (
         <div className="fatal">
           <p>{fatal}</p>

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { KeeperTuning } from '../core/config';
 import { clamp, easeOutCubic, gauss, lerp, smoothstep } from '../core/math';
 import { blendPose, Humanoid, type Kit, type MarkerName, type Pose } from './Humanoid';
+import type { GkStats } from '../../players/players';
 
 export interface Collider {
   pos: THREE.Vector3;
@@ -41,6 +42,36 @@ const K_DIVE: Pose = {
   lShoulder: [0.18, 0, -2.75], rShoulder: [0.18, 0, 2.75], lElbow: [0.15, 0, 0], rElbow: [0.15, 0, 0],
   lHip: [0.2, 0, -0.32], rHip: [0.35, 0, 0.22], lKnee: [-0.55, 0, 0], rKnee: [-0.25, 0, 0],
   lAnkle: [0.3, 0, 0], rAnkle: [0.3, 0, 0],
+};
+/** UPDATE 5: low dive — arms reach out low and forward, body flatter */
+const K_DIVE_LOW: Pose = {
+  ...K_DIVE,
+  spine: [-0.1, 0, 0],
+  lShoulder: [0.7, 0, -2.2], rShoulder: [0.7, 0, 2.2], lElbow: [0.1, 0, 0], rElbow: [0.1, 0, 0],
+  lHip: [0.1, 0, -0.25], rHip: [0.15, 0, 0.18],
+};
+/** high dive — arms right above the head, body more upright */
+const K_DIVE_HIGH: Pose = {
+  ...K_DIVE,
+  lShoulder: [0.05, 0, -2.98], rShoulder: [0.05, 0, 2.98], lElbow: [0.05, 0, 0], rElbow: [0.05, 0, 0],
+  lHip: [0.3, 0, -0.38], rHip: [0.5, 0, 0.25], lKnee: [-0.8, 0, 0],
+};
+/** loading the legs + side step before the push */
+const K_LOAD: Pose = {
+  spine: [-0.45, 0, 0], head: [0.3, 0, 0],
+  lHip: [0.85, 0, -0.38], rHip: [0.85, 0, 0.3], lKnee: [-1.25, 0, 0], rKnee: [-1.15, 0, 0],
+  lAnkle: [0.45, 0, 0], rAnkle: [0.4, 0, 0],
+  lShoulder: [0.6, 0, -0.95], rShoulder: [0.6, 0, 0.95], lElbow: [0.7, 0, 0], rElbow: [0.7, 0, 0],
+};
+const K_FIST: Pose = {
+  spine: [0.05, 0, 0], head: [-0.25, 0, 0],
+  lShoulder: [0.25, 0, -0.45], rShoulder: [0.6, 0, 2.6], lElbow: [1.4, 0, 0], rElbow: [1.6, 0, 0],
+  lHip: [0.1, 0, -0.12], rHip: [0.1, 0, 0.12],
+};
+const K_DEJECTED: Pose = {
+  spine: [-0.25, 0, 0], head: [0.6, 0, 0],
+  lShoulder: [0, 0, -0.15], rShoulder: [0, 0, 0.15], lElbow: [0.2, 0, 0], rElbow: [0.2, 0, 0],
+  lHip: [0.15, 0, -0.1], rHip: [0.15, 0, 0.1], lKnee: [-0.25, 0, 0], rKnee: [-0.25, 0, 0],
 };
 const K_CATCH: Pose = {
   spine: [-0.32, 0, 0], head: [0.25, 0, 0],
@@ -148,13 +179,34 @@ export class Goalkeeper {
   private adjusted = false;
 
   /** UPDATE 4: a real keeper's looks (hair, beard, skin, name/number) — never his size */
-  constructor(look?: { shirt: string; number: string; skin: number; hair: number; hairStyle: Kit['hairStyle']; beard: Kit['beard'] }) {
+  /** UPDATE 5: the keeper's abilities (null = neutral standard keeper) */
+  readonly stats: GkStats | null;
+  /** hands' reach beyond the hips (REACH; LOW/HIGH SAVE per dive height) */
+  private armReach = ARM_REACH;
+  /** UPDATE 5 dive animation: which arm leads (+1 right arm, −1 left) and dive height 0 low … 1 high */
+  private lead = 1;
+  private diveH = 0.5;
+  /** post-shot reaction */
+  private reactKind: '' | 'save' | 'goal' | 'miss' = '';
+  private reactT = 0;
+  private reactFrom: Pose = {};
+  private reactHips = new THREE.Vector3();
+  private reactRoll = 0;
+
+  constructor(look?: { shirt: string; number: string; skin: number; hair: number; hairStyle: Kit['hairStyle']; beard: Kit['beard'] }, stats?: GkStats) {
+    this.stats = stats ?? null;
     this.body = new Humanoid(
       look
         ? { ...KEEPER_KIT, skin: look.skin, hair: look.hair, hairStyle: look.hairStyle, beard: look.beard, backName: look.shirt, backNumber: look.number }
         : KEEPER_KIT,
     );
     this.body.root.rotation.y = Math.PI; // faces the kicker (+z)
+    if (this.stats) {
+      // REACH: slightly longer arms (shoulder space scales the arm, glove and hand markers)
+      const a = this.armScale;
+      this.body.joints.lShoulder.scale.set(1, a, 1);
+      this.body.joints.rShoulder.scale.set(1, a, 1);
+    }
     this.colliders = MARKERS.map(([, r]) => ({ pos: new THREE.Vector3(), r }));
     this.reset();
   }
@@ -173,6 +225,8 @@ export class Goalkeeper {
     this.adjusted = false;
     this.rootX = this.rootV = this.stepGoal = 0;
     this.roll = 0;
+    this.reactKind = '';
+    this.reactT = 0;
     this.setT = 0;
     this.body.root.position.copy(this.home);
     this.applyStance(0);
@@ -189,12 +243,50 @@ export class Goalkeeper {
   // ── shared entry points ────────────────────────────────────────────────
   /** Kicker has started the run-up: get set (crouch, weight forward). No sideways move. */
   prepare(k: KeeperTuning, rng: () => number) {
-    this.k = k;
+    this.k = this.tuned(k);
     this.rng = rng;
     if (this.stage === 'idle') {
       this.stage = 'set';
       this.setT = 0;
     }
+  }
+
+  /**
+   * UPDATE 5 abilities as small modifiers (a 90-rated keeper = the standard keeper):
+   *   DIVING → quicker dive · REACH → longer stretch · REFLEX → quicker AI reaction
+   *   POSITIONING → steadier AI read · PENALTY READ → AI guesses right more often
+   * They never choose a direction for a human keeper online.
+   */
+  private tuned(k: KeeperTuning): KeeperTuning {
+    const g = this.stats;
+    if (!g) return k;
+    const d = (v: number) => (v - 90) / 9; // 81 → −1 … 99 → +1
+    return {
+      ...k,
+      diveBase: k.diveBase * (1 - 0.06 * d(g.diving)),
+      diveScale: k.diveScale * (1 - 0.06 * d(g.diving)),
+      maxHipTravel: k.maxHipTravel * (1 + 0.04 * d(g.reach)),
+      reactionMin: k.reactionMin * (1 - 0.08 * d(g.reflex)),
+      reactionMax: k.reactionMax * (1 - 0.08 * d(g.reflex)),
+      readNoise: k.readNoise * (1 - 0.1 * d(g.positioning)),
+      guessCorrect: Math.min(0.85, k.guessCorrect + 0.06 * d(g.penaltyRead)),
+    };
+  }
+
+  /** REACH physically lengthens the arms a touch (the hand colliders move with them) */
+  private get armScale() {
+    return this.stats ? 1 + 0.035 * ((this.stats.reach - 90) / 9) : 1;
+  }
+  private reachFor(_py: number) {
+    return ARM_REACH * this.armScale;
+  }
+  /** LOW SAVE / HIGH SAVE: a little more dive travel towards low / high balls */
+  private travelFor(py: number) {
+    const g = this.stats;
+    if (!g) return 1;
+    if (py < 0.7) return 1 + 0.04 * ((g.lowSave - 94) / 5);
+    if (py > 1.6) return 1 + 0.04 * ((g.highSave - 94) / 5);
+    return 1;
   }
 
   // ── PENALTY: predict from the kicker ──────────────────────────────────
@@ -311,7 +403,7 @@ export class Goalkeeper {
     // commit when there is just enough time left for the save
     const dx = px - this.feetX;
     const dy = py - HIPS_IDLE_Y;
-    const travel = Math.max(0, Math.hypot(dx, dy) - ARM_REACH);
+    const travel = Math.max(0, Math.hypot(dx, dy) - this.reachFor(py));
     const need = this.actionDuration(travel) * 1.1 + 0.06; // commits before he is certain
     const close = Math.abs(dx) < 0.5 && py < 1.8;
     if (tArr <= need || (close && tArr < 0.28)) this.commit(px, clamp(py, 0.12, 2.6));
@@ -358,17 +450,23 @@ export class Goalkeeper {
     } else if (Math.abs(vx) < 1.0 && py >= 1.8) {
       this.action = 'jump';
       this.actionPose = K_JUMP;
-      this.hipsTarget.set(lx * 0.8, clamp(py - ARM_REACH - HIPS_IDLE_Y + 0.05, 0, 0.55), 0).add(base);
+      this.hipsTarget.set(lx * 0.8, clamp(py - this.reachFor(py) - HIPS_IDLE_Y + 0.05, 0, 0.55), 0).add(base);
       this.roll = Math.atan2(-lx, Math.max(0.5, vy)) * 0.5;
       travel = 0.6;
     } else {
       this.action = 'dive';
       this.actionPose = K_DIVE;
       const len = Math.hypot(vx, vy);
-      travel = clamp(len - ARM_REACH, 0, k.maxHipTravel);
+      this.armReach = this.reachFor(py);
+      travel = clamp(len - this.armReach, 0, k.maxHipTravel * this.travelFor(py));
       this.hipsTarget.set((lx / len) * travel, clamp(HIPS_IDLE_Y + (vy / len) * travel, 0.42, 1.45), 0);
       this.roll = clamp(Math.atan2(-lx, vy), -1.5, 1.5);
+      // LOW / MID / HIGH dive blend
+      this.diveH = clamp((py - 0.35) / 1.7, 0, 1);
+      this.actionPose =
+        this.diveH < 0.5 ? blendPose(K_DIVE_LOW, K_DIVE, this.diveH * 2, {}) : blendPose(K_DIVE, K_DIVE_HIGH, (this.diveH - 0.5) * 2, {});
     }
+    this.lead = lx >= 0 ? 1 : -1;
     this.actDur = this.actionDuration(travel);
     this.rootV = 0;
     this.stepGoal = this.rootX;
@@ -417,18 +515,86 @@ export class Goalkeeper {
     this.actT += dt;
     const u = this.actT / this.actDur;
     const e = easeOutCubic(Math.pow(clamp(u, 0, 1), 1.25));
-    blendPose(this.fromPose, this.actionPose, smoothstep(Math.min(1, u * 1.6)), this.pose);
-    this.body.applyPose(this.pose);
+    if (this.action === 'dive') {
+      // weight shift + side step (legs load) → push → take-off; lead arm first, then the other
+      const legs = blendPose(this.fromPose, K_LOAD, smoothstep(u / 0.16), {});
+      blendPose(legs, this.actionPose, smoothstep((u - 0.14) / 0.3), this.pose);
+      const leadArm = smoothstep(Math.min(1, u * 1.85));
+      const otherArm = smoothstep(clamp((u - 0.08) * 1.6, 0, 1));
+      const [lw, rw] = this.lead > 0 ? [otherArm, leadArm] : [leadArm, otherArm];
+      for (const [j, w] of [['lShoulder', lw], ['lElbow', lw], ['rShoulder', rw], ['rElbow', rw]] as const) {
+        const a = this.fromPose[j] ?? [0, 0, 0];
+        const b = this.actionPose[j] ?? [0, 0, 0];
+        this.pose[j] = [lerp(a[0], b[0], w), lerp(a[1], b[1], w), lerp(a[2], b[2], w)];
+      }
+    } else {
+      blendPose(this.fromPose, this.actionPose, smoothstep(Math.min(1, u * 1.6)), this.pose);
+    }
     this.hipsCur.lerpVectors(this.hipsStart, this.hipsTarget, e);
     const after = Math.max(0, (u - 1) * this.actDur);
+    let roll = this.roll * e;
     if (this.action === 'dive') {
-      this.hipsCur.y += Math.sin(Math.PI * Math.min(1, u)) * 0.16;
-      if (after > 0) this.hipsCur.y = lerp(this.hipsTarget.y, 0.3, smoothstep(after / 0.32));
+      // a short dip as the legs load, then the arc of the flight
+      this.hipsCur.y += Math.sin(Math.PI * Math.min(1, u)) * 0.16 - 0.05 * Math.sin(Math.PI * clamp(u / 0.2, 0, 1));
+      roll = this.roll * smoothstep((u - 0.1) / 0.55);
+      if (after > 0) {
+        // landing: hips to the grass, body settles flat-ish on its side
+        this.hipsCur.y = lerp(this.hipsTarget.y, 0.3, smoothstep(after / 0.32));
+        roll = this.roll * (1 + 0.15 * smoothstep(after / 0.4));
+      }
     } else if (this.action === 'jump' && after > 0) {
       this.hipsCur.y = lerp(this.hipsTarget.y, HIPS_IDLE_Y, smoothstep(after / 0.35));
     }
+    if (this.reactKind) roll = this.applyReaction(dt, roll);
+    this.body.applyPose(this.pose);
     this.body.joints.hips.position.copy(this.hipsCur);
-    this.body.joints.hips.rotation.z = this.roll * e;
+    this.body.joints.hips.rotation.z = roll;
+  }
+
+  /**
+   * UPDATE 5: after the result (visual only — the ball is decided already):
+   * a save → back on his feet and a fist pump; a goal → slow, head-down recovery;
+   * a miss → up again, relieved.
+   */
+  react(kind: 'save' | 'goal' | 'miss') {
+    if (this.reactKind) return;
+    this.reactKind = kind;
+    this.reactT = 0;
+    this.reactFrom = { ...this.pose };
+    this.reactHips.copy(this.hipsCur);
+    this.reactRoll = this.body.joints.hips.rotation.z;
+    if (this.stage !== 'action') {
+      // he never moved: react from the stance
+      this.stage = 'action';
+      this.action = 'none';
+      this.actT = 0;
+      this.actDur = 0.01;
+      this.fromPose = { ...this.pose };
+      this.actionPose = { ...this.pose };
+      this.hipsStart.copy(this.body.joints.hips.position);
+      this.hipsTarget.copy(this.hipsStart);
+      this.roll = 0;
+    }
+  }
+
+  private applyReaction(dt: number, roll: number) {
+    // let a dive land first
+    const landed = this.action !== 'dive' || this.actT > this.actDur + 0.35;
+    if (!landed) {
+      this.reactFrom = { ...this.pose };
+      this.reactHips.copy(this.hipsCur);
+      this.reactRoll = roll;
+      return roll;
+    }
+    this.reactT += dt;
+    const slow = this.reactKind === 'goal' ? 0.5 : 0;
+    const up = smoothstep((this.reactT - slow) / 0.55);
+    const target = this.reactKind === 'save' ? K_FIST : this.reactKind === 'goal' ? K_DEJECTED : K_READY;
+    // the fist pump comes once he is up
+    const pose = this.reactKind === 'save' ? blendPose(K_READY, K_FIST, smoothstep((this.reactT - 0.5) / 0.25), {}) : target;
+    blendPose(this.reactFrom, pose, up, this.pose);
+    this.hipsCur.set(this.reactHips.x, lerp(this.reactHips.y, HIPS_IDLE_Y, up), this.reactHips.z);
+    return lerp(this.reactRoll, 0, up);
   }
 
   /** world x of the hips (for tests/telemetry) */

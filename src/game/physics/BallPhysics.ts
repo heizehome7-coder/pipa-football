@@ -30,9 +30,15 @@ export const BALL = {
   drag: 0.0085,
   /** side-spin decay per step (≈ e^(−0.5/s)) */
   spinDecay: 0.99896,
-  /** largest side-spin parameter (1/s) and Magnus acceleration (m/s²) at curve multiplier 1 */
-  spinMax: 0.5,
-  magnusMax: 10,
+  /** largest side-spin parameter (1/s) and Magnus acceleration (m/s²) at curve multiplier 1
+   *  (UPDATE 5: finesse curl +25 %; players' CURVE scales it a further ±18 %) */
+  spinMax: 0.62,
+  magnusMax: 14,
+  /** network sanity limit for spin (best curler, best case) */
+  spinLimit: 0.62 * 1.45,
+  /** knuckle: peak wobble acceleration (m/s²) sideways / vertical at 30 m/s */
+  knuckleX: 10,
+  knuckleY: 4.5,
   /** ground contact */
   bounce: 0.5,
   bounceFriction: 0.85,
@@ -40,7 +46,7 @@ export const BALL = {
   maxSpeed: 40,
 } as const;
 
-export type ShotProfile = 'STRAIGHT' | 'CURLED' | 'OUTSIDE_FOOT';
+export type ShotProfile = 'STRAIGHT' | 'CURLED' | 'OUTSIDE_FOOT' | 'KNUCKLE';
 
 /** What the player meant, read from the drawn stroke (curve and loft are separate). */
 export interface ShotIntent {
@@ -55,6 +61,13 @@ export interface ShotIntent {
   apex: number | null;
   /** 0..1 from drawing speed */
   power: number;
+  /** UPDATE 5 player modifiers (1 = neutral) */
+  speedMul?: number;
+  /** knuckle wobble 0..1 (only straight, spinless shots) + its deterministic seed */
+  knuckle?: number;
+  kseed?: number;
+  /** a player special that fired on this shot (UI only) */
+  special?: string | null;
 }
 
 /**
@@ -97,9 +110,14 @@ export function simulateBallPhysics(
   v0: [number, number, number],
   spin: number,
   cfg: ModeConfig,
-  opts: { stopZ?: number; maxT?: number; record?: boolean; ground?: boolean } = {},
+  opts: { stopZ?: number; maxT?: number; record?: boolean; ground?: boolean; knuckle?: number; kseed?: number } = {},
 ): Trajectory {
-  const { magnusMax } = curveLimits(cfg);
+  const lim = curveLimits(cfg);
+  // the side-force cap grows with the strike's own spin (better curlers really curl more)
+  const magnusMax = lim.magnusMax * Math.min(1.45, Math.max(1, Math.abs(spin) / lim.spinMax));
+  // knuckle (no-spin) shot: small, smooth, deterministic air wobble late in the flight
+  const kn = (opts.knuckle ?? 0) * cfg.knuckleScale;
+  const ks = (opts.kseed ?? 0) >>> 0;
   const dt = BALL.dt;
   const stopZ = opts.stopZ ?? 0;
   const maxT = opts.maxT ?? 6;
@@ -151,6 +169,14 @@ export function simulateBallPhysics(
     }
     ax += mx;
     az += mz;
+    if (kn > 0) {
+      // fades in after ~0.12 s, grows with speed² — a wandering ball, never a zig-zag
+      const t = i * dt;
+      const env = t < 0.05 ? 0 : t > 0.25 ? 1 : (t - 0.05) / 0.2;
+      const q = (sp * sp) / 900;
+      ax += kn * BALL.knuckleX * env * q * knuckleNoise(ks, 0, t);
+      ay += kn * BALL.knuckleY * env * q * knuckleNoise(ks, 1, t);
+    }
     // semi-implicit Euler (stable, deterministic)
     vx += ax * dt;
     vy += ay * dt;
@@ -199,9 +225,30 @@ export function simulateBallPhysics(
 
 // ── intent → launch ───────────────────────────────────────────────────────
 /** crossing point of the goal plane (or the extrapolated equivalent when short) */
+/** integer hash → [-1, 1] (pure integer maths: identical on every device/engine) */
+function hash01(seed: number, a: number, b: number) {
+  let h = (seed ^ Math.imul(a + 0x9e3779b9, 0x85ebca6b) ^ Math.imul(b + 0x7f4a7c15, 0xc2b2ae35)) >>> 0;
+  h = Math.imul(h ^ (h >>> 16), 0x7feb352d) >>> 0;
+  h = Math.imul(h ^ (h >>> 15), 0x846ca68b) >>> 0;
+  h = (h ^ (h >>> 16)) >>> 0;
+  return (h / 4294967295) * 2 - 1;
+}
+/** smooth value noise: knots every 0.13 s, smoothstep between them */
+export function knuckleNoise(seed: number, channel: number, t: number) {
+  const f = t / 0.13;
+  const i = Math.floor(f);
+  const u = f - i;
+  const w = u * u * (3 - 2 * u);
+  const a = hash01(seed, i, channel);
+  const b = hash01(seed, i + 1, channel);
+  return a + (b - a) * w;
+}
+
+let probeKnuckle = 0;
+let probeSeed = 0;
 function crossing(B: THREE.Vector3, v: [number, number, number], spin: number, cfg: ModeConfig) {
   // solver probes fly through the grass (no bounce) so the search space stays smooth
-  const tr = simulateBallPhysics(B, v, spin, cfg, { maxT: 4, ground: false });
+  const tr = simulateBallPhysics(B, v, spin, cfg, { maxT: 4, ground: false, knuckle: probeKnuckle, kseed: probeSeed });
   const k = (tr.n - 1) * 3;
   let x = tr.pos[k];
   let y = tr.pos[k + 1];
@@ -291,10 +338,16 @@ export function calculateShotParameters(ball: THREE.Vector3, intent: ShotIntent,
   const dz = T.z - B.z;
   const dist = Math.max(1, Math.hypot(dx, dz));
   const power = clamp(intent.power, 0, 1);
-  const speed = lerp(cfg.minSpeed, cfg.maxSpeed, power);
+  const speedMul = clamp(intent.speedMul ?? 1, 0.85, 1.15);
+  const maxSpeed = cfg.maxSpeed * speedMul;
+  const speed = lerp(cfg.minSpeed, maxSpeed, power);
   const psi0 = Math.atan2(dx, -dz);
   const g = BALL.g;
-  const spin = clamp(intent.spin, -lim.spinMax, lim.spinMax);
+  const spin = clamp(intent.spin, -lim.spinMax * 1.4, lim.spinMax * 1.4);
+  const knuckle = spin === 0 ? clamp(intent.knuckle ?? 0, 0, 1) : 0;
+  const kseed = (intent.kseed ?? 0) >>> 0;
+  probeKnuckle = knuckle;
+  probeSeed = kseed;
 
   // driven shot: aim (yaw, pitch) at the drawn end point
   const theta0 = Math.atan2(T.y - B.y + (g * dist * dist) / (2 * speed * speed), dist);
@@ -335,7 +388,14 @@ export function calculateShotParameters(ball: THREE.Vector3, intent: ShotIntent,
       v = vel(lob.u);
     }
   }
+  probeKnuckle = 0;
+  probeSeed = 0;
   const sp = Math.hypot(v[0], v[1], v[2]);
-  if (sp > cfg.maxSpeed) v = v.map((c) => (c * cfg.maxSpeed) / sp) as [number, number, number];
-  return { v: [round(v[0]), round(v[1]), round(v[2])], spin: round(spin), power: round(power) };
+  if (sp > maxSpeed) v = v.map((c) => (c * maxSpeed) / sp) as [number, number, number];
+  const out: ShotInput = { v: [round(v[0]), round(v[1]), round(v[2])], spin: round(spin), power: round(power) };
+  if (knuckle > 0) {
+    out.knuckle = round(knuckle);
+    out.kseed = kseed;
+  }
+  return out;
 }

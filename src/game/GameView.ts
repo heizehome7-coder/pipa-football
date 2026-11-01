@@ -11,12 +11,16 @@ import { TrajectoryOverlay, type Pt } from './render/Trajectory';
 import type { MatchSession } from './session/MatchSession';
 import { buildStadium } from './world/Stadium';
 import type { KickerLook } from './entities/Player';
+import type { KickGameOptions } from './KickGame';
+import type { PlayerDef } from '../players/players';
 import { cameraServices, frameCamera } from './render/cameraFraming';
 
 export interface GameViewCallbacks {
   onPhase(p: Phase): void;
   onOutcome(o: ShotOutcome, detail: string): void;
   onHint(msg: string | null): void;
+  /** UPDATE 5: a player special fired on this shot */
+  onSpecial?(id: string): void;
 }
 
 /**
@@ -48,7 +52,10 @@ export class GameView {
   private v = new THREE.Vector3();
   private v2 = new THREE.Vector3();
   lastReading: StrokeReading | null = null;
+  private kickerPlayer: PlayerDef | null = null;
   fps = 0;
+  /** test hook: slow motion for frame captures (1 = real time) */
+  timeScale = 1;
   private fpsAcc = 0;
   private fpsN = 0;
 
@@ -57,8 +64,9 @@ export class GameView {
     mode: GameMode,
     private session: MatchSession,
     private cb: GameViewCallbacks,
-    looks: { kicker?: KickerLook } = {},
+    looks: { kicker?: KickerLook; kickerPlayer?: PlayerDef | null; keeperLook?: KickGameOptions['keeperLook']; keeperStats?: KickGameOptions['keeperStats'] } = {},
   ) {
+    this.kickerPlayer = looks.kickerPlayer ?? null;
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -73,7 +81,14 @@ export class GameView {
     host.appendChild(this.overlay.canvas);
 
     buildStadium(this.scene, mode);
-    const opts = { visuals: true, nickname: session.player.nickname, seed: session.nextSeed(), kickerLook: looks.kicker };
+    const opts = {
+      visuals: true,
+      nickname: session.player.nickname,
+      seed: session.nextSeed(),
+      kickerLook: looks.kicker,
+      keeperLook: looks.keeperLook,
+      keeperStats: looks.keeperStats,
+    };
     this.game = mode === 'penalty' ? new PenaltyGame(opts) : new FreeKickGame(opts);
     this.scene.add(this.game.group);
     this.game.listener = {
@@ -200,13 +215,14 @@ export class GameView {
 
   private onSwipeEnd(samples: SwipeSample[]) {
     this.stroke = null;
-    const r = readStroke(samples, this.strokeContext(), this.game.cfg);
+    const r = readStroke(samples, this.strokeContext(), this.game.cfg, this.kickerPlayer);
     if (!r) {
       this.cb.onHint('골대 쪽으로 슛 경로를 조금 더 길게 그려주세요');
       return;
     }
     this.lastReading = r;
     this.cb.onHint(null);
+    if (r.intent.special) this.cb.onSpecial?.(r.intent.special);
     if (this.game.shoot(r.input)) {
       this.finalPath = samplePlan(this.game.plan as ShotPlan, 48);
       this.launchAt = 0;
@@ -230,7 +246,7 @@ export class GameView {
       this.fpsAcc = 0;
       this.fpsN = 0;
     }
-    this.game.update(dt);
+    this.game.update(dt * this.timeScale);
     if (this.framedAttempt !== this.game.attempt) this.frameCamera();
     this.renderer.render(this.scene, this.camera);
     this.drawOverlay(now);

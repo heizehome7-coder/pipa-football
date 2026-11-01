@@ -6,7 +6,18 @@ import type { PlayerDef } from './players';
 export function kickerLookOf(p: PlayerDef | null | undefined): KickerLook | undefined {
   if (!p) return undefined;
   const l = p.look;
-  return { shirt: p.shirt, number: p.number, skin: l.skin, hair: l.hair, hairStyle: l.hairStyle, beard: l.beard, height: l.height, build: l.build };
+  return {
+    shirt: p.shirt,
+    number: p.number,
+    skin: l.skin,
+    hair: l.hair,
+    hairStyle: l.hairStyle,
+    beard: l.beard,
+    height: l.height,
+    build: l.build,
+    foot: p.foot,
+    celebration: p.id,
+  };
 }
 
 /** a chosen goalkeeper → his 3D look (hair/skin/name only: the body — and every save — stays the same) */

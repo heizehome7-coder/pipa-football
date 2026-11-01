@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Flag, PlayerAvatar, PlayerCard } from '../components/PlayerArt';
+import { Flag, PlayerAvatar, PlayerCard, StatSheet } from '../components/PlayerArt';
 import { VersionBadge } from '../components/VersionBadge';
-import { COUNTRY_NAME, getPlayer, PLAYERS, type PlayerDef } from '../players/players';
+import { COUNTRY_NAME, getPlayer, ovr, PLAYERS, type PlayerDef } from '../players/players';
 import { SQUAD_SIZE, type Squad } from '../players/squad';
 
 type Filter = 'ALL' | 'FORWARD' | 'MIDFIELDER' | 'GOALKEEPER';
@@ -217,14 +217,23 @@ function DetailCard({ player, selected, onToggle, onClose }: { player: PlayerDef
   return (
     <div className="detail-backdrop" onClick={onClose} data-testid="player-detail">
       <div className="detail-card" onClick={(e) => e.stopPropagation()}>
-        <PlayerCard player={player} selected={selected} />
-        <div className="detail-text">
-          <b>{player.name}</b>
-          <span>{player.nameKo}</span>
-          <span>
-            {player.positions.join(' / ')} · <Flag code={player.country} size={12} /> {COUNTRY_NAME[player.country]}
+        <div className="detail-head">
+          <span className="detail-ava">
+            <PlayerAvatar player={player} size={72} />
+          </span>
+          <div className="detail-text">
+            <b>{player.name}</b>
+            <span>{player.nameKo}</span>
+            <span>
+              {player.positions.join(' / ')} · <Flag code={player.country} size={12} /> {COUNTRY_NAME[player.country]} · #{player.number}
+            </span>
+          </div>
+          <span className="detail-ovr">
+            <b>{ovr(player)}</b>
+            <em>OVR</em>
           </span>
         </div>
+        <StatSheet player={player} />
         <div className="detail-actions">
           <button
             className={selected ? 'btn-ghost' : 'btn-primary'}

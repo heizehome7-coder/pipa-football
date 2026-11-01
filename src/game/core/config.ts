@@ -64,6 +64,8 @@ export interface ModeConfig {
   maxApex: number;
   /** metres of extra peak height per screen-height the stroke rises above its end (loft) */
   loftPerScreen: number;
+  /** UPDATE 5: knuckle wobble strength (short penalty flights need more to be visible) */
+  knuckleScale: number;
   /** swipe speed (screen-heights / s) mapped to power 0 and 1 */
   swipeSpeedMin: number;
   swipeSpeedMax: number;
@@ -82,6 +84,7 @@ export const MODES: Record<GameMode, ModeConfig> = {
     curveMultiplier: 0.8,
     maxApex: 3.0,
     loftPerScreen: 9,
+    knuckleScale: 3.2,
     swipeSpeedMin: 0.55,
     swipeSpeedMax: 3.0,
     keeper: {
@@ -119,6 +122,7 @@ export const MODES: Record<GameMode, ModeConfig> = {
     curveMultiplier: 1,
     maxApex: 4.6,
     loftPerScreen: 14,
+    knuckleScale: 0.6,
     swipeSpeedMin: 0.55,
     swipeSpeedMax: 3.0,
     keeper: {

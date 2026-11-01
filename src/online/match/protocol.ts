@@ -28,7 +28,7 @@ export const MATCH_RULES = {
   countdownMs: 3600,
   /** run-up starts this long after the server accepts the shot (network lead) */
   shotLeadMs: 650,
-  resultShowMs: 2600,
+  resultShowMs: 3200,
   aimTimeoutMs: 25_000,
 } as const;
 
