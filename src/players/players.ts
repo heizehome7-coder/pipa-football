@@ -46,7 +46,7 @@ export type SpecialId =
   | 'POWER_BURST' | 'FINESSE_MASTER' | 'KNUCKLE_DRIVE' | 'LOW_DISGUISE' | 'LEFT_CURL' | 'TWO_FOOT_FINESSE'
   | 'PENALTY_PRECISION' | 'POWER_FINISH' | 'QUICK_LOW_CURL' | 'BALANCED_FINISH' | 'CONTROLLED_DRIVE'
   | 'LEFT_FINESSE' | 'DRIVEN_CURVE' | 'CLINICAL_FINISH' | 'SET_PIECE_CONTROL'
-  | 'LONG_REACH' | 'POSITION_MASTER' | 'LOW_SAVE' | 'HIGH_REACH' | 'PENALTY_SPECIALIST';
+  | 'LONG_REACH' | 'POSITION_MASTER' | 'LOW_SAVE' | 'HIGH_REACH' | 'PENALTY_SPECIALIST' | 'BLACK_SPIDER';
 
 export const SPECIALS: Record<SpecialId, { name: string; desc: string }> = {
   POWER_BURST: { name: 'POWER BURST', desc: '빠르고 곧은 강한 스트로크에서 더 빠른 슛' },
@@ -69,6 +69,7 @@ export const SPECIALS: Record<SpecialId, { name: string; desc: string }> = {
   LOW_SAVE: { name: 'LOW SAVE', desc: '낮은 슛에 강함' },
   HIGH_REACH: { name: 'HIGH REACH', desc: '상단 코너 슛에 강함' },
   PENALTY_SPECIALIST: { name: 'PENALTY SPECIALIST', desc: 'AI 모드에서 페널티 방향 예측력 최고' },
+  BLACK_SPIDER: { name: 'BLACK SPIDER', desc: '폭발적인 다이빙과 긴 손끝 리치, 높은 체공 · 중간 속도 슛은 공중에서 잡아냄' },
 };
 
 export interface PlayerDef {

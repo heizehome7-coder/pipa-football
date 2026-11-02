@@ -9,7 +9,7 @@ import { DIVE_DIRS, roundSeed } from './protocol';
 import { BALL } from '../../game/physics/BallPhysics';
 import { getPlayer } from '../../players/players';
 
-export type OnlineLooks = Pick<KickGameOptions, 'kickerLook' | 'keeperLook' | 'keeperStats'>;
+export type OnlineLooks = Pick<KickGameOptions, 'kickerLook' | 'keeperLook' | 'keeperStats' | 'keeperSpecial'>;
 
 /** UPDATE 6: where this round's free kick is taken — both players of a pair get the same spot */
 export function freeKickSpotIndex(matchId: string, round: number) {
@@ -64,8 +64,8 @@ export class OnlinePenaltyGame extends OnlineKickGame {
  * of the screen (his own right — he faces the camera).
  */
 const BASE_TARGETS: Record<DiveDir, [number, number]> = {
-  left: [-2.9, 0.5],
-  right: [2.9, 0.5],
+  left: [-2.9, 0.9],
+  right: [2.9, 0.9],
   upLeft: [-2.45, 1.95],
   upRight: [2.45, 1.95],
   up: [0, 2.3],
@@ -74,14 +74,15 @@ const BASE_TARGETS: Record<DiveDir, [number, number]> = {
   lowRight: [1.6, 0.25],
 };
 /**
- * UPDATE 6 reach buff for the human keeper: each dive stretches a little further
- * (sideways +6 %, high +2 % — the gloves already stretch further up —, low +4.5 %). Direction and timing are exactly as chosen.
+ * UPDATE 6 → UPDATE 7 hotfix: the side and high dives aim at the far corner, so the
+ * keeper flies as far as his own body allows (DIVING / REACH / LOW·HIGH SAVE decide the
+ * real reach, not the swipe). Direction and timing are exactly as chosen.
  */
-export const DIVE_STRETCH = { side: 1.06, high: 1.02, low: 1.045 } as const;
+export const DIVE_STRETCH = { side: 1.2, high: 1.22, low: 1.0 } as const;
 const TARGETS = Object.fromEntries(
   Object.entries(BASE_TARGETS).map(([k, [x, y]]) => {
     const m = y > 1.5 ? DIVE_STRETCH.high : y < 0.4 ? DIVE_STRETCH.low : DIVE_STRETCH.side;
-    return [k, [x * m, y > 1.5 ? y * DIVE_STRETCH.high : y]];
+    return [k, [x * m, y > 1.5 && x !== 0 ? 2.3 : y]];
   }),
 ) as Record<DiveDir, [number, number]>;
 
@@ -134,7 +135,8 @@ export function simulateRound(
   /** UPDATE 6: FREE KICK DUEL (spot from freeKickSpotIndex) */
   opts: { mode?: MatchMode; spot?: number } = {},
 ): RoundSimulation {
-  const g = new OnlineKickGame('KICKER', seed, false, { keeperStats: getPlayer(keeperId)?.gk }, opts.mode ?? 'penalty', opts.spot ?? 0);
+  const kp = getPlayer(keeperId);
+  const g = new OnlineKickGame('KICKER', seed, false, { keeperStats: kp?.gk, keeperSpecial: kp?.gk ? kp.special : null }, opts.mode ?? 'penalty', opts.spot ?? 0);
   g.start();
   if (!g.shoot(shot)) throw new Error('shot rejected');
   if (dive) g.setKeeperDive(diveCommand(dive));

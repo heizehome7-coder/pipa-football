@@ -3,7 +3,8 @@ import type { PlayerProfile } from '../game/core/types';
 import { PlayerAvatar } from '../components/PlayerArt';
 import { getPlayer, type PlayerDef } from '../players/players';
 import type { Squad } from '../players/squad';
-import { MpBadge } from './MarketScreen';
+import { ProgressHeader } from '../components/ProgressHeader';
+import type { Progress } from '../players/ownership';
 
 function MarketIcon() {
   return (
@@ -71,7 +72,10 @@ export function PlayTypeScreen({
   onSquad,
   onMarket,
   onDeveloper,
+  onRanking,
+  onLevels,
   mp,
+  progress,
   onLogout,
 }: {
   user: PlayerProfile;
@@ -82,6 +86,10 @@ export function PlayTypeScreen({
   onMarket: () => void;
   /** UPDATE 6 patch: DEVELOPER MODE (server-checked code) */
   onDeveloper: () => void;
+  /** UPDATE 7 */
+  onRanking: () => void;
+  onLevels: () => void;
+  progress?: Progress | null;
   /** UPDATE 6: current MP (null = no account server) */
   mp: number | null;
   onLogout: () => void;
@@ -91,13 +99,13 @@ export function PlayTypeScreen({
       <header className="modes-top">
         <div className="mini-logo">PIPA</div>
         <div className="top-right">
-          <MpBadge mp={mp} />
           <VersionBadge />
           <button className="btn-ghost" onClick={onLogout}>
           로그아웃
           </button>
         </div>
       </header>
+      <ProgressHeader nickname={user.nickname} mp={mp} progress={progress} onLevels={onLevels} />
       <div className="modes-head">
         <p className="eyebrow">PLAY TYPE</p>
         <h2>
@@ -155,6 +163,23 @@ export function PlayTypeScreen({
             <strong>TRANSFER MARKET</strong>
             <span className="mode-ko">이적시장</span>
             <span className="mode-desc">MP로 새 선수 · 레전드 영입</span>
+          </div>
+          <span className="mode-arrow" aria-hidden>
+            ›
+          </span>
+        </button>
+        <button className="mode-card play-card" onClick={onRanking} data-testid="play-ranking">
+          <div className="play-icon">
+            <svg viewBox="0 0 64 64" aria-hidden>
+              <rect x="8" y="30" width="14" height="22" rx="2" fill="none" stroke="currentColor" strokeWidth="3" />
+              <rect x="25" y="16" width="14" height="36" rx="2" fill="none" stroke="var(--lime)" strokeWidth="3" />
+              <rect x="42" y="38" width="14" height="14" rx="2" fill="none" stroke="currentColor" strokeWidth="3" />
+            </svg>
+          </div>
+          <div className="mode-text">
+            <strong>RANKING</strong>
+            <span className="mode-ko">랭킹</span>
+            <span className="mode-desc">MP · 승부차기 · 프리킥 승리 순위</span>
           </div>
           <span className="mode-arrow" aria-hidden>
             ›

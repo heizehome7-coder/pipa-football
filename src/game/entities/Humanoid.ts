@@ -27,7 +27,7 @@ export type Pose = { [K in JointName]?: V3 } & { hipsPos?: V3 };
 
 export type MarkerName =
   | 'head' | 'chest' | 'pelvis' | 'lHand' | 'rHand' | 'lForearm' | 'rForearm'
-  | 'lKnee' | 'rKnee' | 'lFoot' | 'rFoot';
+  | 'lKnee' | 'rKnee' | 'lFoot' | 'rFoot' | 'lUpperArm' | 'rUpperArm';
 
 export interface Kit {
   jersey: number;
@@ -171,6 +171,7 @@ export class Humanoid {
       this.mesh(sh, geo('shoulderCap', () => new THREE.SphereGeometry(0.072, 7, 5)), k.jersey, 0, 0, 0);
       this.mesh(sh, geo('sleeve', () => new THREE.CylinderGeometry(0.064, 0.057, 0.15, 7)), k.jersey, 0, -0.075, 0);
       this.mesh(sh, geo('upperArm', () => new THREE.CapsuleGeometry(0.044, 0.18, 2, 6)), k.skin, 0, -0.18, 0);
+      this.marker(`${side}UpperArm`, sh, 0, -0.17, 0);
       const el = this.joint(`${side}Elbow`, sh, 0, -0.3, 0);
       this.mesh(el, geo('forearm', () => new THREE.CapsuleGeometry(0.04, 0.19, 2, 6)), k.gloves ? k.jersey : k.skin, 0, -0.125, 0);
       if (k.gloves) {

@@ -45,7 +45,8 @@ try {
 const accounts = await createAccounts({
   databaseUrl: process.env.DATABASE_URL,
   dataDir: process.env.PIPA_DATA_DIR,
-  catalog: { marketPrice: judge.marketPrice, isStarter: judge.isStarter, getPlayer: judge.getPlayer },
+  // player catalogue (prices) + UPDATE 7 progression rules — the same code the phones run
+  catalog: judge,
   log: (line) => console.log(line),
 });
 
@@ -123,6 +124,24 @@ function pushWallet(nick, mp, extra = {}) {
   }
 }
 accounts.setWalletPush((nick, mp) => pushWallet(nick, mp, { source: 'developer' }));
+/** UPDATE 7: send one message to every open connection of an account */
+function pushTo(nick, msg) {
+  const k = accounts.nickKey(nick);
+  const raw = JSON.stringify(msg);
+  for (const c of clients.values()) if (c.nick && accounts.nickKey(c.nick) === k && c.ws.readyState === 1) c.ws.send(raw);
+}
+// XP / LEVEL UP after a finished online match
+accounts.setProgressPush((nick, res) => pushTo(nick, { t: 'progress:update', ...res }));
+// a listing of yours was bought (the notice also stays in the account until shown)
+accounts.setSalePush((nick, notice, mp) => {
+  pushTo(nick, { t: 'market:sold', notice });
+  pushWallet(nick, mp, { source: 'sale' });
+});
+// rankings changed (throttled by accounts.mjs) → everyone refreshes the open RANKING screen
+accounts.setRankingPush(() => {
+  const raw = JSON.stringify({ t: 'ranking:changed' });
+  for (const c of clients.values()) if (c.ws.readyState === 1) c.ws.send(raw);
+});
 accounts.setOnlineCheck((nick) => {
   const k = accounts.nickKey(nick);
   for (const c of clients.values()) if (c.nick && accounts.nickKey(c.nick) === k) return true;

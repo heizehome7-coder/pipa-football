@@ -4,8 +4,8 @@ import { mulberry32 } from './core/math';
 import type { Phase, ShotInput, ShotOutcome } from './core/types';
 import { Ball } from './entities/Ball';
 import { DefensiveWall } from './entities/DefensiveWall';
-import { Goalkeeper, type Collider } from './entities/Goalkeeper';
-import type { GkStats } from '../players/players';
+import { Goalkeeper, PERFECT_WINDOW, type Collider } from './entities/Goalkeeper';
+import type { GkStats, SpecialId } from '../players/players';
 import { Kicker, type KickerLook, type KickStyle } from './entities/Player';
 import { buildShotPlan, shotPositionAt, shotVelocityAt, type ShotPlan } from './physics/ShotModel';
 import { GoalFrame } from './world/Goal';
@@ -28,6 +28,8 @@ export interface KickGameOptions {
   keeperLook?: ConstructorParameters<typeof Goalkeeper>[0];
   /** UPDATE 5: the keeper's abilities (reflex/diving/reach/… — AI and human alike) */
   keeperStats?: GkStats;
+  /** UPDATE 7 hotfix: the keeper's special (BLACK SPIDER, LONG REACH …) */
+  keeperSpecial?: SpecialId | null;
 }
 
 /** A person's dive: world target (x, y on the keeper's line) and when (s since the run-up started). */
@@ -103,7 +105,7 @@ export abstract class KickGame {
     this.goal = new GoalFrame(opts.visuals);
     this.ball = new Ball(opts.visuals);
     this.kicker = new Kicker(opts.nickname, opts.kickerLook);
-    this.keeper = new Goalkeeper(opts.keeperLook, opts.keeperStats);
+    this.keeper = new Goalkeeper(opts.keeperLook, opts.keeperStats, opts.keeperSpecial);
     this.wall = this.createWall();
     this.group.add(this.goal.group, this.ball.group, this.kicker.body.root, this.keeper.body.root);
     if (this.wall) this.group.add(this.wall.group);
@@ -259,7 +261,13 @@ export abstract class KickGame {
       const d = this.humanDive;
       if (d && this.plan && !this.keeper.committed && this.phase !== 'aim' &&
           this.kicker.elapsed >= Math.max(d.at, this.kicker.contactTime - 0.03)) {
-        this.keeper.diveTo(d.x, d.y);
+        // UPDATE 7 hotfix: a dive started right at the strike gets a cleaner push (internal)
+        const c = this.kicker.contactTime;
+        const v0 = shotVelocityAt(this.plan, 0);
+        const b = this.spot.ball;
+        const tz = v0.z < -0.5 ? (this.keeper.home.z - b.z) / v0.z : 0;
+        const read = tz > 0 ? { x: b.x + v0.x * tz, y: b.y + v0.y * tz - 4.9 * tz * tz } : undefined;
+        this.keeper.diveTo(d.x, d.y, d.at >= c - PERFECT_WINDOW.before && d.at <= c + PERFECT_WINDOW.after, read);
       }
     } else if (this.style === 'penalty' && this.plan && !this.keeper.committed && this.phase !== 'aim' &&
         this.kicker.elapsed >= this.kicker.contactTime - this.keeperLead) {
@@ -347,9 +355,17 @@ export abstract class KickGame {
         const glove = ci < 2; // lHand / rHand
         const outside = Math.abs(this.ballPos.x) > Math.abs(c.pos.x) - 0.04 || this.ballPos.y > c.pos.y + 0.05;
         const fingertip = glove && outside && a !== 'catch' && a !== 'scoop';
-        if ((a === 'catch' || a === 'scoop' || a === 'jump') && speed < this.cfg.keeper.catchSpeed && !fingertip) {
+        // UPDATE 7 hotfix — BLACK SPIDER: a medium-pace ball into the middle of both gloves
+        // is held in the air (power shots and fingertip touches are still parried)
+        const aerial = a === 'dive' && this.keeper.special === 'BLACK_SPIDER' && !fingertip &&
+          speed < this.cfg.keeper.catchSpeed * 0.92 && this.keeper.ballInBothHands(this.ballPos);
+        if (((a === 'catch' || a === 'scoop' || a === 'jump') && speed < this.cfg.keeper.catchSpeed && !fingertip) || aerial) {
           this.caught = true;
           this.ballVel.set(0, 0, 0);
+          if (aerial) {
+            this.setOutcome('SAVE', 'BLACK SPIDER 공중 캐치!');
+            return true;
+          }
         } else if (fingertip) {
           // keeps much of its pace, turned away from goal: round the post or over the bar
           const side = Math.sign(this.ballPos.x || c.pos.x || 1);

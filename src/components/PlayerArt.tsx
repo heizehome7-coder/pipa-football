@@ -412,7 +412,7 @@ export function PlayerCard({
   onInfo?: () => void;
   compact?: boolean;
   /** UPDATE 6: TRANSFER MARKET card (price or OWNED instead of SELECT) */
-  market?: { price: number; owned: boolean };
+  market?: { price: number; owned: boolean; listed?: boolean; userOffers?: number };
 }) {
   const hue = accentHue(player.id);
   return (
@@ -461,9 +461,14 @@ export function PlayerCard({
           </span>
         ))}
       </div>
+      {market && !!market.userOffers && !market.owned && !market.listed && (
+        <span className="pcard-user" data-testid="card-user">
+          USER ×{market.userOffers}
+        </span>
+      )}
       {market ? (
-        <div className={`pcard-state pcard-price ${market.owned ? 'owned' : ''}`} data-testid="card-price">
-          {market.owned ? '✓ OWNED' : `${market.price.toLocaleString('en-US')} MP`}
+        <div className={`pcard-state pcard-price ${market.owned || market.listed ? 'owned' : ''}`} data-testid="card-price">
+          {market.owned ? '✓ OWNED' : market.listed ? 'LISTED' : `${market.price.toLocaleString('en-US')} MP`}
         </div>
       ) : (
         <div className="pcard-state">{selected ? '✓ SELECTED' : 'SELECT'}</div>

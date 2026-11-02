@@ -51,6 +51,31 @@ npm run build:single   # dist-single/ — index.html 한 파일 (어디서나 �
 - 골 세리머니: 모든 선수 공통 "두 손 들고 환호" + 실패(SAVE/MISS/POST/CROSSBAR) 리액션 — `reactions.ts`; 리액션 중 입력 잠금(~2초)
 - 카드 앞면 OVR + POWER/ACCURACY/CURVE, 상세에 전체 능력 + SPECIAL ABILITY. 등 이름 크기 확대
 
+## UPDATE 7 핫픽스 — 골키퍼 다이빙 리워크 & USER SQUADS (버전 표기는 UPDATE 7 유지)
+- **다이빙** (`src/game/entities/Goalkeeper.ts` → `DIVE`, `updateDive`): READY → 체중 이동·사이드 로드 → 반대발 푸시오프 → 이륙 → 풀 익스텐션 → 체공(hang) → 착지. 엉덩이는 속도 곡선(초반 빠르게, 뻗을수록 감속)과 포물선으로 날아감(목표 지점 lerp 아님). LOW / MID / HIGH × 좌우 미러 포즈, 두 손을 함께 뻗음
+- **리치**: 보이는 손 = 충돌 위치(UPDATE 6의 보이지 않는 장갑 스트레치 제거). 리치는 실제 팔 길이(풀 스트레치에서 팔이 눈에 보이게 늘어남)와 몸 이동량. 위팔에도 충돌체 추가(머리와 팔뚝 사이 구멍 제거). 표준 GK 측면 도달 2.95 → 3.26 m(+10.6 %), 낮은 다이빙 1.74 → 1.91 m(+9.8 %), 착지 0.81 → 1.04 s
+- **사람 키퍼(온라인)**: 방향·타이밍은 선택 그대로. 다이빙 "깊이"만 키커의 발 방향(커브 제외)으로 일부 보정 — 코너 방향을 골라도 가까운 공을 지나쳐 날아가지 않음. 슛 순간(−0.12 ~ +0.07 s)에 고르면 내부 퍼펙트 보너스(빠른 푸시오프, 약간 긴 이동). 늦은 입력은 여전히 실패, 미리 고른 방향은 바꿀 수 없음
+- **스탯**: DIVING(푸시오프·속도·체공), REACH(팔 길이·이동량), LOW/HIGH SAVE(높이별 이동량), REFLEX(AI 반응, 사람은 아주 조금), POSITIONING·PENALTY READ(AI만). 무작위 세이브 없음 — 이동량에 ±1.2 %의 아주 작은 실행 오차만
+- **특수능력**: LONG REACH(쿠르투아, 측면 이동 +1.5 %), HIGH REACH(돈나룸마, 높은 다이빙 +4 %), LOW SAVE(알리송, 낮은 다이빙 빠른 푸시·+3.5 %), POSITION MASTER(노이어, 안정적인 출발·AI 판단), PENALTY SPECIALIST(마르티네스, AI 예측)
+- **레프 야신**: 99/99/99/99/97/99/98 + **BLACK SPIDER**(가속 +10 %, 풀 스트레치 손 리치 +8 %, 높은 다이빙 +7 %, 체공 +8 %). 중간 속도 슛이 두 손 사이로 오면 공중 캐치(`BLACK SPIDER 공중 캐치!`), 강슛·손끝 접촉은 펀칭. 무적 아님
+- 측정(`npx tsx scripts/keeper-dive-exp.ts`, 방향 맞춤 기준 세이브율): UPDATE 7 46.7 % → 라야 58 · 표준 59 · 마이냥 60 · 알리송 61 · 쿠르투아/돈나룸마 62 · 야신 64 %. 반대 방향 ~10 %(변화 없음), 늦은 다이빙 36~43 %. 강한 코너 슛: 표준 0 % · 최상위 17~21 % · 야신 24 %
+- 싱글플레이 프리킥 AI는 같은 다이빙을 쓰되 판단 오차(`readNoise` 0.7 → 1.0)로 기존 난이도 유지(on-target 세이브 ~46 % → ~44 %)
+- **개발자 모드 · USER SQUADS** (`/api/dev/squad`, 개발자 토큰 필수, 읽기 전용): 닉네임 검색(부분 일치 → 목록), 서버에 저장된 스쿼드만(폰의 localStorage는 절대 안 씀) — 승부차기 1~5번 · GK · 프리킥 키커를 선수 카드(이름 · OVR · 포지션 · 특수능력)로, 보유 선수 보기
+- 테스트: `npx tsx scripts/keeper-hotfix-test.ts`, `python3 scripts/hotfix-e2e.py`
+
+## UPDATE 7 — RANKING & PROGRESSION
+- 밸런스 숫자는 전부 `src/progress/progression.ts` 한 곳 (서버도 같은 파일을 번들해서 사용)
+- **랭킹** (`/api/ranking`): MP · PENALTY WINS · FREE KICK WINS, TOP 100 + MY RANK. 동률: 승률 → 경기 수 → 최근 승리. 경기 결과·구매·지급이 생기면 서버가 `ranking:changed`를 3초에 한 번까지만 알리고, 열려 있는 랭킹 화면이 스스로 갱신
+- **프로필** (`/api/profile`): 레벨, MP, FV, 모드별 전적
+- **레벨/XP**: 정상 종료된 온라인 경기만 (승 120 · 무 80 · 패 60 XP), 경기당 1번(`results` 키). 구간별 XP 곡선, 최대 LV 50(MAX LEVEL). 결과 화면에 +XP / LEVEL UP! / NEW REWARD
+- **FV**: MP와 별개 재화. 5레벨마다 CLAIM으로 받음(자동 지급 아님), `claimedLevelRewards`로 중복 방지
+- **일일 로그인** (`/api/daily/claim`): 서버 날짜(한국 시간) 기준 하루 1번, DAY 1~5 MP · DAY 6/7 PLAYER PACK(`unopenedPacks`만 +1, 팩 열기는 다음 업데이트). 하루 건너뛰면 DAY 1
+- **선수 판매**: MY PLAYERS → SELL PLAYER (가치의 80~120%) → LISTED. 실제로 팔릴 때만 70% 지급(수수료 30%). 스타터 UNTRADEABLE, 스쿼드 사용 중이면 판매 불가, CANCEL LISTING, 자기 매물 구매 불가. 구매 시 같은 선수의 유저 매물(최저가 → 먼저 등록 순)을 시스템 카드보다 먼저 체결. 구매자·판매자·매물은 한 트랜잭션(PostgreSQL BEGIN/COMMIT). 판매자에게 실시간 알림, 오프라인이면 다음 접속 때
+- **사운드** (`src/audio/sound.ts`): 킥(발이 공에 닿는 프레임), 그물(GOAL만), 관중 함성(GOAL, 약 3초) — 모두 코드로 합성(외부 음원·다운로드 없음), 첫 터치 후 미리 생성. 🔊 SOUND / 🔇 MUTED (기기에 저장). 온라인은 각 폰이 서버의 슛을 재생하며 같은 순간에 소리
+- **골 진동**: GOAL에만 45ms (휴대폰만, 미지원 브라우저는 무시)
+- 개발자 모드 최근 접속자에 LV · XP · MP · FV · 승부차기/프리킥 승 · 출석 연속일 표시
+- 테스트: `node scripts/account-test.mjs`, `DEVELOPER_CODE=… PIPA_TEST_DB=… node scripts/pg-market-check.mjs`, `python3 scripts/update7-e2e.py`
+
 ## UPDATE 6 추가 패치 — DEVELOPER MODE & 득점 선수 카드 (버전 표기는 UPDATE 6 유지)
 - **DEVELOPER MODE** (홈 메뉴 → 개발자 코드 → DEVELOPER DASHBOARD) — `src/screens/DeveloperScreen.tsx`, 서버 `server/accounts.mjs`
   - 코드는 서버만 확인: Render 환경변수 `DEVELOPER_CODE`가 있으면 그 값, 없으면 서버 코드 안의 salt+scrypt 해시와 비교 (코드 원문은 저장소·브라우저 어디에도 없음). 틀리면 "인증이 되지 않았습니다.", 6번 틀리면 10분 잠금

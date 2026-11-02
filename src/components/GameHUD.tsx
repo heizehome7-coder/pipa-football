@@ -1,3 +1,4 @@
+import { SoundToggle } from './SoundToggle';
 export function GameHUD({
   label,
   goals,
@@ -25,7 +26,9 @@ export function GameHUD({
         </span>
         <span className="hud-name">{nickname}</span>
       </div>
-      <div className="hud-spacer" />
+      <div className="hud-spacer hud-sound">
+        <SoundToggle compact />
+      </div>
     </div>
   );
 }

@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { VersionBadge } from '../components/VersionBadge';
-import { AccountError, accountsAvailable, devApi, type DevStats, type DevUser } from '../online/account';
+import { AccountError, accountsAvailable, devApi, type DevSquadUser, type DevStats, type DevUser } from '../online/account';
 import { formatMP } from '../players/ownership';
+import { PlayerCard } from '../components/PlayerArt';
+import { getPlayer, SPECIALS, type PlayerDef } from '../players/players';
 
 /**
  * UPDATE 6 patch — DEVELOPER MODE.
@@ -83,7 +85,7 @@ function DevAccess({ onOk, onBack }: { onOk: (t: string) => void; onBack: () => 
 }
 
 // ── 5. DEVELOPER DASHBOARD ──────────────────────────────────────────────
-type Tab = 'recent' | 'records' | 'mp';
+type Tab = 'recent' | 'records' | 'mp' | 'squads';
 type RecMode = 'total' | 'penalty' | 'freekick';
 
 /** server ISO time → "YYYY-MM-DD HH:mm" in Korean time */
@@ -158,6 +160,7 @@ function DevDashboard({ devToken, onExpired, onBack }: { devToken: string; onExp
             ['recent', '최근 접속자'],
             ['records', '유저 전적'],
             ['mp', 'MP 관리'],
+            ['squads', 'USER SQUADS'],
           ] as [Tab, string][]
         ).map(([t, label]) => (
           <button key={t} className={`chip ${tab === t ? 'on' : ''}`} onClick={() => setTab(t)} role="tab" aria-selected={tab === t} data-testid={`dev-tab-${t}`}>
@@ -165,7 +168,7 @@ function DevDashboard({ devToken, onExpired, onBack }: { devToken: string; onExp
           </button>
         ))}
       </div>
-      <input className="dev-search" placeholder="닉네임 검색" value={q} onChange={(e) => setQ(e.target.value)} data-testid="dev-search" />
+      {tab !== 'squads' && <input className="dev-search" placeholder="닉네임 검색" value={q} onChange={(e) => setQ(e.target.value)} data-testid="dev-search" />}
       {err && <p className="dev-msg bad">{err}</p>}
 
       {tab === 'recent' && (
@@ -175,6 +178,10 @@ function DevDashboard({ devToken, onExpired, onBack }: { devToken: string; onExp
               <b>{u.nickname}</b>
               <span className="dev-time">{kstTime(u.lastSeenAt)}</span>
               <span className={`dev-status ${u.online ? 'on' : ''}`}>{u.online ? 'ONLINE' : 'OFFLINE'}</span>
+              {/* UPDATE 7 */}
+              <span className="dev-extra" data-testid="dev-extra">
+                LV {u.level ?? 0} · XP {u.xp ?? 0} · {formatMP(u.mp)} · FV {(u.fv ?? 0).toLocaleString('en-US')} · PK {u.stats.penalty.wins}W · FK {u.stats.freekick.wins}W · STREAK {u.dailyStreak ?? 0}
+              </span>
             </li>
           ))}
           {!users.length && <li className="dev-empty">{loading ? '불러오는 중…' : '유저가 없어요'}</li>}
@@ -218,6 +225,7 @@ function DevDashboard({ devToken, onExpired, onBack }: { devToken: string; onExp
       )}
 
       {tab === 'mp' && <MpManager users={users} devToken={devToken} onExpired={onExpired} onGranted={() => void load()} />}
+      {tab === 'squads' && <UserSquads devToken={devToken} onExpired={onExpired} />}
     </div>
   );
 }
@@ -313,6 +321,134 @@ function MpManager({ users, devToken, onExpired, onGranted }: { users: DevUser[]
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── UPDATE 7 hotfix — USER SQUADS (read-only) ─────────────────────────────
+/**
+ * The squad a user plays with, exactly as the SERVER stores it (never this phone's
+ * localStorage): penalty order 1–5, goalkeeper and free-kick taker as player cards,
+ * plus the players the account owns. Every call carries the developer token.
+ */
+function UserSquads({ devToken, onExpired }: { devToken: string; onExpired: () => void }) {
+  const [nick, setNick] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [user, setUser] = useState<DevSquadUser | null>(null);
+  const [matches, setMatches] = useState<{ nickname: string; online: boolean; level: number }[]>([]);
+  const [showOwned, setShowOwned] = useState(false);
+
+  const look = async (name: string) => {
+    if (!name.trim() || busy) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await devApi.squad(devToken, name.trim());
+      setUser(r.user ?? null);
+      setMatches(r.user ? [] : r.matches ?? []);
+      setShowOwned(false);
+    } catch (e) {
+      if (e instanceof AccountError && e.code === 'dev') return onExpired();
+      setUser(null);
+      setMatches([]);
+      setErr(e instanceof Error ? e.message : '불러오지 못했어요');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const sq = user?.squad ?? null;
+  const card = (id: string | undefined, label?: { order?: number; fk?: boolean }) => {
+    const p = getPlayer(id);
+    if (!p) return <div className="dev-sq-missing">{id ?? '-'}</div>;
+    return <SquadCard key={`${p.id}-${label?.order ?? ''}`} player={p} order={label?.order} fk={label?.fk} />;
+  };
+
+  return (
+    <div className="dev-squads" data-testid="dev-squads">
+      <form
+        className="dev-sq-search"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void look(nick);
+        }}
+      >
+        <input className="dev-search" placeholder="닉네임으로 스쿼드 조회" value={nick} onChange={(e) => setNick(e.target.value)} data-testid="dev-sq-input" />
+        <button type="submit" className="btn-primary small" disabled={busy || !nick.trim()} data-testid="dev-sq-go">
+          {busy ? '조회 중…' : '조회'}
+        </button>
+      </form>
+      {err && <p className="dev-msg bad" data-testid="dev-sq-msg">{err}</p>}
+      {!!matches.length && (
+        <ul className="dev-list dev-pick" data-testid="dev-sq-matches">
+          {matches.map((m) => (
+            <li key={m.nickname}>
+              <button className="dev-row pick" onClick={() => (setNick(m.nickname), void look(m.nickname))} data-testid="dev-sq-match" data-nick={m.nickname}>
+                <b>{m.nickname}</b>
+                <span className="dev-time">LV {m.level}</span>
+                <span className={`dev-status ${m.online ? 'on' : ''}`}>{m.online ? 'ONLINE' : 'OFFLINE'}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {user && (
+        <div className="dev-sq-user" data-testid="dev-sq-user" data-nick={user.nickname}>
+          <div className="dev-sq-head">
+            <b>{user.nickname}</b>
+            <span className={`dev-status ${user.online ? 'on' : ''}`}>{user.online ? 'ONLINE' : 'OFFLINE'}</span>
+            <em>
+              LV {user.level} · {formatMP(user.mp)} · 보유 {user.ownedAll.length}명
+            </em>
+          </div>
+          {!sq ? (
+            <p className="dev-empty" data-testid="dev-sq-none">서버에 저장된 스쿼드가 없어요</p>
+          ) : (
+            <>
+              {!user.squadUsable && <p className="dev-msg bad">보유하지 않은 선수가 있어 온라인에서는 이 스쿼드를 쓸 수 없어요</p>}
+              <h4 className="dev-sq-title">PENALTY ORDER</h4>
+              <div className="dev-sq-row" data-testid="dev-sq-order">
+                {sq.penaltyOrder.map((id, i) => card(id, { order: i + 1 }))}
+              </div>
+              <div className="dev-sq-pair">
+                <div>
+                  <h4 className="dev-sq-title">GOALKEEPER</h4>
+                  <div className="dev-sq-row" data-testid="dev-sq-gk">{card(sq.goalkeeperId)}</div>
+                </div>
+                <div>
+                  <h4 className="dev-sq-title">FREE KICK TAKER</h4>
+                  <div className="dev-sq-row" data-testid="dev-sq-fk">{card(sq.freeKickTakerId, { fk: true })}</div>
+                </div>
+              </div>
+            </>
+          )}
+          <button className="btn-ghost dev-sq-owned-btn" onClick={() => setShowOwned((v) => !v)} data-testid="dev-sq-owned-btn">
+            {showOwned ? '보유 선수 닫기' : `보유 선수 보기 (${user.ownedAll.length})`}
+          </button>
+          {showOwned && (
+            <div className="dev-sq-row wrap" data-testid="dev-sq-owned">
+              {user.ownedAll.map((id) => card(id))}
+              {user.listed.map((id) => (
+                <div key={`l-${id}`} className="dev-sq-listed">
+                  {card(id)}
+                  <span>판매 등록 중</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** a read-only player card + its special ability (name, OVR, position, special) */
+function SquadCard({ player, order, fk }: { player: PlayerDef; order?: number; fk?: boolean }) {
+  return (
+    <div className="dev-sq-card" data-testid="dev-sq-card" data-id={player.id}>
+      <PlayerCard player={player} selected={false} order={order} freeKick={fk} compact />
+      <span className="dev-sq-special">⚡ {SPECIALS[player.special].name}</span>
     </div>
   );
 }

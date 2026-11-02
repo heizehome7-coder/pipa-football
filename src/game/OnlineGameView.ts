@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { goalHaptic, playCrowd, playKick, playNet } from '../audio/sound';
 import { FIELD } from './core/config';
 import type { ShotInput } from './core/types';
 import { SwipeController } from './input/SwipeController';
@@ -57,6 +58,8 @@ export class OnlineGameView {
   role: OnlineRole = 'kicker';
   /** UPDATE 6: FREE KICK DUEL spot for this round (same on both phones and the server) */
   private spot = 0;
+  /** UPDATE 7: sounds already played this match (k<round> kick, g<round> goal) */
+  private soundDone = new Set<string>();
   private renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
   private overlay: TrajectoryOverlay;
@@ -74,7 +77,7 @@ export class OnlineGameView {
   private v2 = new THREE.Vector3();
   private kickerNick = '';
   /** UPDATE 4: this round's players (cosmetic) */
-  private looks: Pick<KickGameOptions, 'kickerLook' | 'keeperLook' | 'keeperStats'> & { kickerPlayer?: PlayerDef | null } = {};
+  private looks: Pick<KickGameOptions, 'kickerLook' | 'keeperLook' | 'keeperStats' | 'keeperSpecial'> & { kickerPlayer?: PlayerDef | null } = {};
   private canShoot = false;
   /** shot being replayed: local Date.now() of run-up start */
   private shot: WireShot | null = null;
@@ -154,9 +157,28 @@ export class OnlineGameView {
 
   // ── round control (driven by server state) ────────────────────────────
   private makeGame(nick: string, seed: number) {
-    const { kickerLook, keeperLook, keeperStats } = this.looks ?? {};
-    const g = new OnlineKickGame(nick, seed, true, { kickerLook, keeperLook, keeperStats }, this.mode, this.spot);
+    const { kickerLook, keeperLook, keeperStats, keeperSpecial } = this.looks ?? {};
+    const g = new OnlineKickGame(nick, seed, true, { kickerLook, keeperLook, keeperStats, keeperSpecial }, this.mode, this.spot);
     g.start();
+    // UPDATE 7: sounds from this phone's replay of the server's shot (same moment on both
+    // phones). Once per round — a replay after a late dive does not play them again, and a
+    // phone that is catching up (far behind real time) stays quiet.
+    g.listener = {
+      onLaunch: () => {
+        const r = this.shot?.round ?? -1;
+        if (this.soundDone.has(`k${r}`) || this.runClock() - this.simT > 0.6) return;
+        this.soundDone.add(`k${r}`);
+        playKick(this.shot?.input.power ?? 0.7);
+      },
+      onOutcome: (o) => {
+        const r = this.shot?.round ?? -1;
+        if (o !== 'GOAL' || this.soundDone.has(`g${r}`) || this.runClock() - this.simT > 0.8) return;
+        this.soundDone.add(`g${r}`);
+        playNet();
+        playCrowd();
+        goalHaptic();
+      },
+    };
     return g;
   }
 
@@ -171,7 +193,7 @@ export class OnlineGameView {
     role: OnlineRole;
     kickerNick: string;
     canShoot: boolean;
-    looks?: Pick<KickGameOptions, 'kickerLook' | 'keeperLook' | 'keeperStats'> & { kickerPlayer?: PlayerDef | null };
+    looks?: Pick<KickGameOptions, 'kickerLook' | 'keeperLook' | 'keeperStats' | 'keeperSpecial'> & { kickerPlayer?: PlayerDef | null };
     /** free-kick spot index (freeKickSpotIndex) */
     spot?: number;
   }) {
@@ -198,6 +220,9 @@ export class OnlineGameView {
   /** the server accepted the kicker's shot: play it from `runStartLocal` (Date.now ms) */
   playShot(shot: WireShot, runStartLocal: number, dive: WireDive | null) {
     if (this.shot && this.shot.round === shot.round && this.shot.runStart === shot.runStart) return;
+    // a new shot (also round 1 of a rematch) may play its sounds again
+    this.soundDone.delete(`k${shot.round}`);
+    this.soundDone.delete(`g${shot.round}`);
     this.shot = shot;
     this.runStartLocal = runStartLocal;
     this.started = false;

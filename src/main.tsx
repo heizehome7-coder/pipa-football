@@ -1,6 +1,10 @@
 import { createRoot } from 'react-dom/client';
 import App from './App';
 import './styles.css';
+import { installAudioUnlock } from './audio/sound';
+
+// UPDATE 7: audio starts after the first touch / click / key (browser autoplay rules)
+installAudioUnlock();
 
 // Block page-level rubber-banding / pinch-zoom, but let real scroll areas (lists, card grids,
 // tall menu screens) scroll by touch. Gameplay canvases use touch-action:none and handle their own input.

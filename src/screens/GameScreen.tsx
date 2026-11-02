@@ -47,7 +47,7 @@ export function GameScreen({ mode, user, player = null, onExit }: { mode: GameMo
         },
         onHint: setHint,
         onSpecial: special.show,
-      }, { kicker: kickerLookOf(player), kickerPlayer: player, keeperLook: keeperLookOf(keeper), keeperStats: keeper.gk });
+      }, { kicker: kickerLookOf(player), kickerPlayer: player, keeperLook: keeperLookOf(keeper), keeperStats: keeper.gk, keeperSpecial: keeper.special });
     } catch (e) {
       console.error(e);
       setError('이 기기에서 3D(WebGL)를 시작할 수 없습니다.');

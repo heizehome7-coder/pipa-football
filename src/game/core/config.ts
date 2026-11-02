@@ -131,7 +131,8 @@ export const MODES: Record<GameMode, ModeConfig> = {
       diveBase: 0.36,
       diveScale: 0.17,
       maxHipTravel: 1.65,
-      readNoise: 0.7,
+      /** UPDATE 7 hotfix: 0.7 → 1.0 so the reworked dive keeps single-player free kicks as hard as before */
+      readNoise: 1.0,
       guessCorrect: 0,
       guessCentre: 0,
       leadMax: 0,

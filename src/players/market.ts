@@ -140,7 +140,7 @@ const LEGENDS: Def[] = [
   ['buffon', 'Gianluigi Buffon', '잔루이지 부폰', 'GIANLUIGI', 'BUFFON', 'BUFFON', '1', ['GK'], 'ITA', [S2, BRN, 'swept', 'stubble', 1, 1], G(95, 90, 92, 99, 92, 93, 94), 'POSITION_MASTER', 'R', 1450],
   ['cech', 'Petr Čech', '페트르 체흐', 'PETR', 'ČECH', 'CECH', '1', ['GK'], 'CZE', [S1, BRN, 'short', 'none', 1, 1], G(92, 88, 96, 95, 88, 95, 88), 'LONG_REACH', 'L', 1100],
   ['vandersar', 'Edwin van der Sar', '에드윈 판데르사르', 'EDWIN', 'VAN DER SAR', 'VAN DER SAR', '1', ['GK'], 'NED', [S1, BLD, 'bald', 'none', 1, 1], G(88, 86, 98, 94, 86, 96, 90), 'HIGH_REACH', 'R', 1050],
-  ['yashin', 'Lev Yashin', '레프 야신', 'LEV', 'YASHIN', 'YASHIN', '1', ['GK'], 'URS', [S1, DRK, 'short', 'none', 1, 1], G(99, 98, 92, 93, 93, 92, 90), 'LONG_REACH', 'R', 1700],
+  ['yashin', 'Lev Yashin', '레프 야신', 'LEV', 'YASHIN', 'YASHIN', '1', ['GK'], 'URS', [S1, DRK, 'short', 'none', 1, 1], G(99, 99, 99, 99, 97, 99, 98), 'BLACK_SPIDER', 'R', 1700],
   ['best', 'George Best', '조지 베스트', 'GEORGE', 'BEST', 'BEST', '7', ['RW'], 'NIR', [S1, BLK, 'swept', 'full', 0.95, 0.9], F(84, 90, 90, 70, 92, 80, 92), 'QUICK_LOW_CURL', 'B', 1300],
   ['eusebio', 'Eusébio', '에우제비우', 'EUSÉBIO', 'DA SILVA', 'EUSEBIO', '10', ['ST'], 'POR', [S7, BLK, 'buzz', 'none', 0.99, 1.04], F(97, 90, 82, 88, 88, 86, 90), 'POWER_FINISH', 'R', 1450],
   ['vanbasten', 'Marco van Basten', '마르코 판바스턴', 'MARCO', 'VAN BASTEN', 'VAN BASTEN', '9', ['ST'], 'NED', [S1, BLD, 'sidepart', 'none', 1.05, 1.0], F(92, 96, 86, 80, 92, 80, 95), 'CLINICAL_FINISH', 'R', 1400],

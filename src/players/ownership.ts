@@ -11,7 +11,48 @@ export interface Wallet {
   /** null = no account server (market unavailable) */
   mp: number | null;
   owned: Set<string>;
+  /** UPDATE 7: my players currently LISTED on the market (not usable until cancelled) */
+  listed?: string[];
+  /** UPDATE 7: level / XP / FV / daily login (server accounts only) */
+  progress?: Progress | null;
 }
+
+export interface Progress {
+  level: number;
+  xp: number;
+  xpNext: number;
+  fv: number;
+  claimed: number[];
+  packs: number;
+  daily: { canClaim: boolean; streak: number; nextDay: number; today: string } | null;
+}
+
+/** build the wallet from any server account reply (MP, owned, listed, progress) */
+export function walletFrom(r: {
+  mp?: number;
+  owned?: string[];
+  listed?: string[];
+  level?: number;
+  xp?: number;
+  xpNext?: number;
+  fv?: number;
+  claimedLevelRewards?: number[];
+  unopenedPacks?: number;
+  daily?: Progress['daily'];
+}): Wallet {
+  return {
+    mp: r.mp ?? 0,
+    owned: makeOwned(r.owned ?? []),
+    listed: r.listed ?? [],
+    progress:
+      typeof r.level === 'number'
+        ? { level: r.level, xp: r.xp ?? 0, xpNext: r.xpNext ?? 0, fv: r.fv ?? 0, claimed: r.claimedLevelRewards ?? [], packs: r.unopenedPacks ?? 0, daily: r.daily ?? null }
+        : null,
+  };
+}
+
+/** 1,234 FV */
+export const formatFV = (n: number) => `${Math.round(n).toLocaleString('en-US')} FV`;
 
 export function makeOwned(marketOwned: Iterable<string>): Set<string> {
   const s = new Set<string>(STARTER_PLAYERS.map((p) => p.id));

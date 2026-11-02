@@ -6,6 +6,8 @@ import { OnlineMatchClient, type MatchView } from '../online/match/OnlineMatchCl
 import type { DiveDir, MatchMode, MatchState, WireResult } from '../online/match/protocol';
 import { freeKickSpotIndex } from '../online/match/penaltyRound';
 import { formatMP } from '../players/ownership';
+import type { ProgressEvent } from '../App';
+import { SoundToggle } from '../components/SoundToggle';
 import { MatchFoundScreen } from './MatchFoundScreen';
 import { NameBanner } from '../components/NameBanner';
 import { useSpecialPop } from '../components/SpecialPop';
@@ -45,12 +47,15 @@ export function OnlineMatchScreen({
   channel,
   match,
   squad,
+  progress = null,
   onLeave,
 }: {
   lobby: LobbyClient;
   channel: Channel;
   match: MatchInfo;
   squad: Squad;
+  /** UPDATE 7: XP / LEVEL UP for my finished match (pushed by the server) */
+  progress?: ProgressEvent | null;
   onLeave: () => void;
 }) {
   const client = useMemo(() => new OnlineMatchClient(channel, match, squad), [channel, match.matchId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -76,7 +81,7 @@ export function OnlineMatchScreen({
   if (v.error) return <Disconnected lost={false} match={match} text={v.error} onLeave={leave} />;
   if (!s || s.phase === 'waiting') return <ReadyRoom v={v} match={match} lobby={lobby} client={client} onLeave={leave} />;
   const mode: MatchMode = s.mode ?? match.mode ?? 'penalty';
-  if (s.phase === 'finished') return <FinalResult v={v} s={s} mode={mode} client={client} opponentLeft={ended} onLeave={leave} />;
+  if (s.phase === 'finished') return <FinalResult v={v} s={s} mode={mode} client={client} opponentLeft={ended} progress={progress} onLeave={leave} />;
   return <MatchPlay key={mode} v={v} s={s} client={client} mode={mode} onLeave={leave} />;
 }
 
@@ -183,7 +188,7 @@ function MatchPlay({ v, s, client, mode, onLeave }: { v: MatchView; s: MatchStat
       role,
       kickerNick,
       canShoot: false,
-      looks: { kickerLook: kickerLookOf(kickerPlayer), keeperLook: keeperLookOf(keeperPlayer), keeperStats: keeperPlayer?.gk, kickerPlayer },
+      looks: { kickerLook: kickerLookOf(kickerPlayer), keeperLook: keeperLookOf(keeperPlayer), keeperStats: keeperPlayer?.gk, keeperSpecial: keeperPlayer?.special ?? null, kickerPlayer },
       spot: mode === 'freekick' ? freeKickSpotIndex(s.id, s.round) : 0,
     });
     if (s.round > 1) setIntro({ round: s.round, until: Date.now() + 1500 });
@@ -261,7 +266,9 @@ function MatchPlay({ v, s, client, mode, onLeave }: { v: MatchView; s: MatchStat
           </div>
           <PlayerScore name={opp?.nickname ?? ''} score={v.oppScore} history={s.history} peer={opp?.peer ?? ''} testid="score-opp" />
         </div>
-        <span className="hud-spacer" />
+        <span className="hud-spacer ohud-sound">
+          <SoundToggle compact />
+        </span>
       </div>
 
       {count && (
@@ -380,7 +387,26 @@ function Coach({ role, v, s, mode, shotClock, opponentNick }: { role: MatchView[
 }
 
 // ── 10. 최종 결과 ─────────────────────────────────────────────────────────
-function FinalResult({ v, s, mode, client, opponentLeft, onLeave }: { v: MatchView; s: MatchState; mode: MatchMode; client: OnlineMatchClient; opponentLeft: boolean; onLeave: () => void }) {
+function FinalResult({
+  v,
+  s,
+  mode,
+  client,
+  opponentLeft,
+  progress,
+  onLeave,
+}: {
+  v: MatchView;
+  s: MatchState;
+  mode: MatchMode;
+  client: OnlineMatchClient;
+  opponentLeft: boolean;
+  progress: ProgressEvent | null;
+  onLeave: () => void;
+}) {
+  // UPDATE 7: this game's XP (the newest event for this match id)
+  const pe = progress && progress.key.startsWith(`${s.id}#`) ? progress : null;
+  const leveled = pe && pe.after.level > pe.before.level ? pe : null;
   const f = s.final!;
   const verdict = f.draw ? 'DRAW' : f.winner === v.myPeer ? 'VICTORY' : 'DEFEAT';
   // UPDATE 6: the MP the server paid me for this game (penalty wins only for now)
@@ -400,6 +426,25 @@ function FinalResult({ v, s, mode, client, opponentLeft, onLeave }: { v: MatchVi
         <p className={`final-reward ${myReward > 0 ? '' : 'zero'}`} data-testid="final-reward" data-reward={myReward}>
           {myReward > 0 ? `+${formatMP(myReward)}` : '0 MP'}
         </p>
+      )}
+      {pe && (
+        <div className={`xp-gain ${leveled ? 'up' : ''}`} data-testid="xp-gain" data-xp={pe.gained}>
+          <b>+{pe.gained} XP</b>
+          {leveled ? (
+            <span className="levelup" data-testid="level-up">
+              LEVEL UP! <em>LV. {leveled.before.level}</em> → <strong>LV. {leveled.after.level}</strong>
+            </span>
+          ) : (
+            <span>
+              LV. {pe.after.level} · {pe.after.xpNext ? `${pe.after.xp} / ${pe.after.xpNext} XP` : 'MAX LEVEL'}
+            </span>
+          )}
+          {pe.newRewards.map((r) => (
+            <span key={r.level} className="new-reward" data-testid="new-reward">
+              NEW REWARD · {r.fv.toLocaleString('en-US')} FV AVAILABLE
+            </span>
+          ))}
+        </div>
       )}
       <div className="final-board">
         <div className={`final-row ${f.winner === v.myPeer ? 'win' : ''}`}>
