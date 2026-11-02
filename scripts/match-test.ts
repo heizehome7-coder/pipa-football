@@ -7,6 +7,7 @@ import { createMatchManager } from '../server/matches.mjs';
 import * as THREE from 'three';
 import { FIELD, MODES } from '../src/game/core/config';
 import { calculateShotParameters } from '../src/game/physics/BallPhysics';
+import { freeKickSpot } from '../src/game/FreeKickGame';
 import * as judge from '../src/online/match/judge';
 import type { MatchState } from '../src/online/match/protocol';
 
@@ -68,7 +69,7 @@ const sb = last(B)!.state!;
 check('both players get the same server matchId / roomId', sa.id === sb.id && sa.roomId === sb.roomId && sa.roomId === `pipa_match_${id.toLowerCase()}`, sa.roomId);
 check('both players listed, phase waiting', sa.players.length === 2 && sa.phase === 'waiting');
 const sqA = sb.players.find((p) => p.peer === A)!.squad;
-check('UPDATE 4: squad ids relayed to the opponent (ids only, junk dropped)', JSON.stringify(sqA) === JSON.stringify({ penaltyOrder: ['ronaldo', 'messi', 'son', 'mbappe', 'salah'], goalkeeperId: 'courtois' }), JSON.stringify(sqA));
+check('UPDATE 4: squad ids relayed to the opponent (ids only, junk dropped)', JSON.stringify(sqA) === JSON.stringify({ penaltyOrder: ['ronaldo', 'messi', 'son', 'mbappe', 'salah'], goalkeeperId: 'courtois', freeKickTakerId: 'ronaldo' }), JSON.stringify(sqA));
 check('UPDATE 4: a player without a squad still plays (null → default on the clients)', sb.players.find((p) => p.peer === B)!.squad === null);
 
 // 2–3. ready → server starts
@@ -181,6 +182,112 @@ check('opponent never joins → match given up (no endless wait)', last('lonely'
 
 // presence messages are not touched by the match manager
 check('lobby presence messages pass through untouched', mgr.handle(A, { t: 'presence', p: {} }) === false && mgr.handle(A, { t: 'join', room: 'x' }) === false);
+
+// ── UPDATE 6: FREE KICK DUEL + MP reward (once per finished game) ─────────────
+{
+  const paid: { key: string; mode: string; peer: string }[] = [];
+  const recs: { key: string; mode: string; peer: string; result: string }[] = [];
+  const mgr2 = createMatchManager({
+    send,
+    judge,
+    now: () => T,
+    setTimer,
+    clearTimer,
+    random: () => 0.3,
+    reward: (m: { id: string; game: number; mode: string }, peer: string) => {
+      paid.push({ key: `${m.id}#${m.game}`, mode: m.mode, peer });
+      return m.mode === 'penalty' ? judge.REWARDS.penaltyWin : judge.REWARDS.freeKickWin;
+    },
+    record: (m: { id: string; game: number; mode: string }, peer: string, result: string) => recs.push({ key: `${m.id}#${m.game}`, mode: m.mode, peer, result }),
+    checkSquad: (peer: string, sq: { penaltyOrder: string[] }) => (peer === 'cheat' && sq.penaltyOrder.includes('pele') ? null : sq),
+  });
+  const C = 'peerC';
+  const D = 'peerD';
+  const fid = 'cfreekick0001';
+  const h2 = (peer: string, m: Record<string, unknown>) => mgr2.handle(peer, { matchId: fid, ...m });
+  const sq = (fk: string) => ({ penaltyOrder: ['ronaldo', 'messi', 'son', 'mbappe', 'salah'], goalkeeperId: 'neuer', freeKickTakerId: fk });
+  h2(C, { t: 'match:join', opponentPeer: D, nickname: 'C', userId: 'uc', squad: sq('messi'), mode: 'freekick' });
+  h2(D, { t: 'match:join', opponentPeer: C, nickname: 'D', userId: 'ud', squad: sq('ronaldo'), mode: 'penalty' });
+  const st = last(D)!.state!;
+  check('UPDATE 6: FREE KICK DUEL — the match keeps the challenger’s mode (server state mode = freekick)', st.mode === 'freekick', String(st.mode));
+  check('UPDATE 6: free-kick taker relayed to the opponent', st.players.find((p) => p.peer === C)!.squad?.freeKickTakerId === 'messi');
+  h2(C, { t: 'match:ready', ready: true });
+  h2(D, { t: 'match:ready', ready: true });
+  advance(judge.MATCH_RULES.countdownMs + 10);
+  check('UPDATE 6: same spot for both players of a pair, spots vary between pairs',
+    judge.freeKickSpotIndex(fid, 1) === judge.freeKickSpotIndex(fid, 2) && new Set([1, 3, 5, 7, 9].map((r) => judge.freeKickSpotIndex(fid, r))).size > 1);
+  const outcomes: string[] = [];
+  for (let r = 1; r <= 10; r++) {
+    const s2 = last(C)!.state!;
+    const kicker = s2.kicker!;
+    const spot = freeKickSpot(judge.freeKickSpotIndex(fid, r));
+    // odd rounds: straight and low into the wall · even rounds: a lofted curler at the far corner
+    const target = r % 2 ? new THREE.Vector3(spot.ball.x * 0.25, 0.9, 0) : new THREE.Vector3(-Math.sign(spot.ball.x || 1) * 2.9, 2.0, 0);
+    const shot = calculateShotParameters(spot.ball, { target, spin: 0, profile: r % 2 ? 'STRAIGHT' : 'CURLED', curveLevel: 0, apex: r % 2 ? null : 3.2, power: r % 2 ? 0.75 : 0.85 }, MODES.freekick);
+    h2(kicker, { t: 'shot:submit', round: r, shot });
+    advance(5000);
+    const res = last(C, 'round:result')?.state?.result;
+    outcomes.push(res ? `${res.round}:${res.outcome}` : `${r}:none`);
+    advance(judge.MATCH_RULES.resultShowMs);
+  }
+  check('UPDATE 6: a shot into the wall is judged BLOCKED by the server', outcomes.some((o) => o.endsWith('BLOCKED')), outcomes.join(' '));
+  check('UPDATE 6: every free kick gets a server result (10 rounds)', outcomes.length === 10 && !outcomes.some((o) => o.endsWith('none')), outcomes.join(' '));
+  const fC = last(C, 'match:finished')?.state;
+  const fD = last(D, 'match:finished')?.state;
+  check('UPDATE 6: FREE KICK RESULT — both phones get the same final score', !!fC && !!fD && JSON.stringify(fC.final) === JSON.stringify(fD.final) && fC.history.length === 10);
+  check('UPDATE 6: no MP for the FREE KICK DUEL in this update', (fC?.final?.reward ?? 0) === 0);
+  const fkRecs = recs.filter((r) => r.key === `${fid}#1`);
+  const fin2 = fC!.final!;
+  check('UPDATE 6 patch: the finished duel is recorded once for each player (free kick, win/loss/draw)',
+    fkRecs.length === 2 && fkRecs.every((r) => r.mode === 'freekick') &&
+      fkRecs.every((r) => r.result === (fin2.draw ? 'draw' : fin2.winner === r.peer ? 'win' : 'loss')), JSON.stringify(fkRecs));
+  const goals = fC!.history.filter((x) => x.outcome === 'GOAL');
+  check('UPDATE 6 patch: every result names the kicker’s player (free kick → his FK taker: Messi / Ronaldo)',
+    fC!.history.every((x) => x.playerId === (x.kicker === C ? 'messi' : 'ronaldo')) && goals.length > 0, JSON.stringify(fC!.history.map((x) => x.playerId)));
+
+  // penalty: winner paid exactly once per finished game (rematch = a new game)
+  const pid = 'cpenaltyreward1';
+  const h3 = (peer: string, m: Record<string, unknown>) => mgr2.handle(peer, { matchId: pid, ...m });
+  const E = 'peerE';
+  const F = 'peerF';
+  h3(E, { t: 'match:join', opponentPeer: F, nickname: 'E', userId: 'ue', squad: sq('messi') });
+  h3(F, { t: 'match:join', opponentPeer: E, nickname: 'F', userId: 'uf', squad: sq('messi') });
+  const playGame = () => {
+    advance(judge.MATCH_RULES.countdownMs + 10);
+    for (let r = 1; r <= 10; r++) {
+      const s3 = last(E)!.state!;
+      // E always scores into the corner, F always shoots at the keeper's body
+      const shot = s3.kicker === E ? shotTo(r % 4 < 2 ? 3.2 : -3.2, 0.3, 0.9) : shotTo(0, 2.6, 0.9);
+      h3(s3.kicker!, { t: 'shot:submit', round: r, shot });
+      advance(5000 + judge.MATCH_RULES.resultShowMs);
+    }
+  };
+  h3(E, { t: 'match:ready', ready: true });
+  h3(F, { t: 'match:ready', ready: true });
+  playGame();
+  const pf = last(E, 'match:finished')!.state!;
+  const penaltyPaid = paid.filter((p) => p.mode === 'penalty');
+  check('UPDATE 6: penalty winner gets +10,000,000 MP (server-decided, shown in final)', pf.final!.winner !== null && pf.final!.reward === 10_000_000 && penaltyPaid.length === 1 && penaltyPaid[0].peer === pf.final!.winner, JSON.stringify(pf.final));
+  // late / duplicate messages can't pay again
+  h3(E, { t: 'match:ready', ready: true });
+  h3(E, { t: 'shot:submit', round: 10, shot: shotTo(3, 0.3) });
+  advance(10_000);
+  check('UPDATE 6: replayed messages after the end pay nothing more', paid.filter((p) => p.mode === 'penalty').length === 1);
+  h3(E, { t: 'match:rematch' });
+  h3(F, { t: 'match:rematch' });
+  playGame();
+  const keys = paid.filter((p) => p.mode === 'penalty').map((p) => p.key);
+  check('UPDATE 6: a rematch is a new game with its own reward key (no key paid twice)', keys.length === 2 && new Set(keys).size === 2, keys.join(','));
+  const pRecs = recs.filter((r) => r.key.startsWith(pid));
+  check('UPDATE 6 patch: penalty records — 2 games × 2 players, each game once', pRecs.length === 4 && new Set(pRecs.map((r) => r.key + r.peer)).size === 4 && pRecs.every((r) => r.mode === 'penalty'));
+  const ph = last(E, 'match:finished')!.state!.history;
+  const eShots = ph.filter((x) => x.kicker === E).map((x) => x.playerId);
+  check('UPDATE 6 patch: penalty results name the taker in squad order (messi, ronaldo… by kick)', JSON.stringify(eShots) === JSON.stringify(['ronaldo', 'messi', 'son', 'mbappe', 'salah']), JSON.stringify(eShots));
+
+  // squads with unowned players are refused by the server hook
+  mgr2.handle('cheat', { t: 'match:join', matchId: 'ccheat000001', opponentPeer: 'honest', nickname: 'Z', userId: 'uz', squad: { penaltyOrder: ['pele', 'messi', 'son', 'mbappe', 'salah'], goalkeeperId: 'neuer' } });
+  check('UPDATE 6: a squad with players the account does not own is not used online', last('cheat')!.state!.players[0].squad === null);
+}
 
 const fails = results.filter(([, ok]) => !ok);
 console.log(`\n${fails.length ? `${fails.length} FAILED` : `ALL ${results.length} MATCH CHECKS PASSED`}`);

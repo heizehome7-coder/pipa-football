@@ -3,15 +3,21 @@ import { Flag, PlayerAvatar, PlayerCard, StatSheet } from '../components/PlayerA
 import { VersionBadge } from '../components/VersionBadge';
 import { COUNTRY_NAME, getPlayer, ovr, PLAYERS, type PlayerDef } from '../players/players';
 import { SQUAD_SIZE, type Squad } from '../players/squad';
+import { MpBadge } from './MarketScreen';
 
-type Filter = 'ALL' | 'FORWARD' | 'MIDFIELDER' | 'GOALKEEPER';
-const FILTERS: Filter[] = ['ALL', 'FORWARD', 'MIDFIELDER', 'GOALKEEPER'];
+type Filter = 'ALL' | 'FORWARD' | 'MIDFIELDER' | 'DEFENDER' | 'GOALKEEPER' | 'LEGEND';
+const FILTERS: Filter[] = ['ALL', 'FORWARD', 'MIDFIELDER', 'DEFENDER', 'GOALKEEPER', 'LEGEND'];
 const inFilter = (p: PlayerDef, f: Filter) =>
-  f === 'ALL' || (f === 'FORWARD' && p.role === 'FW') || (f === 'MIDFIELDER' && p.role === 'MF') || (f === 'GOALKEEPER' && p.role === 'GK');
+  f === 'ALL' ||
+  (f === 'FORWARD' && p.role === 'FW') ||
+  (f === 'MIDFIELDER' && p.role === 'MF') ||
+  (f === 'DEFENDER' && p.role === 'DF') ||
+  (f === 'GOALKEEPER' && p.role === 'GK') ||
+  (f === 'LEGEND' && !!p.legend);
 
 /**
  * UPDATE 4 squad flow.
- *  pick    — BUILD YOUR SQUAD: 20 cards, choose 5 field players + 1 goalkeeper
+ *  pick    — BUILD YOUR SQUAD: owned players only (15 starters + market buys), 5 field + 1 GK
  *  arrange — MY SQUAD: penalty order (▲/▼), ⭐ free-kick taker, SAVE SQUAD
  * First login starts at "pick"; the SQUAD menu opens "arrange" (with 선수 변경).
  */
@@ -20,11 +26,16 @@ export function SquadScreen({
   firstTime,
   onSave,
   onBack,
+  owned,
+  mp = null,
 }: {
   initial: Squad | null;
   firstTime: boolean;
   onSave: (s: Squad) => void;
   onBack?: () => void;
+  /** UPDATE 6: starters + bought players (only these can be picked) */
+  owned?: Set<string>;
+  mp?: number | null;
 }) {
   const [step, setStep] = useState<'pick' | 'arrange'>(initial ? 'arrange' : 'pick');
   const [order, setOrder] = useState<string[]>(initial?.penaltyOrder ?? []);
@@ -71,7 +82,7 @@ export function SquadScreen({
   };
 
   if (step === 'pick') {
-    const list = PLAYERS.filter((p) => inFilter(p, filter));
+    const list = PLAYERS.filter((p) => (owned ? owned.has(p.id) : p.starter) && inFilter(p, filter));
     return (
       <div className="screen squad" data-testid="squad-pick">
         <header className="squad-top">
@@ -82,12 +93,15 @@ export function SquadScreen({
           ) : (
             <span className="mini-logo">PIPA</span>
           )}
-          <VersionBadge />
+          <span className="top-right">
+            <MpBadge mp={mp} />
+            <VersionBadge />
+          </span>
         </header>
         <div className="squad-head">
           <p className="eyebrow">{firstTime ? 'WELCOME' : 'SQUAD'}</p>
           <h2 className="squad-title">BUILD YOUR SQUAD</h2>
-          <p className="squad-sub">키커 5명 + 골키퍼 1명을 골라주세요</p>
+          <p className="squad-sub">키커 5명 + 골키퍼 1명을 골라주세요{owned ? ` · 보유 선수 ${PLAYERS.filter((p) => owned.has(p.id)).length}명` : ''}</p>
         </div>
         <div className="squad-filters" role="tablist">
           {FILTERS.map((f) => (
@@ -138,7 +152,10 @@ export function SquadScreen({
             ‹ 선수 선택
           </button>
         )}
-        <VersionBadge />
+        <span className="top-right">
+          <MpBadge mp={mp} />
+          <VersionBadge />
+        </span>
       </header>
       <div className="squad-head">
         <h2 className="squad-title">MY SQUAD</h2>

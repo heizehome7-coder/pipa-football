@@ -129,8 +129,10 @@ export class OnlineMatchClient {
       opponentPeer: this.info.opponent.peer,
       nickname: this.info.me.nickname,
       userId: this.info.me.userId,
-      // UPDATE 4: only the ids of my penalty order + keeper
-      squad: this.squad ? { penaltyOrder: this.squad.penaltyOrder, goalkeeperId: this.squad.goalkeeperId } : null,
+      // UPDATE 4: only the ids of my penalty order + keeper (+ UPDATE 6: free-kick taker)
+      squad: this.squad ? { penaltyOrder: this.squad.penaltyOrder, goalkeeperId: this.squad.goalkeeperId, freeKickTakerId: this.squad.freeKickTakerId } : null,
+      // UPDATE 6: PENALTY SHOOTOUT or FREE KICK DUEL (agreed in the lobby challenge)
+      mode: this.info.mode ?? 'penalty',
     });
   }
 

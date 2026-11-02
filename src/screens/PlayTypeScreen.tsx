@@ -3,6 +3,19 @@ import type { PlayerProfile } from '../game/core/types';
 import { PlayerAvatar } from '../components/PlayerArt';
 import { getPlayer, type PlayerDef } from '../players/players';
 import type { Squad } from '../players/squad';
+import { MpBadge } from './MarketScreen';
+
+function MarketIcon() {
+  return (
+    <svg viewBox="0 0 64 64" aria-hidden>
+      <rect x="9" y="14" width="22" height="32" rx="4" fill="none" stroke="currentColor" strokeWidth="3" />
+      <rect x="33" y="18" width="22" height="32" rx="4" fill="none" stroke="var(--lime)" strokeWidth="3" />
+      <text x="44" y="39" textAnchor="middle" fontFamily="Barlow Condensed, Arial" fontWeight="900" fontSize="11" fill="var(--lime)">
+        MP
+      </text>
+    </svg>
+  );
+}
 
 function SoloIcon() {
   return (
@@ -56,6 +69,9 @@ export function PlayTypeScreen({
   onSolo,
   onOnline,
   onSquad,
+  onMarket,
+  onDeveloper,
+  mp,
   onLogout,
 }: {
   user: PlayerProfile;
@@ -63,6 +79,11 @@ export function PlayTypeScreen({
   onSolo: () => void;
   onOnline: () => void;
   onSquad: () => void;
+  onMarket: () => void;
+  /** UPDATE 6 patch: DEVELOPER MODE (server-checked code) */
+  onDeveloper: () => void;
+  /** UPDATE 6: current MP (null = no account server) */
+  mp: number | null;
   onLogout: () => void;
 }) {
   return (
@@ -70,6 +91,7 @@ export function PlayTypeScreen({
       <header className="modes-top">
         <div className="mini-logo">PIPA</div>
         <div className="top-right">
+          <MpBadge mp={mp} />
           <VersionBadge />
           <button className="btn-ghost" onClick={onLogout}>
           로그아웃
@@ -120,6 +142,35 @@ export function PlayTypeScreen({
             <strong>SQUAD</strong>
             <span className="mode-ko">MY SQUAD</span>
             <span className="mode-desc">{squad ? `키커 5명 · GK ${getPlayer(squad.goalkeeperId)?.last ?? ''}` : '선수 구성하기'}</span>
+          </div>
+          <span className="mode-arrow" aria-hidden>
+            ›
+          </span>
+        </button>
+        <button className="mode-card play-card" onClick={onMarket} data-testid="play-market">
+          <div className="play-icon">
+            <MarketIcon />
+          </div>
+          <div className="mode-text">
+            <strong>TRANSFER MARKET</strong>
+            <span className="mode-ko">이적시장</span>
+            <span className="mode-desc">MP로 새 선수 · 레전드 영입</span>
+          </div>
+          <span className="mode-arrow" aria-hidden>
+            ›
+          </span>
+        </button>
+        <button className="mode-card play-card dev-card" onClick={onDeveloper} data-testid="play-developer">
+          <div className="play-icon">
+            <svg viewBox="0 0 64 64" aria-hidden>
+              <path d="M22 22 L10 32 L22 42 M42 22 L54 32 L42 42" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M36 16 L28 48" stroke="var(--lime)" strokeWidth="3.5" strokeLinecap="round" />
+            </svg>
+          </div>
+          <div className="mode-text">
+            <strong>개발자 모드</strong>
+            <span className="mode-ko">DEVELOPER MODE</span>
+            <span className="mode-desc">접속자 · 전적 · MP 관리</span>
           </div>
           <span className="mode-arrow" aria-hidden>
             ›

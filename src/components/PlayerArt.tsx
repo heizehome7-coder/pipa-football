@@ -116,6 +116,162 @@ export function Flag({ code, size = 18 }: { code: CountryCode; size?: number }) 
         </>
       );
       break;
+    // ── UPDATE 6 market countries ──
+    case 'NED':
+      body = stripesH('#ae1c28', '#ffffff', '#21468b');
+      break;
+    case 'HUN':
+      body = stripesH('#ce2939', '#ffffff', '#477050');
+      break;
+    case 'SVN':
+      body = stripesH('#ffffff', '#0000ff', '#ff0000');
+      break;
+    case 'COL':
+      body = (
+        <>
+          <rect width="30" height="10" fill="#fcd116" />
+          <rect width="30" height="5" y="10" fill="#003893" />
+          <rect width="30" height="5" y="15" fill="#ce1126" />
+        </>
+      );
+      break;
+    case 'ECU':
+      body = (
+        <>
+          <rect width="30" height="10" fill="#ffdd00" />
+          <rect width="30" height="5" y="10" fill="#034ea2" />
+          <rect width="30" height="5" y="15" fill="#ed1c24" />
+          <circle cx="15" cy="10" r="2.4" fill="#7a5b2a" />
+        </>
+      );
+      break;
+    case 'CRO':
+      body = (
+        <>
+          {stripesH('#ff0000', '#ffffff', '#171796')}
+          <rect x="12" y="5" width="6" height="7" fill="#ffffff" stroke="#ff0000" strokeWidth="0.6" />
+          <rect x="12" y="5" width="3" height="3.5" fill="#ff0000" />
+          <rect x="15" y="8.5" width="3" height="3.5" fill="#ff0000" />
+        </>
+      );
+      break;
+    case 'NGA':
+      body = stripesV('#008751', '#ffffff', '#008751');
+      break;
+    case 'CIV':
+      body = stripesV('#f77f00', '#ffffff', '#009e60');
+      break;
+    case 'CMR':
+      body = (
+        <>
+          {stripesV('#007a5e', '#ce1126', '#fcd116')}
+          <path d="M15 7.2l.9 2.6h2.7l-2.2 1.6.8 2.6-2.2-1.6-2.2 1.6.8-2.6-2.2-1.6h2.7z" fill="#fcd116" />
+        </>
+      );
+      break;
+    case 'CAN':
+      body = (
+        <>
+          <rect width="30" height="20" fill="#ffffff" />
+          <rect width="7.5" height="20" fill="#d80621" />
+          <rect x="22.5" width="7.5" height="20" fill="#d80621" />
+          <path d="M15 4.5l1.2 2.6 1.6-.6-.5 3.2 2-1.6.3 1.4 1.5-.3-.8 2.2.8.6-3.4 2.4.3 1.2-2.4-.4V17h-1.2v-1.8l-2.4.4.3-1.2-3.4-2.4.8-.6-.8-2.2 1.5.3.3-1.4 2 1.6-.5-3.2 1.6.6z" fill="#d80621" />
+        </>
+      );
+      break;
+    case 'URU':
+      body = (
+        <>
+          <rect width="30" height="20" fill="#ffffff" />
+          {[2.2, 6.6, 11, 15.4].map((y) => (
+            <rect key={y} y={y} width="30" height="2.2" fill="#0038a8" />
+          ))}
+          <rect width="12" height="11" fill="#ffffff" />
+          <circle cx="6" cy="5.5" r="2.8" fill="#fcd116" />
+        </>
+      );
+      break;
+    case 'SWE':
+      body = (
+        <>
+          <rect width="30" height="20" fill="#006aa7" />
+          <rect x="8.5" width="4" height="20" fill="#fecc00" />
+          <rect y="8" width="30" height="4" fill="#fecc00" />
+        </>
+      );
+      break;
+    case 'DEN':
+      body = (
+        <>
+          <rect width="30" height="20" fill="#c8102e" />
+          <rect x="9" width="3.5" height="20" fill="#ffffff" />
+          <rect y="8.25" width="30" height="3.5" fill="#ffffff" />
+        </>
+      );
+      break;
+    case 'GEO':
+      body = (
+        <>
+          <rect width="30" height="20" fill="#ffffff" />
+          <rect x="13" width="4" height="20" fill="#ff0000" />
+          <rect y="8" width="30" height="4" fill="#ff0000" />
+          {[[6.5, 4], [23.5, 4], [6.5, 16], [23.5, 16]].map(([x, y]) => (
+            <g key={`${x}${y}`} fill="#ff0000">
+              <rect x={x - 0.6} y={y - 2} width="1.2" height="4" />
+              <rect x={x - 2} y={y - 0.6} width="4" height="1.2" />
+            </g>
+          ))}
+        </>
+      );
+      break;
+    case 'SUI':
+      body = (
+        <>
+          <rect width="30" height="20" fill="#da291c" />
+          <rect x="13" y="4" width="4" height="12" fill="#ffffff" />
+          <rect x="9" y="8" width="12" height="4" fill="#ffffff" />
+        </>
+      );
+      break;
+    case 'MAR':
+      body = (
+        <>
+          <rect width="30" height="20" fill="#c1272d" />
+          <path d="M15 5.5l1.3 3.9h4.1l-3.3 2.4 1.3 3.9-3.4-2.4-3.4 2.4 1.3-3.9-3.3-2.4h4.1z" fill="none" stroke="#006233" strokeWidth="0.9" />
+        </>
+      );
+      break;
+    case 'CZE':
+      body = (
+        <>
+          <rect width="30" height="10" fill="#ffffff" />
+          <rect width="30" height="10" y="10" fill="#d7141a" />
+          <path d="M0 0 L14 10 L0 20 Z" fill="#11457e" />
+        </>
+      );
+      break;
+    case 'URS':
+      body = (
+        <>
+          <rect width="30" height="20" fill="#cc0000" />
+          <path d="M5 3l.6 1.6h1.7l-1.4 1 .5 1.6L5 6.2 3.6 7.2l.5-1.6-1.4-1h1.7z" fill="#ffd700" />
+          <path d="M3.5 12.5l4-4M4 9.5c1.5 0 3 1.5 3 3" fill="none" stroke="#ffd700" strokeWidth="0.9" />
+        </>
+      );
+      break;
+    case 'NIR':
+      body = (
+        <>
+          <rect width="30" height="20" fill="#ffffff" />
+          <rect x="12.5" width="5" height="20" fill="#ce1124" />
+          <rect y="7.5" width="30" height="5" fill="#ce1124" />
+          <circle cx="15" cy="10" r="2.2" fill="#ffffff" />
+          <circle cx="15" cy="10" r="1.2" fill="#ce1124" />
+        </>
+      );
+      break;
+    default:
+      body = <rect width="30" height="20" fill="#2a3a34" />;
   }
   return (
     <svg className="flag" viewBox="0 0 30 20" width={w} height={h} aria-label={COUNTRY_NAME[code]} role="img">
@@ -246,6 +402,7 @@ export function PlayerCard({
   onToggle,
   onInfo,
   compact,
+  market,
 }: {
   player: PlayerDef;
   selected: boolean;
@@ -254,11 +411,13 @@ export function PlayerCard({
   onToggle?: () => void;
   onInfo?: () => void;
   compact?: boolean;
+  /** UPDATE 6: TRANSFER MARKET card (price or OWNED instead of SELECT) */
+  market?: { price: number; owned: boolean };
 }) {
   const hue = accentHue(player.id);
   return (
     <div
-      className={`pcard ${selected ? 'selected' : ''} ${player.role === 'GK' ? 'gk' : ''} ${compact ? 'compact' : ''}`}
+      className={`pcard ${selected ? 'selected' : ''} ${player.role === 'GK' ? 'gk' : ''} ${compact ? 'compact' : ''} ${player.legend ? 'legend' : ''} ${market ? 'market' : ''} ${market?.owned ? 'owned' : ''}`}
       style={{ ['--hue' as string]: hue }}
       data-testid="player-card"
       data-id={player.id}
@@ -277,6 +436,7 @@ export function PlayerCard({
       </div>
       {order !== undefined && <span className="pcard-order">{order}</span>}
       {freeKick && <span className="pcard-fk">⭐ FREE KICK</span>}
+      {player.legend && <span className="pcard-legend">LEGEND</span>}
       <div className="pcard-art">
         <PlayerAvatar player={player} size={compact ? 74 : 92} />
       </div>
@@ -301,7 +461,13 @@ export function PlayerCard({
           </span>
         ))}
       </div>
-      <div className="pcard-state">{selected ? '✓ SELECTED' : 'SELECT'}</div>
+      {market ? (
+        <div className={`pcard-state pcard-price ${market.owned ? 'owned' : ''}`} data-testid="card-price">
+          {market.owned ? '✓ OWNED' : `${market.price.toLocaleString('en-US')} MP`}
+        </div>
+      ) : (
+        <div className="pcard-state">{selected ? '✓ SELECTED' : 'SELECT'}</div>
+      )}
       {onInfo && (
         <button className="pcard-info" onClick={onInfo} aria-label={`${player.name} 상세`}>
           i

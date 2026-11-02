@@ -1,5 +1,6 @@
 /**
- * Online penalty matches — the authoritative part of the PIPA realtime server.
+ * Online matches (PENALTY SHOOTOUT, UPDATE 6: FREE KICK DUEL) — the authoritative
+ * part of the PIPA realtime server.
  *
  * The lobby (presence, challenge, accept/reject) is unchanged and lives in
  * realtime-server.mjs. Once two players are matched, both send `match:join` with
@@ -19,12 +20,22 @@ function cleanSquad(s) {
   if (!s || typeof s !== 'object') return null;
   const order = Array.isArray(s.penaltyOrder) ? s.penaltyOrder.filter((x) => typeof x === 'string' && PLAYER_ID_RE.test(x)).slice(0, 5) : [];
   const gk = typeof s.goalkeeperId === 'string' && PLAYER_ID_RE.test(s.goalkeeperId) ? s.goalkeeperId : '';
-  return { penaltyOrder: order, goalkeeperId: gk };
+  // UPDATE 6: the FREE KICK DUEL taker
+  const fk = typeof s.freeKickTakerId === 'string' && PLAYER_ID_RE.test(s.freeKickTakerId) ? s.freeKickTakerId : order[0] ?? '';
+  return { penaltyOrder: order, goalkeeperId: gk, freeKickTakerId: fk };
 }
+const MODES = ['penalty', 'freekick'];
 
 /**
  * @param {{ send:(peer:string,msg:object)=>void, judge:any, now?:()=>number,
- *           setTimer?:(fn:()=>void,ms:number)=>any, clearTimer?:(h:any)=>void, random?:()=>number }} o
+ *           setTimer?:(fn:()=>void,ms:number)=>any, clearTimer?:(h:any)=>void, random?:()=>number,
+ *           checkSquad?:(peer:string, squad:any)=>any,
+ *           reward?:(m:{id:string, game:number, mode:string}, winnerPeer:string)=>number }} o
+ * checkSquad (UPDATE 6): returns the squad the peer may really use (owned players only)
+ * reward (UPDATE 6): pays the winner of a finished match; returns the MP paid (0 = none).
+ *   Called exactly once per finished game (match id + game number).
+ * record (UPDATE 6 patch): online record for each player of a finished game
+ *   (result 'win' | 'loss' | 'draw') — exactly once per game (resultRecorded).
  */
 export function createMatchManager(o) {
   const { send, judge } = o;
@@ -52,6 +63,7 @@ export function createMatchManager(o) {
     const g = m.players.length === 2 && m.round > 0 ? keeperOf(m) : null;
     return {
       id: m.id,
+      mode: m.mode,
       roomId: m.roomId,
       phase: m.phase,
       players: m.players.map(({ peer, nickname, userId, ready, rematch, connected, squad }) => ({ peer, nickname, userId, ready, rematch, connected, squad })),
@@ -110,6 +122,7 @@ export function createMatchManager(o) {
     m.shot = null;
     m.dive = null;
     m.round = 1;
+    m.game = (m.game || 0) + 1; // rematches are new games of the same match (reward key)
     m.firstKicker = random() < 0.5 ? 0 : 1; // the server decides who kicks first
     m.phase = 'countdown';
     m.startAt = now() + R.countdownMs;
@@ -146,18 +159,28 @@ export function createMatchManager(o) {
       m.timers = m.timers.filter((x) => x !== m.judgeTimer);
       m.judgeTimer = null;
       if (matches.get(m.id) !== m || m.phase !== 'shot' || m.round !== round) return;
-      const sim = judge.simulateRound(m.shot.seed, m.shot.input, m.dive, keeperOf(m).squad?.goalkeeperId ?? null);
+      const sim = judge.simulateRound(m.shot.seed, m.shot.input, m.dive, keeperOf(m).squad?.goalkeeperId ?? null, roundOpts(m));
       log(`[${m.id}] round ${round}: ${sim.outcome} (${sim.detail})${m.dive ? ` dive ${m.dive.dir}@${m.dive.at.toFixed(2)}` : ' no dive'}`);
       finishRound(m, sim.outcome, sim.detail);
     }, Math.max(0, at - now()));
     m.timers.push(m.judgeTimer);
   }
 
+  /** which of the kicker's players takes this kick (penalty order / free-kick taker) */
+  function takerOf(m, k) {
+    const sq = k.squad;
+    if (!sq || !sq.penaltyOrder?.length) return null;
+    if (m.mode === 'freekick') return sq.freeKickTakerId || sq.penaltyOrder[0];
+    return sq.penaltyOrder[k.shots % sq.penaltyOrder.length];
+  }
+
   function finishRound(m, outcome, detail) {
     const k = kickerOf(m);
+    // UPDATE 6 patch: the scorer's player id (both phones show the same goal card)
+    const playerId = takerOf(m, k);
     k.shots++;
     if (outcome === 'GOAL') k.score++;
-    m.result = { round: m.round, kicker: k.peer, outcome, detail };
+    m.result = { round: m.round, kicker: k.peer, outcome, detail, playerId };
     m.history.push(m.result);
     m.phase = 'result';
     emit(m, 'round:result');
@@ -170,10 +193,36 @@ export function createMatchManager(o) {
     });
   }
 
+  function roundOpts(m) {
+    return { mode: m.mode, spot: m.mode === 'freekick' ? judge.freeKickSpotIndex(m.id, m.round) : 0 };
+  }
+
   function finishMatch(m) {
     const [a, b] = m.players;
     // R.suddenDeath (later): keep adding pairs of rounds while level
-    m.final = a.score === b.score ? { winner: null, draw: true } : { winner: (a.score > b.score ? a : b).peer, draw: false };
+    m.final = a.score === b.score ? { winner: null, draw: true, reward: 0 } : { winner: (a.score > b.score ? a : b).peer, draw: false, reward: 0 };
+    // UPDATE 6: the server pays the winner of a properly finished game — once per game
+    const key = `${m.id}#${m.game}`;
+    // UPDATE 6 patch: online records (win / loss / draw) for both players — once per game
+    if (o.record && !m.recorded.has(key)) {
+      m.recorded.add(key);
+      for (const p of m.players) {
+        const result = m.final.draw ? 'draw' : m.final.winner === p.peer ? 'win' : 'loss';
+        try {
+          o.record({ id: m.id, game: m.game, mode: m.mode }, p.peer, result);
+        } catch (e) {
+          log(`[${m.id}] record failed: ${e.message}`);
+        }
+      }
+    }
+    if (m.final.winner && o.reward && !m.rewarded.has(key)) {
+      m.rewarded.add(key);
+      try {
+        m.final.reward = o.reward({ id: m.id, game: m.game, mode: m.mode }, m.final.winner) || 0;
+      } catch (e) {
+        log(`[${m.id}] reward failed: ${e.message}`);
+      }
+    }
     m.phase = 'finished';
     m.shot = null;
     m.dive = null;
@@ -205,7 +254,9 @@ export function createMatchManager(o) {
     if (typeof id !== 'string' || !ID_RE.test(id) || typeof msg.opponentPeer !== 'string') return send(peer, { t: 'match:error', code: 'bad_request' });
     const nickname = String(msg.nickname || 'PLAYER').slice(0, 20);
     const userId = String(msg.userId || '').slice(0, 64);
-    const squad = cleanSquad(msg.squad);
+    let squad = cleanSquad(msg.squad);
+    if (squad && o.checkSquad) squad = o.checkSquad(peer, squad);
+    const mode = MODES.includes(msg.mode) ? msg.mode : 'penalty';
     let m = matches.get(id);
     if (!m) {
       const prev = byPeer.get(peer);
@@ -216,6 +267,10 @@ export function createMatchManager(o) {
       m = {
         id,
         roomId: `pipa_match_${id.toLowerCase()}`,
+        mode,
+        game: 0,
+        rewarded: new Set(),
+        recorded: new Set(),
         players: [{ peer, nickname, userId, squad, ready: false, rematch: false, connected: true, score: 0, shots: 0 }],
         expect: msg.opponentPeer,
         phase: 'waiting',
@@ -315,7 +370,7 @@ export function createMatchManager(o) {
       const seed = judge.roundSeed(m.id, m.round);
       let sim;
       try {
-        sim = judge.simulateRound(seed, msg.shot, null, keeperOf(m).squad?.goalkeeperId ?? null);
+        sim = judge.simulateRound(seed, msg.shot, null, keeperOf(m).squad?.goalkeeperId ?? null, roundOpts(m));
       } catch {
         send(peer, { t: 'match:error', code: 'bad_shot' });
         return true;

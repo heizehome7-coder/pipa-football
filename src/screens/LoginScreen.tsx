@@ -40,7 +40,7 @@ export function LoginScreen({ onLogin }: { onLogin: (p: PlayerProfile) => void }
     if (!saved) return setBusy(null);
     accountApi
       .session(saved.token)
-      .then((r) => onLogin({ nickname: r.nickname ?? saved.nickname, token: saved.token, savedSquad: r.squad }))
+      .then((r) => onLogin({ nickname: r.nickname ?? saved.nickname, token: saved.token, savedSquad: r.squad, mp: r.mp ?? 0, owned: r.owned ?? [] }))
       .catch((e: unknown) => {
         if (e instanceof AccountError && e.code === 'session') {
           storeSession(null);
@@ -72,7 +72,7 @@ export function LoginScreen({ onLogin }: { onLogin: (p: PlayerProfile) => void }
     try {
       const r = await accountApi.auth(nick, password);
       storeSession({ token: r.token!, nickname: r.nickname ?? nick });
-      onLogin({ nickname: r.nickname ?? nick, token: r.token, savedSquad: r.squad });
+      onLogin({ nickname: r.nickname ?? nick, token: r.token, savedSquad: r.squad, mp: r.mp ?? 0, owned: r.owned ?? [] });
     } catch (err) {
       setError(err instanceof Error ? err.message : '잠시 후 다시 시도해주세요');
       setBusy(null);

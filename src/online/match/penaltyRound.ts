@@ -2,26 +2,58 @@ import * as THREE from 'three';
 import { FIELD, MODES } from '../../game/core/config';
 import type { ShotInput } from '../../game/core/types';
 import { KickGame, type KeeperDiveCommand, type KickGameOptions, type KickSpot } from '../../game/KickGame';
-import type { DiveDir, RoundOutcome, WireDive } from './protocol';
-import { DIVE_DIRS } from './protocol';
+import { DefensiveWall } from '../../game/entities/DefensiveWall';
+import { freeKickSpot } from '../../game/FreeKickGame';
+import type { DiveDir, MatchMode, RoundOutcome, WireDive } from './protocol';
+import { DIVE_DIRS, roundSeed } from './protocol';
 import { BALL } from '../../game/physics/BallPhysics';
 import { getPlayer } from '../../players/players';
 
+export type OnlineLooks = Pick<KickGameOptions, 'kickerLook' | 'keeperLook' | 'keeperStats'>;
+
+/** UPDATE 6: where this round's free kick is taken — both players of a pair get the same spot */
+export function freeKickSpotIndex(matchId: string, round: number) {
+  const pair = Math.ceil(round / 2);
+  return roundSeed(matchId, 1000 + pair) % 5;
+}
+
 /**
- * One online penalty: same pitch, kicker, ball physics and drawn-path flight as the
- * single-player penalty, but the keeper is a person. Runs identically in the browser
+ * One online attempt: same pitch, kicker, ball physics and drawn-path flight as the
+ * single-player mode, but the keeper is a person. Runs identically in the browser
  * (both players) and on the server (the authoritative judge).
+ *  - penalty  → 11 m spot
+ *  - freekick → one of the single-player free-kick spots + the same 4–5 man wall
  */
-export class OnlinePenaltyGame extends KickGame {
-  constructor(nickname: string, seed: number, visuals: boolean, looks: Pick<KickGameOptions, 'kickerLook' | 'keeperLook' | 'keeperStats'> = {}) {
-    super(MODES.penalty, { visuals, nickname, seed, humanKeeper: true, ...looks });
+export class OnlineKickGame extends KickGame {
+  constructor(
+    nickname: string,
+    seed: number,
+    visuals: boolean,
+    looks: OnlineLooks = {},
+    readonly mode: MatchMode = 'penalty',
+    private spotIndex = 0,
+  ) {
+    super(mode === 'freekick' ? MODES.freekick : MODES.penalty, { visuals, nickname, seed, humanKeeper: true, ...looks });
+  }
+
+  protected createWall() {
+    // NB: called from the base constructor (before field initialisers run)
+    return this.cfg.id === 'freekick' ? new DefensiveWall(5) : null;
   }
 
   protected pickSpot(): KickSpot {
+    if (this.mode === 'freekick') return freeKickSpot(this.spotIndex);
     return {
       ball: new THREE.Vector3(0, FIELD.ballRadius, FIELD.penaltySpot),
       aim: new THREE.Vector3(0, 0, -1),
     };
+  }
+}
+
+/** UPDATE 3–5 name kept for the penalty */
+export class OnlinePenaltyGame extends OnlineKickGame {
+  constructor(nickname: string, seed: number, visuals: boolean, looks: OnlineLooks = {}) {
+    super(nickname, seed, visuals, looks, 'penalty', 0);
   }
 }
 
@@ -31,7 +63,7 @@ export class OnlinePenaltyGame extends KickGame {
  * screen-left = world −x on both phones. Swipe left → the keeper flies to the left
  * of the screen (his own right — he faces the camera).
  */
-const TARGETS: Record<DiveDir, [number, number]> = {
+const BASE_TARGETS: Record<DiveDir, [number, number]> = {
   left: [-2.9, 0.5],
   right: [2.9, 0.5],
   upLeft: [-2.45, 1.95],
@@ -41,6 +73,17 @@ const TARGETS: Record<DiveDir, [number, number]> = {
   lowLeft: [-1.6, 0.25],
   lowRight: [1.6, 0.25],
 };
+/**
+ * UPDATE 6 reach buff for the human keeper: each dive stretches a little further
+ * (sideways +6 %, high +2 % — the gloves already stretch further up —, low +4.5 %). Direction and timing are exactly as chosen.
+ */
+export const DIVE_STRETCH = { side: 1.06, high: 1.02, low: 1.045 } as const;
+const TARGETS = Object.fromEntries(
+  Object.entries(BASE_TARGETS).map(([k, [x, y]]) => {
+    const m = y > 1.5 ? DIVE_STRETCH.high : y < 0.4 ? DIVE_STRETCH.low : DIVE_STRETCH.side;
+    return [k, [x * m, y > 1.5 ? y * DIVE_STRETCH.high : y]];
+  }),
+) as Record<DiveDir, [number, number]>;
 
 export const PENALTY_CONTACT_TIME = 0.93;
 
@@ -88,8 +131,10 @@ export function simulateRound(
   dive: WireDive | { dir: DiveDir; at: number } | null,
   /** UPDATE 5: the defending player's goalkeeper (his DIVING/REACH apply; never a direction) */
   keeperId?: string | null,
+  /** UPDATE 6: FREE KICK DUEL (spot from freeKickSpotIndex) */
+  opts: { mode?: MatchMode; spot?: number } = {},
 ): RoundSimulation {
-  const g = new OnlinePenaltyGame('KICKER', seed, false, { keeperStats: getPlayer(keeperId)?.gk });
+  const g = new OnlineKickGame('KICKER', seed, false, { keeperStats: getPlayer(keeperId)?.gk }, opts.mode ?? 'penalty', opts.spot ?? 0);
   g.start();
   if (!g.shoot(shot)) throw new Error('shot rejected');
   if (dive) g.setKeeperDive(diveCommand(dive));
@@ -100,7 +145,7 @@ export function simulateRound(
   }
   const o = g.outcome ?? 'MISS';
   return {
-    outcome: o === 'BLOCKED' ? 'MISS' : o,
+    outcome: o,
     detail: g.outcome ? g.detail : '시간 초과',
     contact: g.kicker.contactTime,
     decidedAt: t,

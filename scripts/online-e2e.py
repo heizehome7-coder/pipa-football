@@ -65,9 +65,11 @@ with sync_playwright() as p:
     badge = A.locator('[data-testid=version-badge]').bounding_box()
     check('UPDATE badge top-right on the play-type screen', A.inner_text('[data-testid=version-badge]').startswith('UPDATE ') and badge['x'] > 390 * 0.5 and badge['y'] < 80, badge)
     A.click('[data-testid=play-online]')
+    A.click('[data-testid=online-penalty]')
     A.wait_for_selector('.lobby')
     login(B, 'MINHO')
     B.click('[data-testid=play-online]')
+    B.click('[data-testid=online-penalty]')
     B.wait_for_selector('.lobby')
 
     rows = lambda pg: pg.eval_on_selector_all('[data-testid=player-row]', 'els => els.map(e => e.dataset.nick)')
@@ -80,6 +82,7 @@ with sync_playwright() as p:
     C = page(C_ctx, 'C')
     login(C, 'JIN')
     C.click('[data-testid=play-online]')
+    C.click('[data-testid=online-penalty]')
     C.wait_for_selector('.lobby')
     v, dt = wait_for(lambda: sorted(rows(A)) == ['JIN', 'MINHO'])
     check('a newly logged-in player appears live (no refresh)', bool(v), f'{dt:.2f}s')
@@ -125,6 +128,8 @@ with sync_playwright() as p:
 
     # ── accept flow (B is in the single-player menu, not the lobby) ─────
     B.click('.lobby-back')
+    B.wait_for_selector('[data-testid=online-modes]')  # UPDATE 6: lobby ‹ → online mode choice ‹ → home
+    B.click('[data-testid=online-modes] .btn-ghost')
     B.wait_for_selector('[data-testid=play-solo]')
     B.click('[data-testid=play-solo]')
     B.wait_for_selector('text=PENALTY KICK')
@@ -169,6 +174,7 @@ with sync_playwright() as p:
 
     # single-player still reachable
     A.click('.lobby-back')
+    A.click('[data-testid=online-modes] .btn-ghost')
     A.click('[data-testid=play-solo]')
     check('혼자서 → existing PENALTY / FREE KICK menu', A.is_visible('text=PENALTY KICK') and A.is_visible('text=FREE KICK'))
     check('no JS errors', not errors, errors[:3])

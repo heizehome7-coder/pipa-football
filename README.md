@@ -51,6 +51,25 @@ npm run build:single   # dist-single/ — index.html 한 파일 (어디서나 �
 - 골 세리머니: 모든 선수 공통 "두 손 들고 환호" + 실패(SAVE/MISS/POST/CROSSBAR) 리액션 — `reactions.ts`; 리액션 중 입력 잠금(~2초)
 - 카드 앞면 OVR + POWER/ACCURACY/CURVE, 상세에 전체 능력 + SPECIAL ABILITY. 등 이름 크기 확대
 
+## UPDATE 6 추가 패치 — DEVELOPER MODE & 득점 선수 카드 (버전 표기는 UPDATE 6 유지)
+- **DEVELOPER MODE** (홈 메뉴 → 개발자 코드 → DEVELOPER DASHBOARD) — `src/screens/DeveloperScreen.tsx`, 서버 `server/accounts.mjs`
+  - 코드는 서버만 확인: Render 환경변수 `DEVELOPER_CODE`가 있으면 그 값, 없으면 서버 코드 안의 salt+scrypt 해시와 비교 (코드 원문은 저장소·브라우저 어디에도 없음). 틀리면 "인증이 되지 않았습니다.", 6번 틀리면 10분 잠금
+  - 성공 시 2시간짜리 개발자 토큰 발급 → `/api/dev/users`, `/api/dev/grant`, `/api/dev/log` 모두 토큰을 서버가 다시 확인
+  - 최근 접속자 100명 (lastLoginAt / lastSeenAt, 서버 시간, KST `YYYY-MM-DD HH:mm`, ONLINE/OFFLINE, 닉네임 검색)
+  - 유저 전적: TOTAL / PENALTY / FREE KICK — 승·패·무, 경기 수, 승률. 서버가 정상 종료된 경기만 경기(matchId#게임)당 한 번 기록 (`results` = resultRecorded)
+  - MP 관리: 유저 선택 → 현재 MP → 지급 MP 입력 → 확인창 → 서버가 검증(양의 정수, 최대 1,000억) 후 지급 → 접속 중이면 `wallet:update`로 즉시 반영. 모든 지급은 개발자 로그(`devlog.json` / 테이블 `pipa_dev_log`)에 GRANT_MP·대상·금액·시간 기록
+- **득점 선수 카드**: GOAL일 때만 화면 왼쪽에서 득점 선수 카드가 슬라이드 인 → 약 2.3초 → 슬라이드 아웃 (`src/components/GoalCard.tsx`). OVR·포지션·POWER/ACC/CURVE/FK·SPECIAL, SPECIAL별 테두리(피네스·파워·화려함·스피드), LEGEND 골드. 온라인은 서버 결과의 `playerId`로 양쪽에 같은 카드
+- 카메라: 왼발 키커가 프리킥 위치에 따라 화면 밖으로 살짝 나가던 문제 수정 (키커 전체가 보이도록 화각 자동 보정)
+
+## UPDATE 6 — TRANSFER MARKET & ONLINE FREE KICK
+- **MP 재화**: 서버(계정 DB)에만 저장 — `server/accounts.mjs` (`mp`, `owned`, `rewards`). 신규 0 MP
+- **보상**: 온라인 PENALTY SHOOTOUT 승리 +10,000,000 MP. 서버가 경기 결과를 확인하고 지급, 경기(matchId#게임번호)당 1번만 (`server/matches.mjs` reward 훅). 패배/무승부/싱글/프리킥 대결 0 — 상수 `REWARDS` (`src/online/match/protocol.ts`)
+- **TRANSFER MARKET**: 100명 (현역 65 + 레전드 35) — `src/players/market.ts`. 기존 15명 스타터는 판매 제외, 기존 5명(더 브라위너·레반도프스키·브루노·돈나룸마·E.마르티네스)은 같은 레코드에 가격만 추가. 필터 ALL/FW/MF/DF/GK/LEGEND, 정렬 가격/이름, BUY → 확인창 → 서버 구매 (`/api/market/buy`, 가격은 서버 카탈로그). SELL/TRADE/AUCTION은 아직 없음
+- **SQUAD**: 보유 선수(스타터 + 구매)만 선택 가능, 서버가 미보유 선수 스쿼드를 거부. UPDATE 6 이전 계정은 이미 스쿼드에 있던 시장 선수를 계속 보유
+- **ONLINE**: PENALTY SHOOTOUT / FREE KICK DUEL 선택 → 같은 로비·대결 신청·서버 매치 재사용. 프리킥은 각자의 FREE KICK TAKER, 상대의 GK를 사람이 조작, 4–5명 수비벽, 결과 GOAL/SAVE/MISS/BLOCKED/POST/CROSSBAR, 같은 쌍(1·2라운드 …)은 같은 위치
+- **키퍼 reach 소폭 증가**: 팔 +4%, 장갑 +3 cm, 다이브 거리 +4.5%, 손끝 스트레치, 사람 키퍼 다이브 목표 옆 +6%/아래 +4.5%/위 +2% (반응·예측·시작 타이밍은 그대로). 손끝에 닿으면 바깥/위로 쳐냄
+- 테스트: `node scripts/account-test.mjs`, `npm run test:match`, `python3 scripts/update6-e2e.py`, `npx tsx scripts/keeper-reach-exp.ts`
+
 ## 계정 (닉네임 중복 방지 + 계정 저장) — `server/accounts.mjs`
 - 처음 쓰는 닉네임 + 비밀번호(4자 이상) → 계정 생성. 같은 닉네임(대소문자·전각 무시)은 비밀번호가 맞아야만 사용 가능
 - 서버에 저장: 닉네임, 비밀번호(scrypt 해시), 로그인 토큰(sha256), 스쿼드. 자동 로그인(이 기기), 다른 기기에서 로그인해도 스쿼드 유지

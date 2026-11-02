@@ -7,10 +7,10 @@ import { samplePlan } from './physics/ShotModel';
 import { cameraServices, frameCamera } from './render/cameraFraming';
 import { TrajectoryOverlay, type Pt } from './render/Trajectory';
 import { buildStadium } from './world/Stadium';
-import { diveCommand, OnlinePenaltyGame } from '../online/match/penaltyRound';
+import { diveCommand, OnlineKickGame } from '../online/match/penaltyRound';
 import type { KickGameOptions } from './KickGame';
 import type { PlayerDef } from '../players/players';
-import type { DiveDir, WireDive, WireShot } from '../online/match/protocol';
+import type { DiveDir, MatchMode, WireDive, WireShot } from '../online/match/protocol';
 
 export type OnlineRole = 'kicker' | 'keeper';
 
@@ -53,8 +53,10 @@ const KEEPER_CAM = { x: 0, z: 16.8, y: 2.55, lookX: 0, lookY: 0.95, lookZ: 0, fr
  */
 export class OnlineGameView {
   readonly camera = new THREE.PerspectiveCamera(50, 1, 0.1, 400);
-  game: OnlinePenaltyGame;
+  game: OnlineKickGame;
   role: OnlineRole = 'kicker';
+  /** UPDATE 6: FREE KICK DUEL spot for this round (same on both phones and the server) */
+  private spot = 0;
   private renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
   private overlay: TrajectoryOverlay;
@@ -89,6 +91,8 @@ export class OnlineGameView {
   constructor(
     private host: HTMLElement,
     private cb: OnlineViewCallbacks,
+    /** UPDATE 6: PENALTY SHOOTOUT or FREE KICK DUEL */
+    readonly mode: MatchMode = 'penalty',
   ) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -101,7 +105,7 @@ export class OnlineGameView {
     host.appendChild(this.renderer.domElement);
     this.overlay = new TrajectoryOverlay();
     host.appendChild(this.overlay.canvas);
-    buildStadium(this.scene, 'penalty');
+    buildStadium(this.scene, mode);
     const apron = new THREE.Mesh(new THREE.PlaneGeometry(90, 14), new THREE.MeshLambertMaterial({ color: 0x4a9439 }));
     apron.rotation.x = -Math.PI / 2;
     apron.position.set(0, -0.012, -12.5);
@@ -151,20 +155,28 @@ export class OnlineGameView {
   // ── round control (driven by server state) ────────────────────────────
   private makeGame(nick: string, seed: number) {
     const { kickerLook, keeperLook, keeperStats } = this.looks ?? {};
-    const g = new OnlinePenaltyGame(nick, seed, true, { kickerLook, keeperLook, keeperStats });
+    const g = new OnlineKickGame(nick, seed, true, { kickerLook, keeperLook, keeperStats }, this.mode, this.spot);
     g.start();
     return g;
   }
 
-  private swapGame(g: OnlinePenaltyGame) {
+  private swapGame(g: OnlineKickGame) {
     if (this.game) this.scene.remove(this.game.group);
     this.game = g;
     this.scene.add(g.group);
   }
 
   /** new round: fresh pitch, roles from the server */
-  setRound(r: { role: OnlineRole; kickerNick: string; canShoot: boolean; looks?: Pick<KickGameOptions, 'kickerLook' | 'keeperLook' | 'keeperStats'> & { kickerPlayer?: PlayerDef | null } }) {
+  setRound(r: {
+    role: OnlineRole;
+    kickerNick: string;
+    canShoot: boolean;
+    looks?: Pick<KickGameOptions, 'kickerLook' | 'keeperLook' | 'keeperStats'> & { kickerPlayer?: PlayerDef | null };
+    /** free-kick spot index (freeKickSpotIndex) */
+    spot?: number;
+  }) {
     this.looks = r.looks ?? {};
+    this.spot = r.spot ?? 0;
     this.role = r.role;
     this.kickerNick = r.kickerNick;
     this.canShoot = r.canShoot;
@@ -260,7 +272,8 @@ export class OnlineGameView {
 
   private frameCamera() {
     if (!this.game?.spot) return;
-    if (this.role === 'kicker') {
+    // free kick: both players watch from behind the ball (the keeper sees taker, wall and goal)
+    if (this.role === 'kicker' || this.mode === 'freekick') {
       frameCamera(this.camera, this.game, this.w, this.h);
       return;
     }
@@ -429,6 +442,9 @@ export class OnlineGameView {
     const g = this.game;
     return {
       role: this.role,
+      mode: this.mode,
+      spot: this.spot,
+      wall: g.wall ? g.wall.players.filter((p) => p.root.visible).length : 0,
       w: this.w,
       h: this.h,
       fov: this.camera.fov,

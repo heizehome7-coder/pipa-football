@@ -40,6 +40,10 @@ export interface AccountReply {
   token?: string;
   nickname?: string;
   squad?: unknown;
+  /** UPDATE 6 */
+  mp?: number;
+  owned?: string[];
+  playerId?: string;
   error?: string;
   message?: string;
 }
@@ -49,6 +53,8 @@ export class AccountError extends Error {
   constructor(
     readonly code: string,
     message: string,
+    /** the server's current balance/ownership, when it sent them with the error */
+    readonly reply?: AccountReply,
   ) {
     super(message);
   }
@@ -78,7 +84,7 @@ async function post(path: string, body: unknown, timeoutMs = 75_000): Promise<Ac
   } catch {
     throw new AccountError('offline', '서버에 연결할 수 없어요. 잠시 후 다시 시도해주세요');
   }
-  if (!data.ok) throw new AccountError(data.error ?? 'error', data.message ?? '잠시 후 다시 시도해주세요');
+  if (!data.ok) throw new AccountError(data.error ?? 'error', data.message ?? '잠시 후 다시 시도해주세요', data);
   return data;
 }
 
@@ -87,4 +93,30 @@ export const accountApi = {
   session: (token: string) => post('/api/session', { token }, 30_000),
   saveSquad: (token: string, squad: Squad) => post('/api/squad', { token, squad }, 20_000),
   logout: (token: string) => post('/api/logout', { token }, 8_000),
+  /** UPDATE 6: MP balance + owned market players */
+  me: (token: string) => post('/api/me', { token }, 30_000),
+  buy: (token: string, playerId: string) => post('/api/market/buy', { token, playerId }, 30_000),
+};
+
+// ── UPDATE 6 patch: DEVELOPER MODE (the code is checked only by the server) ──
+export interface DevStats {
+  wins: number;
+  losses: number;
+  draws: number;
+}
+export interface DevUser {
+  nickname: string;
+  lastLoginAt: string | null;
+  lastSeenAt: string | null;
+  online: boolean;
+  mp: number;
+  owned: number;
+  stats: { total: DevStats; penalty: DevStats; freekick: DevStats };
+}
+type DevReply = AccountReply & { devToken?: string; users?: DevUser[]; total?: number; granted?: number; before?: number };
+const devPost = (path: string, body: unknown) => post(path, body, 30_000) as Promise<DevReply>;
+export const devApi = {
+  auth: (code: string) => devPost('/api/dev/auth', { code }),
+  users: (devToken: string, q = '') => devPost('/api/dev/users', { devToken, q }),
+  grant: (devToken: string, nickname: string, amount: number) => devPost('/api/dev/grant', { devToken, nickname, amount }),
 };

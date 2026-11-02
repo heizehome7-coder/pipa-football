@@ -33,9 +33,19 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', pr
 const MAX_PRESENCE = 4096;
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json' };
 
+// the same TypeScript the phones run: penalty/free-kick judge + player catalogue (prices)
+let judge;
+try {
+  judge = await import('./judge.gen.mjs');
+} catch {
+  console.error('server/judge.gen.mjs is missing — run `npm run build` first');
+  process.exit(1);
+}
+
 const accounts = await createAccounts({
   databaseUrl: process.env.DATABASE_URL,
   dataDir: process.env.PIPA_DATA_DIR,
+  catalog: { marketPrice: judge.marketPrice, isStarter: judge.isStarter, getPlayer: judge.getPlayer },
   log: (line) => console.log(line),
 });
 
@@ -70,14 +80,6 @@ const clients = new Map();
 
 const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 16 * 1024 });
 
-// the same penalty simulation the phones run, bundled by `npm run build`
-let judge;
-try {
-  judge = await import('./judge.gen.mjs');
-} catch {
-  console.error('server/judge.gen.mjs is missing — run `npm run build` first');
-  process.exit(1);
-}
 const matches = createMatchManager({
   judge,
   log: (line) => console.log(line),
@@ -87,6 +89,44 @@ const matches = createMatchManager({
     const c = clients.get(peer);
     if (c && c.ws.readyState === 1) c.ws.send(JSON.stringify(msg));
   },
+  // UPDATE 6: only players this account owns may play online (otherwise the default squad)
+  checkSquad(peer, squad) {
+    return accounts.allowedSquad(clients.get(peer)?.nick ?? null, squad);
+  },
+  // UPDATE 6 patch: online records per mode (logged-in accounts only, once per game)
+  record(m, peer, result) {
+    const c = clients.get(peer);
+    if (!c?.nick) return;
+    accounts.recordResult(c.nick, `${m.id}#${m.game}`, m.mode, result).catch((e) => console.error('record failed', e.message));
+  },
+  // UPDATE 6: MP for the winner of a finished online match (logged-in accounts only)
+  reward(m, winnerPeer) {
+    const c = clients.get(winnerPeer);
+    const amount = m.mode === 'freekick' ? judge.REWARDS.freeKickWin : judge.REWARDS.penaltyWin;
+    if (!c?.nick || !(amount > 0)) return 0;
+    const key = `${m.id}#${m.game}`;
+    accounts
+      .grantReward(c.nick, key, amount)
+      .then((mp) => {
+        if (mp != null) pushWallet(c.nick, mp, { reward: amount, key });
+      })
+      .catch((e) => console.error('reward failed', e.message));
+    return amount;
+  },
+});
+
+/** UPDATE 6 patch: a new balance to every open connection of that account (wallet:update) */
+function pushWallet(nick, mp, extra = {}) {
+  const k = accounts.nickKey(nick);
+  for (const c of clients.values()) {
+    if (c.nick && accounts.nickKey(c.nick) === k && c.ws.readyState === 1) c.ws.send(JSON.stringify({ t: 'wallet:update', mp, ...extra }));
+  }
+}
+accounts.setWalletPush((nick, mp) => pushWallet(nick, mp, { source: 'developer' }));
+accounts.setOnlineCheck((nick) => {
+  const k = accounts.nickKey(nick);
+  for (const c of clients.values()) if (c.nick && accounts.nickKey(c.nick) === k) return true;
+  return false;
 });
 
 function list(room) {
@@ -136,7 +176,11 @@ async function lobbyPresence(client, peer, p) {
 wss.on('connection', (ws, req) => {
   const peer = crypto.randomBytes(8).toString('hex');
   const token = new URL(req.url || '/', 'http://x').searchParams.get('token');
-  const client = { ws, rooms: new Set(), alive: true, auth: token ? accounts.nicknameFor(token).catch(() => null) : Promise.resolve(null), chain: Promise.resolve() };
+  const client = { ws, rooms: new Set(), alive: true, nick: null, auth: token ? accounts.nicknameFor(token).catch(() => null) : Promise.resolve(null), chain: Promise.resolve() };
+  client.auth.then((n) => {
+    client.nick = n;
+    if (n) void accounts.touch(n); // lastSeenAt (server time)
+  });
   clients.set(peer, client);
   rooms.get('').set(peer, {});
   ws.send(JSON.stringify({ t: 'welcome', peer }));
@@ -152,6 +196,7 @@ wss.on('connection', (ws, req) => {
     }
     if (matches.handle(peer, m)) return;
     // chained so presence updates keep their order even while the token check is pending
+    if (m.t === 'presence' && client.nick) void accounts.touch(client.nick);
     if (m.t === 'presence') client.chain = client.chain.then(() => lobbyPresence(client, peer, m.p)).catch(() => {});
     else if (m.t === 'join' && validRoom(m.room)) {
       client.rooms.add(m.room);
@@ -164,6 +209,7 @@ wss.on('connection', (ws, req) => {
   ws.on('close', () => {
     matches.disconnect(peer);
     clients.delete(peer);
+    if (client.nick) void accounts.touch(client.nick, true); // last seen = when they left
     for (const r of client.rooms) leave(r, peer);
     leave('', peer);
   });

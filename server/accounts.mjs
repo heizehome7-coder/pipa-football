@@ -7,6 +7,23 @@
  *   POST /api/session  {token}               ← {ok, nickname, squad}      (auto-login)
  *   POST /api/squad    {token, squad}        ← {ok}                       (save squad)
  *   POST /api/logout   {token}               ← {ok}
+ *   POST /api/me       {token}               ← {ok, nickname, squad, mp, owned}       (UPDATE 6)
+ *   POST /api/market/buy {token, playerId}   ← {ok, mp, owned, playerId}              (UPDATE 6)
+ *
+ * UPDATE 6 (patch) — DEVELOPER MODE (all checks on the server):
+ *   POST /api/dev/auth  {code}                     ← {ok, devToken}   (code = env DEVELOPER_CODE;
+ *                                                     never in the browser bundle)
+ *   POST /api/dev/users {devToken, q?}             ← {ok, users:[…]}  recent 100 (lastSeenAt desc)
+ *   POST /api/dev/grant {devToken, nickname, amount} ← {ok, nickname, mp, granted}
+ *   Every grant is written to the developer action log (file devlog.json / table pipa_dev_log).
+ *   Accounts also keep lastLoginAt / lastSeenAt (server time) and online records per mode:
+ *   stats: { penalty:{wins,losses,draws}, freekick:{…} } — once per finished game (results:[keys]).
+ *
+ * UPDATE 6 account data: { squad, mp, owned:[market player ids], rewards:[match keys], v6:true }
+ *  - MP only changes on the server: +reward for a finished online win (once per match
+ *    game), −price for a purchase. The client never sends an amount.
+ *  - starters are free for everyone; market players must be owned to be in a squad.
+ *  - accounts made before UPDATE 6 keep the market players already in their squad.
  *
  * Storage:
  *   DATABASE_URL set   → PostgreSQL (permanent; e.g. a free Neon database)
@@ -83,6 +100,32 @@ function fileStore(dir) {
     async count() {
       return Object.keys(db).length;
     },
+    async list() {
+      return Object.values(db);
+    },
+    async logAction(entry) {
+      const f = path.join(dir, 'devlog.json');
+      let a = [];
+      try {
+        a = JSON.parse(fs.readFileSync(f, 'utf8'));
+      } catch {
+        a = [];
+      }
+      a.push(entry);
+      try {
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(f, JSON.stringify(a.slice(-2000)));
+      } catch (e) {
+        console.error('devlog: save failed', e.message);
+      }
+    },
+    async actions(limit = 50) {
+      try {
+        return JSON.parse(fs.readFileSync(path.join(dir, 'devlog.json'), 'utf8')).slice(-limit).reverse();
+      } catch {
+        return [];
+      }
+    },
   };
 }
 
@@ -101,6 +144,14 @@ async function pgStore(url) {
     tokens     TEXT[] NOT NULL DEFAULT '{}',
     data       JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS pipa_dev_log (
+    id      BIGSERIAL PRIMARY KEY,
+    at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    action  TEXT NOT NULL,
+    target  TEXT,
+    amount  BIGINT,
+    detail  JSONB NOT NULL DEFAULT '{}'::jsonb
   )`);
   const row = (r) => r && { key: r.nick_key, nickname: r.nickname, salt: r.salt, hash: r.hash, tokens: r.tokens, data: r.data, createdAt: r.created_at };
   return {
@@ -127,20 +178,57 @@ async function pgStore(url) {
       const { rows } = await pool.query('SELECT count(*)::int AS n FROM pipa_accounts');
       return rows[0].n;
     },
+    async list() {
+      const { rows } = await pool.query('SELECT * FROM pipa_accounts');
+      return rows.map(row);
+    },
+    async logAction(e) {
+      await pool.query('INSERT INTO pipa_dev_log (at, action, target, amount, detail) VALUES ($1,$2,$3,$4,$5)', [e.timestamp, e.action, e.target, e.amount, e]);
+    },
+    async actions(limit = 50) {
+      const { rows } = await pool.query('SELECT detail FROM pipa_dev_log ORDER BY id DESC LIMIT $1', [limit]);
+      return rows.map((r) => r.detail);
+    },
   };
 }
 
 // ── squad check (ids only; the client validates against the real roster) ──
-function cleanSquad(s) {
+function cleanSquad(s, catalog) {
   if (!s || typeof s !== 'object') return null;
   const id = (x) => typeof x === 'string' && /^[a-z]{2,20}$/.test(x);
   if (!Array.isArray(s.penaltyOrder) || s.penaltyOrder.length !== 5 || !s.penaltyOrder.every(id)) return null;
+  if (new Set(s.penaltyOrder).size !== 5) return null;
   if (!id(s.goalkeeperId) || !id(s.freeKickTakerId)) return null;
+  if (catalog) {
+    const role = (x) => catalog.getPlayer(x)?.role;
+    if (!s.penaltyOrder.every((x) => role(x) && role(x) !== 'GK') || role(s.goalkeeperId) !== 'GK') return null;
+    if (!s.penaltyOrder.includes(s.freeKickTakerId)) return null;
+  }
   return { penaltyOrder: [...s.penaltyOrder], goalkeeperId: s.goalkeeperId, freeKickTakerId: s.freeKickTakerId };
 }
+const squadIds = (s) => (s ? [...s.penaltyOrder, s.goalkeeperId, s.freeKickTakerId] : []);
 
 // ── manager ──────────────────────────────────────────────
-export async function createAccounts({ databaseUrl, dataDir, log = () => {} } = {}) {
+// ── DEVELOPER MODE code: env DEVELOPER_CODE, else this salted scrypt hash (no plain code anywhere) ──
+const DEV_FALLBACK = { salt: '20d3533f38dbf627da335afdfefbd312', hash: '6564308164c28fe299c0950d21a924af43b5f7b2cc641eae273ce580bbb37e41' };
+const DEV_TOKEN_MS = 2 * 60 * 60_000;
+/** the largest single grant (100 billion MP) — anything above is refused as abnormal */
+export const MAX_GRANT = 100_000_000_000;
+
+function devCodeOk(code, envCode) {
+  if (typeof code !== 'string' || !code || code.length > 128) return false;
+  if (envCode) {
+    const a = crypto.createHash('sha256').update(code).digest();
+    const b = crypto.createHash('sha256').update(envCode).digest();
+    return crypto.timingSafeEqual(a, b);
+  }
+  const h = crypto.scryptSync(code, DEV_FALLBACK.salt, 32);
+  return crypto.timingSafeEqual(h, Buffer.from(DEV_FALLBACK.hash, 'hex'));
+}
+
+const emptyStats = () => ({ penalty: { wins: 0, losses: 0, draws: 0 }, freekick: { wins: 0, losses: 0, draws: 0 } });
+
+export async function createAccounts({ databaseUrl, dataDir, catalog = null, log = () => {}, developerCode = process.env.DEVELOPER_CODE } = {}) {
   let store;
   if (databaseUrl) {
     try {
@@ -164,12 +252,46 @@ export async function createAccounts({ databaseUrl, dataDir, log = () => {} } = 
     else f.n++;
   };
 
+  // UPDATE 6 ─ per-account serialisation (purchases, rewards and squad saves never interleave)
+  const locks = new Map();
+  const withLock = (key, fn) => {
+    const prev = locks.get(key) ?? Promise.resolve();
+    const run = prev.then(fn, fn);
+    const tail = run.catch(() => {});
+    locks.set(key, tail);
+    tail.then(() => locks.get(key) === tail && locks.delete(key));
+    return run;
+  };
+  /** latest record per account (ownership checks for online matches are synchronous) */
+  const cache = new Map();
+  const remember = (rec) => (rec && cache.set(rec.key, rec), rec);
+  const isMarket = (id) => !!catalog && catalog.marketPrice(id) != null;
+  const owns = (rec, id) => !!catalog && (catalog.isStarter(id) || (rec.data?.owned ?? []).includes(id));
+
+  /** accounts from before UPDATE 6: market players already in the saved squad become owned */
+  function migrate(rec, squad = rec.data?.squad) {
+    if (!rec || rec.data?.v6) return false;
+    // no squad on the server yet: wait for the first squad this account saves
+    if (!squad) return false;
+    const owned = new Set(rec.data?.owned ?? []);
+    for (const id of squadIds(squad)) if (isMarket(id)) owned.add(id);
+    rec.data = { ...(rec.data ?? {}), owned: [...owned], mp: rec.data?.mp ?? 0, rewards: rec.data?.rewards ?? [], v6: true };
+    log(`accounts: "${rec.nickname}" migrated to UPDATE 6 (kept ${owned.size} market player(s))`);
+    return true;
+  }
+  const load = async (key) => remember(await store.get(key));
+  /** server-time login / activity stamps */
+  function stamp(rec, login = false) {
+    const now = new Date().toISOString();
+    rec.data = { ...(rec.data ?? {}), lastSeenAt: now, ...(login ? { lastLoginAt: now } : {}) };
+  }
+
   const newToken = async (rec) => {
     const token = crypto.randomBytes(24).toString('base64url');
     rec.tokens = [...rec.tokens.filter(Boolean), sha(token)].slice(-MAX_TOKENS);
     return token;
   };
-  const view = (rec) => ({ nickname: rec.nickname, squad: rec.data?.squad ?? null });
+  const view = (rec) => ({ nickname: rec.nickname, squad: rec.data?.squad ?? null, mp: rec.data?.mp ?? 0, owned: rec.data?.owned ?? [] });
 
   async function auth({ nickname, password }, ip) {
     const nick = cleanNick(nickname);
@@ -184,9 +306,11 @@ export async function createAccounts({ databaseUrl, dataDir, log = () => {} } = 
     let rec = await store.get(key);
     if (!rec) {
       const { salt, hash } = hashPassword(password);
-      rec = { key, nickname: nick, salt, hash, tokens: [], data: {}, createdAt: new Date().toISOString() };
+      const now = new Date().toISOString();
+      rec = { key, nickname: nick, salt, hash, tokens: [], data: { v6: true, mp: 0, owned: [], rewards: [], lastLoginAt: now, lastSeenAt: now }, createdAt: now };
       const token = await newToken(rec);
       if (await store.create(rec)) {
+        remember(rec);
         log(`accounts: created "${nick}"`);
         return { status: 200, body: { ok: true, created: true, token, ...view(rec) } };
       }
@@ -202,51 +326,274 @@ export async function createAccounts({ databaseUrl, dataDir, log = () => {} } = 
       };
     }
     fails.delete(key);
-    const token = await newToken(rec);
-    await store.put(rec);
-    return { status: 200, body: { ok: true, created: false, token, ...view(rec) } };
+    return withLock(key, async () => {
+      const cur = (await load(key)) ?? rec;
+      migrate(cur);
+      stamp(cur, true);
+      const token = await newToken(cur);
+      await store.put(cur);
+      return { status: 200, body: { ok: true, created: false, token, ...view(cur) } };
+    });
   }
 
-  async function session({ token }) {
-    if (typeof token !== 'string' || token.length < 16) return { status: 401, body: { ok: false, error: 'session' } };
-    const rec = await store.byToken(sha(token));
-    if (!rec) return { status: 401, body: { ok: false, error: 'session' } };
-    return { status: 200, body: { ok: true, ...view(rec) } };
+  const NO_SESSION = { status: 401, body: { ok: false, error: 'session', message: '다시 로그인해주세요' } };
+  /** token → account, migrated + saved if needed, inside that account's lock */
+  async function withAccount(token, fn) {
+    if (typeof token !== 'string' || token.length < 16) return NO_SESSION;
+    const found = await store.byToken(sha(token));
+    if (!found) return NO_SESSION;
+    return withLock(found.key, async () => {
+      const rec = (await load(found.key)) ?? found;
+      if (!rec.tokens.includes(sha(token))) return NO_SESSION;
+      if (migrate(rec)) await store.put(rec);
+      return fn(rec);
+    });
   }
 
-  async function saveSquad({ token, squad }) {
-    if (typeof token !== 'string') return { status: 401, body: { ok: false, error: 'session' } };
-    const rec = await store.byToken(sha(token));
-    if (!rec) return { status: 401, body: { ok: false, error: 'session' } };
-    const s = cleanSquad(squad);
-    if (!s) return { status: 400, body: { ok: false, error: 'squad' } };
-    rec.data = { ...(rec.data ?? {}), squad: s };
-    await store.put(rec);
-    return { status: 200, body: { ok: true } };
+  // auto-login counts as a login (server time)
+  const session = ({ token }) =>
+    withAccount(token, async (rec) => {
+      stamp(rec, true);
+      await store.put(rec);
+      return { status: 200, body: { ok: true, ...view(rec) } };
+    });
+  const me = ({ token }) => withAccount(token, (rec) => ({ status: 200, body: { ok: true, ...view(rec) } }));
+
+  function saveSquad({ token, squad }) {
+    if (typeof token !== 'string' || token.length < 16) return NO_SESSION;
+    return (async () => {
+      const found = await store.byToken(sha(token));
+      if (!found) return NO_SESSION;
+      return withLock(found.key, async () => {
+        const rec = (await load(found.key)) ?? found;
+        const s = cleanSquad(squad, catalog);
+        if (!s) return { status: 400, body: { ok: false, error: 'squad', message: '스쿼드 구성이 올바르지 않아요' } };
+        // a pre-UPDATE-6 account that never saved a squad on the server: its device squad counts
+        migrate(rec, rec.data?.squad ?? s);
+        if (catalog && !squadIds(s).every((id) => owns(rec, id)))
+          return { status: 403, body: { ok: false, error: 'not_owned', message: '보유하지 않은 선수가 있어요' } };
+        rec.data = { ...(rec.data ?? {}), squad: s };
+        await store.put(rec);
+        return { status: 200, body: { ok: true } };
+      });
+    })();
+  }
+
+  /** TRANSFER MARKET purchase — the price comes from the server's own catalogue */
+  function buy({ token, playerId }) {
+    return withAccount(token, async (rec) => {
+      const price = typeof playerId === 'string' && catalog ? catalog.marketPrice(playerId) : null;
+      if (price == null) return { status: 400, body: { ok: false, error: 'not_for_sale', message: '판매하지 않는 선수예요' } };
+      const owned = rec.data.owned ?? [];
+      if (owned.includes(playerId)) return { status: 409, body: { ok: false, error: 'owned', message: '이미 보유한 선수예요', ...view(rec) } };
+      const mp = rec.data.mp ?? 0;
+      if (mp < price) return { status: 402, body: { ok: false, error: 'mp', message: 'MP가 부족합니다.', ...view(rec) } };
+      rec.data = { ...rec.data, mp: mp - price, owned: [...owned, playerId] };
+      await store.put(rec);
+      log(`accounts: "${rec.nickname}" bought ${playerId} for ${price} MP (left ${rec.data.mp})`);
+      return { status: 200, body: { ok: true, playerId, ...view(rec) } };
+    });
+  }
+
+  /**
+   * Online win reward (called by the match server, never by a client). `key` identifies
+   * the finished game; a key is paid at most once per account. Returns the new balance
+   * (null when nothing was paid).
+   */
+  function grantReward(nickname, key, amount) {
+    if (!(amount > 0)) return Promise.resolve(null);
+    const k = nickKey(cleanNick(nickname));
+    return withLock(k, async () => {
+      const rec = await load(k);
+      if (!rec) return null;
+      migrate(rec);
+      const rewards = rec.data.rewards ?? [];
+      if (rewards.includes(key)) return null;
+      rec.data = { ...rec.data, mp: (rec.data.mp ?? 0) + amount, rewards: [...rewards, key].slice(-200) };
+      await store.put(rec);
+      log(`accounts: "${rec.nickname}" +${amount} MP (${key}) → ${rec.data.mp}`);
+      return rec.data.mp;
+    });
+  }
+
+  /** UPDATE 6 patch: online result for one finished game — once per key (resultRecorded) */
+  function recordResult(nickname, key, mode, result) {
+    if (!['win', 'loss', 'draw'].includes(result)) return Promise.resolve(false);
+    const m = mode === 'freekick' ? 'freekick' : 'penalty';
+    const k = nickKey(cleanNick(nickname));
+    return withLock(k, async () => {
+      const rec = await load(k);
+      if (!rec) return false;
+      const done = rec.data?.results ?? [];
+      if (done.includes(key)) return false;
+      const stats = { ...emptyStats(), ...(rec.data?.stats ?? {}) };
+      const st = { ...stats[m] };
+      st[result === 'win' ? 'wins' : result === 'loss' ? 'losses' : 'draws']++;
+      rec.data = { ...rec.data, stats: { ...stats, [m]: st }, results: [...done, key].slice(-300) };
+      await store.put(rec);
+      return true;
+    });
+  }
+
+  /** activity heartbeat from the realtime server (written at most once a minute per account) */
+  const lastWrite = new Map();
+  function touch(nickname, force = false) {
+    if (!nickname) return Promise.resolve();
+    const k = nickKey(cleanNick(nickname));
+    const t = Date.now();
+    if (!force && t - (lastWrite.get(k) ?? 0) < 60_000) return Promise.resolve();
+    lastWrite.set(k, t);
+    return withLock(k, async () => {
+      const rec = await load(k);
+      if (!rec) return;
+      stamp(rec);
+      await store.put(rec);
+    }).catch(() => {});
+  }
+
+  // ── DEVELOPER MODE ───────────────────────────────────────
+  const devTokens = new Map(); // sha(token) → expiry
+  const devFails = new Map();
+  let isOnline = () => false;
+  let onWallet = () => {};
+  const devOk = (t) => {
+    if (typeof t !== 'string' || t.length < 16) return false;
+    const e = devTokens.get(sha(t));
+    if (!e) return false;
+    if (e < Date.now()) {
+      devTokens.delete(sha(t));
+      return false;
+    }
+    return true;
+  };
+  const NO_DEV = { status: 401, body: { ok: false, error: 'dev', message: '개발자 인증이 필요합니다.' } };
+
+  function devAuth({ code }, ip) {
+    const f = devFails.get(ip);
+    if (f && f.n >= 6 && Date.now() - f.t < 10 * 60_000) return { status: 429, body: { ok: false, error: 'rate', message: '잠시 후 다시 시도해주세요' } };
+    if (!devCodeOk(code, developerCode)) {
+      if (!f || Date.now() - f.t > 10 * 60_000) devFails.set(ip, { n: 1, t: Date.now() });
+      else f.n++;
+      log(`dev: wrong developer code from ${ip}`);
+      return { status: 403, body: { ok: false, error: 'code', message: '인증이 되지 않았습니다.' } };
+    }
+    devFails.delete(ip);
+    const token = crypto.randomBytes(32).toString('base64url');
+    devTokens.set(sha(token), Date.now() + DEV_TOKEN_MS);
+    log(`dev: developer session opened from ${ip}`);
+    return { status: 200, body: { ok: true, devToken: token, expiresIn: DEV_TOKEN_MS } };
+  }
+
+  const statsOf = (rec) => {
+    const s = { ...emptyStats(), ...(rec.data?.stats ?? {}) };
+    const total = { wins: s.penalty.wins + s.freekick.wins, losses: s.penalty.losses + s.freekick.losses, draws: s.penalty.draws + s.freekick.draws };
+    return { penalty: s.penalty, freekick: s.freekick, total };
+  };
+  const userRow = (rec) => ({
+    nickname: rec.nickname,
+    lastLoginAt: rec.data?.lastLoginAt ?? null,
+    lastSeenAt: rec.data?.lastSeenAt ?? rec.data?.lastLoginAt ?? (rec.createdAt ? new Date(rec.createdAt).toISOString() : null),
+    online: !!isOnline(rec.nickname),
+    mp: rec.data?.mp ?? 0,
+    owned: (rec.data?.owned ?? []).length,
+    stats: statsOf(rec),
+  });
+
+  async function devUsers({ devToken, q }) {
+    if (!devOk(devToken)) return NO_DEV;
+    const query = typeof q === 'string' ? nickKey(q).slice(0, 40) : '';
+    let rows = (await store.list()).map(userRow);
+    if (query) rows = rows.filter((u) => nickKey(u.nickname).includes(query));
+    rows.sort((a, b) => (b.online - a.online) || String(b.lastSeenAt ?? '').localeCompare(String(a.lastSeenAt ?? '')));
+    return { status: 200, body: { ok: true, users: rows.slice(0, 100), total: rows.length, serverNow: new Date().toISOString() } };
+  }
+
+  async function devGrant({ devToken, nickname, amount }, ip) {
+    if (!devOk(devToken)) return NO_DEV;
+    // positive whole numbers only: no negatives, NaN, text, Infinity, 0 or absurd amounts
+    if (typeof amount !== 'number' || !Number.isSafeInteger(amount) || amount <= 0)
+      return { status: 400, body: { ok: false, error: 'amount', message: '지급할 MP는 1 이상의 정수만 가능해요' } };
+    if (amount > MAX_GRANT) return { status: 400, body: { ok: false, error: 'amount', message: `한 번에 ${MAX_GRANT.toLocaleString('en-US')} MP까지 지급할 수 있어요` } };
+    if (typeof nickname !== 'string' || !nickname.trim()) return { status: 400, body: { ok: false, error: 'user', message: '유저를 선택해주세요' } };
+    const k = nickKey(cleanNick(nickname));
+    const r = await withLock(k, async () => {
+      const rec = await load(k);
+      if (!rec) return null;
+      migrate(rec);
+      const before = rec.data?.mp ?? 0;
+      rec.data = { ...rec.data, mp: before + amount };
+      await store.put(rec);
+      return { nickname: rec.nickname, before, mp: rec.data.mp };
+    });
+    if (!r) return { status: 404, body: { ok: false, error: 'user', message: '그런 유저가 없어요' } };
+    const entry = { developer_action: 'GRANT_MP', action: 'GRANT_MP', target: r.nickname, amount, before: r.before, after: r.mp, timestamp: new Date().toISOString(), ip };
+    try {
+      await store.logAction(entry);
+    } catch (e) {
+      log(`devlog failed: ${e.message}`);
+    }
+    log(`dev: GRANT_MP ${amount} → "${r.nickname}" (${r.before} → ${r.mp})`);
+    try {
+      onWallet(r.nickname, r.mp);
+    } catch {
+      /* the user may be offline */
+    }
+    return { status: 200, body: { ok: true, nickname: r.nickname, granted: amount, before: r.before, mp: r.mp } };
+  }
+
+  async function devLog({ devToken }) {
+    if (!devOk(devToken)) return NO_DEV;
+    return { status: 200, body: { ok: true, actions: await store.actions(50) } };
+  }
+
+  /** synchronous: the squad this account may use online (unowned market players → null squad) */
+  function allowedSquad(nickname, squad) {
+    if (!catalog || !squad) return squad;
+    const rec = nickname ? cache.get(nickKey(cleanNick(nickname))) : null;
+    const ok = (id) => catalog.isStarter(id) || (!!rec && owns(rec, id));
+    return squadIds(squad).filter(Boolean).every(ok) ? squad : null;
   }
 
   async function logout({ token }) {
     if (typeof token !== 'string') return { status: 200, body: { ok: true } };
     const t = sha(token);
-    const rec = await store.byToken(t);
-    if (rec) {
-      rec.tokens = rec.tokens.filter((x) => x !== t);
-      await store.put(rec);
-    }
+    const found = await store.byToken(t);
+    if (found)
+      await withLock(found.key, async () => {
+        const rec = (await load(found.key)) ?? found;
+        rec.tokens = rec.tokens.filter((x) => x !== t);
+        await store.put(rec);
+      });
     return { status: 200, body: { ok: true } };
   }
 
   /** nickname for a login token (used to verify WebSocket presence) */
   async function nicknameFor(token) {
     if (typeof token !== 'string' || token.length < 16) return null;
-    const rec = await store.byToken(sha(token));
-    return rec?.nickname ?? null;
+    const found = await store.byToken(sha(token));
+    if (!found) return null;
+    return withLock(found.key, async () => {
+      const rec = (await load(found.key)) ?? found;
+      if (migrate(rec)) await store.put(rec);
+      return rec.nickname;
+    });
   }
   async function isRegistered(nickname) {
     return !!(await store.get(nickKey(cleanNick(nickname))));
   }
 
-  const routes = { '/api/auth': auth, '/api/session': session, '/api/squad': saveSquad, '/api/logout': logout };
+  const routes = {
+    '/api/auth': auth,
+    '/api/session': session,
+    '/api/squad': saveSquad,
+    '/api/logout': logout,
+    '/api/me': me,
+    '/api/market/buy': buy,
+    '/api/dev/auth': devAuth,
+    '/api/dev/users': devUsers,
+    '/api/dev/grant': devGrant,
+    '/api/dev/log': devLog,
+  };
 
   /** returns true when it handled the request */
   function handleHttp(req, res, pathname) {
@@ -284,5 +631,20 @@ export async function createAccounts({ databaseUrl, dataDir, log = () => {} } = 
     return true;
   }
 
-  return { handleHttp, nicknameFor, isRegistered, nickKey, kind: store.kind, count: () => store.count(), _store: store };
+  return {
+    handleHttp,
+    nicknameFor,
+    isRegistered,
+    nickKey,
+    grantReward,
+    allowedSquad,
+    recordResult,
+    touch,
+    /** realtime hooks: who is online right now, and pushing a new balance to a player */
+    setOnlineCheck: (fn) => (isOnline = fn),
+    setWalletPush: (fn) => (onWallet = fn),
+    kind: store.kind,
+    count: () => store.count(),
+    _store: store,
+  };
 }

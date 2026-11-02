@@ -1,6 +1,6 @@
 import { VersionBadge } from '../components/VersionBadge';
 import { useEffect } from 'react';
-import type { LobbyClient, LobbySnapshot, PlayerView } from '../online/LobbyClient';
+import type { DuelMode, LobbyClient, LobbySnapshot, PlayerView } from '../online/LobbyClient';
 
 const STATUS_TEXT: Record<PlayerView['status'], string> = {
   online: '접속 중',
@@ -16,7 +16,9 @@ function unavailableText(backend: LobbySnapshot['backend']) {
   return '이 방식으로 연 게임에서는 온라인 기능을 쓸 수 없어요. 서버로 실행하거나 claude.ai에서 공유된 페이지로 열어주세요.';
 }
 
-export function OnlineLobbyScreen({ lobby, snap, onBack }: { lobby: LobbyClient; snap: LobbySnapshot; onBack: () => void }) {
+export const DUEL_NAME: Record<DuelMode, string> = { penalty: 'PENALTY SHOOTOUT', freekick: 'FREE KICK DUEL' };
+
+export function OnlineLobbyScreen({ lobby, snap, mode = 'penalty', onBack }: { lobby: LobbyClient; snap: LobbySnapshot; mode?: DuelMode; onBack: () => void }) {
   // presence says "in_lobby" only while this screen is open
   useEffect(() => {
     lobby.enterLobby();
@@ -39,6 +41,9 @@ export function OnlineLobbyScreen({ lobby, snap, onBack }: { lobby: LobbyClient;
         <div className="lobby-brand">
           <span className="mini-logo">PIPA</span>
           <span className="lobby-tag">ONLINE</span>
+          <span className={`lobby-mode ${mode}`} data-testid="lobby-mode">
+            {DUEL_NAME[mode]}
+          </span>
         </div>
         <span className="lobby-spacer">
           <VersionBadge />
@@ -100,7 +105,7 @@ export function OnlineLobbyScreen({ lobby, snap, onBack }: { lobby: LobbyClient;
                   <button
                     className={`btn-challenge ${p.requestedByMe ? 'sent' : ''}`}
                     disabled={!p.canChallenge}
-                    onClick={() => lobby.challenge(p.peer)}
+                    onClick={() => lobby.challenge(p.peer, mode)}
                   >
                     {p.requestedByMe ? '신청 중...' : p.busyLabel ?? '대결 신청'}
                   </button>

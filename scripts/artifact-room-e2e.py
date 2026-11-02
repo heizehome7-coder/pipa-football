@@ -67,7 +67,7 @@ with sync_playwright() as p:
     def login(nick):
         pg = ctx.new_page(); pg.on('pageerror', lambda e: errs.append(str(e)))
         pg.goto(URL); pg.fill('input[autocomplete=username]', nick); pg.fill('input[type=password]', 'pw1234')
-        pg.click('text=게임 시작'); pg.click('[data-testid=play-online]'); pg.wait_for_selector('.lobby')
+        pg.click('text=게임 시작'); pg.click('[data-testid=play-online]'); pg.click('[data-testid=online-penalty]'); pg.wait_for_selector('.lobby')
         return pg
     A = login('제작자')
     # friend has the page open but has not logged in to PIPA yet

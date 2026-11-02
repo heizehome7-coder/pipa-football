@@ -1,13 +1,15 @@
 /**
- * UPDATE 4 — the 20 selectable players. The same list ships with every copy of the
+ * UPDATE 4 — the 20 original players (+ UPDATE 6: 95 market players from ./market). The same list ships with every copy of the
  * game, so online only the ids travel over the network.
  *
  * NO ratings: every player plays with exactly the same physics and controls.
  * `look` is purely cosmetic (hair, beard, skin, height, build) so players can be told
  * apart in 3D and on their cards. Stats come in UPDATE 5+.
  */
-export type PlayerRole = 'FW' | 'MF' | 'GK';
-export type CountryCode = 'FRA' | 'ARG' | 'POR' | 'BRA' | 'ESP' | 'KOR' | 'ENG' | 'NOR' | 'EGY' | 'BEL' | 'POL' | 'GER' | 'ITA';
+import { MARKET_EXISTING_PRICES, MARKET_NEW, MARKET_ORDER, STARTER_IDS, type MarketCountry } from './market';
+
+export type PlayerRole = 'FW' | 'MF' | 'DF' | 'GK';
+export type CountryCode = MarketCountry;
 export type HairStyle = 'bald' | 'buzz' | 'short' | 'sidepart' | 'fringe' | 'quiff' | 'spiky' | 'twists' | 'curly' | 'afro' | 'bun' | 'swept';
 export type Beard = 'none' | 'stubble' | 'full';
 
@@ -89,6 +91,12 @@ export interface PlayerDef {
   special: SpecialId;
   /** strong foot (left-footers curl the other way with the instep); Son is two-footed */
   foot: 'R' | 'L' | 'B';
+  /** UPDATE 6: free starter (never sold) vs TRANSFER MARKET player */
+  starter: boolean;
+  /** market price in MP (market players only) */
+  price?: number;
+  /** retired legend (market filter LEGEND) */
+  legend?: boolean;
 }
 
 export const COUNTRY_NAME: Record<CountryCode, string> = {
@@ -105,12 +113,31 @@ export const COUNTRY_NAME: Record<CountryCode, string> = {
   POL: 'POLAND',
   GER: 'GERMANY',
   ITA: 'ITALY',
+  CRO: 'CROATIA',
+  URU: 'URUGUAY',
+  NGA: 'NIGERIA',
+  SWE: 'SWEDEN',
+  GEO: 'GEORGIA',
+  COL: 'COLOMBIA',
+  NED: 'NETHERLANDS',
+  DEN: 'DENMARK',
+  ECU: 'ECUADOR',
+  HUN: 'HUNGARY',
+  MAR: 'MOROCCO',
+  CAN: 'CANADA',
+  SVN: 'SLOVENIA',
+  SUI: 'SWITZERLAND',
+  CZE: 'CZECHIA',
+  URS: 'SOVIET UNION',
+  NIR: 'N. IRELAND',
+  CIV: 'IVORY COAST',
+  CMR: 'CAMEROON',
 };
 
 const p = (
   id: string, name: string, nameKo: string, first: string, last: string, shirt: string, number: string,
   positions: string[], role: PlayerRole, country: CountryCode, look: PlayerLook,
-): PlayerDef => ({ id, name, nameKo, first, last, shirt, number, positions, role, country, look, special: 'BALANCED_FINISH', foot: 'R' });
+): PlayerDef => ({ id, name, nameKo, first, last, shirt, number, positions, role, country, look, special: 'BALANCED_FINISH', foot: 'R', starter: true });
 
 const L = (skin: number, hair: number, hairStyle: HairStyle, beard: Beard = 'none', height = 1, build = 1): PlayerLook => ({ skin, hair, hairStyle, beard, height, build });
 
@@ -173,6 +200,28 @@ for (const pl of PLAYERS) {
   pl.foot = a.foot ?? 'R';
 }
 
+// ── UPDATE 6: TRANSFER MARKET ────────────────────────────────────────────
+const STARTERS = new Set<string>(STARTER_IDS);
+for (const pl of PLAYERS) {
+  pl.starter = STARTERS.has(pl.id);
+  if (!pl.starter) pl.price = MARKET_EXISTING_PRICES[pl.id];
+}
+const roleOf = (pos: string): PlayerRole =>
+  pos === 'GK' ? 'GK' : ['CB', 'LB', 'RB'].includes(pos) ? 'DF' : ['ST', 'CF', 'LW', 'RW'].includes(pos) ? 'FW' : 'MF';
+for (const r of MARKET_NEW) {
+  const [skin, hair, hairStyle, beard, height, build] = r.look;
+  PLAYERS.push({
+    ...p(r.id, r.name, r.nameKo, r.first, r.last, r.shirt, r.number, r.positions, roleOf(r.positions[0]), r.country, L(skin, hair, hairStyle, beard, height, build)),
+    stats: r.stats,
+    gk: r.gk,
+    special: r.special,
+    foot: r.foot,
+    starter: false,
+    price: r.price,
+    legend: r.legend,
+  });
+}
+
 /** OVR: plain average of the seven abilities (no position weighting) */
 export function ovr(p: PlayerDef) {
   const v = p.stats ? Object.values(p.stats) : p.gk ? Object.values(p.gk) : [];
@@ -191,6 +240,14 @@ export const GK_STAT_LABELS: [keyof GkStats, string][] = [
 export const PLAYER_BY_ID: Record<string, PlayerDef> = Object.fromEntries(PLAYERS.map((x) => [x.id, x]));
 export const FIELD_PLAYERS = PLAYERS.filter((x) => x.role !== 'GK');
 export const GOALKEEPERS = PLAYERS.filter((x) => x.role === 'GK');
+export const STARTER_PLAYERS = PLAYERS.filter((x) => x.starter);
+/** the 100 TRANSFER MARKET players in catalogue order */
+export const MARKET_PLAYERS: PlayerDef[] = MARKET_ORDER.map((id) => PLAYER_BY_ID[id]);
+export const isStarter = (id: string) => !!PLAYER_BY_ID[id]?.starter;
+export const marketPrice = (id: string): number | null => {
+  const pl = PLAYER_BY_ID[id];
+  return pl && !pl.starter && typeof pl.price === 'number' ? pl.price : null;
+};
 
 export const getPlayer = (id: string | null | undefined): PlayerDef | null => (id && PLAYER_BY_ID[id]) || null;
 

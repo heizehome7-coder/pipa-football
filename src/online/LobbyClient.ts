@@ -19,6 +19,9 @@ import type { Channel, ChannelPeer, MatchRoom } from './channel/Channel';
  * challengeId wins and the other side accepts it (one shared match).
  */
 
+/** UPDATE 6: which online duel a challenge is for (absent = penalty, older clients) */
+export type DuelMode = 'penalty' | 'freekick';
+
 export type PresenceStatus = 'online' | 'in_lobby' | 'pending' | 'in_match';
 export type ChallengeStatus = 'pending' | 'accepted' | 'rejected' | 'cancelled' | 'expired';
 
@@ -32,6 +35,7 @@ export interface Challenge {
   receiverPeer: string;
   status: ChallengeStatus;
   createdAt: number;
+  mode?: DuelMode;
 }
 
 export interface Answer {
@@ -68,6 +72,8 @@ export interface PlayerView {
 
 export interface MatchInfo {
   matchId: string;
+  /** UPDATE 6: PENALTY SHOOTOUT or FREE KICK DUEL */
+  mode: DuelMode;
   roomName: string;
   role: 'sender' | 'receiver';
   me: { peer: string; userId: string; nickname: string };
@@ -235,7 +241,7 @@ export class LobbyClient {
   }
 
   /** returns false when not allowed (busy, already pending, unknown player) */
-  challenge(peer: string): boolean {
+  challenge(peer: string, mode: DuelMode = 'penalty'): boolean {
     const me = this.channel.selfPeer();
     const target = this.live.get(peer);
     if (!me || !target || peer === me || this.match) return false;
@@ -258,6 +264,7 @@ export class LobbyClient {
       receiverPeer: peer,
       status: 'pending',
       createdAt: this.now(),
+      mode,
     };
     this.reconcile();
     return true;
@@ -339,6 +346,7 @@ export class LobbyClient {
     const roomName = `pipa-m-${ch.challengeId.toLowerCase().replace(/[^a-z0-9]/g, '')}`.slice(0, 48);
     this.match = {
       matchId: ch.challengeId,
+      mode: ch.mode === 'freekick' ? 'freekick' : 'penalty',
       roomName,
       role,
       me,

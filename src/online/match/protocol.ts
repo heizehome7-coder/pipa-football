@@ -35,13 +35,29 @@ export const MATCH_RULES = {
 export type DiveDir = 'left' | 'right' | 'upLeft' | 'upRight' | 'up' | 'down' | 'lowLeft' | 'lowRight';
 export const DIVE_DIRS: DiveDir[] = ['left', 'right', 'upLeft', 'upRight', 'up', 'down', 'lowLeft', 'lowRight'];
 
+/** UPDATE 6: which online duel this match is */
+export type MatchMode = 'penalty' | 'freekick';
+export const MATCH_MODES: MatchMode[] = ['penalty', 'freekick'];
+
+/** UPDATE 6: MP rewards (server-paid, once per finished match) — balance constants */
+export const REWARDS = {
+  /** online PENALTY SHOOTOUT win */
+  penaltyWin: 10_000_000,
+  /** online FREE KICK DUEL win — not in UPDATE 6 (decided in a later balance update) */
+  freeKickWin: 0,
+  draw: 0,
+  loss: 0,
+} as const;
+
 export type MatchPhase = 'waiting' | 'countdown' | 'aim' | 'shot' | 'result' | 'finished' | 'aborted';
-export type RoundOutcome = Extract<ShotOutcome, 'GOAL' | 'SAVE' | 'MISS'>;
+export type RoundOutcome = Extract<ShotOutcome, 'GOAL' | 'SAVE' | 'MISS' | 'BLOCKED'>;
 
 export interface WireSquad {
   /** 5 field-player ids in penalty order */
   penaltyOrder: string[];
   goalkeeperId: string;
+  /** UPDATE 6: kicks every round of the FREE KICK DUEL */
+  freeKickTakerId?: string;
 }
 
 export interface WirePlayer {
@@ -75,10 +91,14 @@ export interface WireResult {
   kicker: string;
   outcome: RoundOutcome;
   detail: string;
+  /** UPDATE 6 patch: the player who took the kick (goal card) — null when unknown */
+  playerId?: string | null;
 }
 
 export interface MatchState {
   id: string;
+  /** UPDATE 6 (older servers: absent = penalty) */
+  mode?: MatchMode;
   roomId: string;
   phase: MatchPhase;
   players: WirePlayer[];
@@ -96,7 +116,8 @@ export interface MatchState {
   /** hidden while aiming (the kicker must not see a pre-chosen dive) */
   dive: WireDive | null;
   result: WireResult | null;
-  final: { winner: string | null; draw: boolean } | null;
+  /** reward = MP paid by the server to the winner (0 = none) */
+  final: { winner: string | null; draw: boolean; reward?: number } | null;
   ended: null | 'opponent_left';
   serverNow: number;
 }

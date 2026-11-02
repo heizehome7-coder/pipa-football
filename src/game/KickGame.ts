@@ -331,7 +331,8 @@ export abstract class KickGame {
   }
 
   private collide(list: Collider[], who: 'wall' | 'keeper'): boolean {
-    for (const c of list) {
+    for (let ci = 0; ci < list.length; ci++) {
+      const c = list[ci];
       const rr = c.r + R;
       if (this.ballPos.distanceToSquared(c.pos) >= rr * rr) continue;
       const n = this.tmp.copy(this.ballPos).sub(c.pos);
@@ -342,9 +343,25 @@ export abstract class KickGame {
       this.free = true;
       if (who === 'keeper') {
         const a = this.keeper.action;
-        if ((a === 'catch' || a === 'scoop' || a === 'jump') && speed < this.cfg.keeper.catchSpeed) {
+        // UPDATE 6: the ball only clips a glove at full stretch → fingertip parry, out wide
+        const glove = ci < 2; // lHand / rHand
+        const outside = Math.abs(this.ballPos.x) > Math.abs(c.pos.x) - 0.04 || this.ballPos.y > c.pos.y + 0.05;
+        const fingertip = glove && outside && a !== 'catch' && a !== 'scoop';
+        if ((a === 'catch' || a === 'scoop' || a === 'jump') && speed < this.cfg.keeper.catchSpeed && !fingertip) {
           this.caught = true;
           this.ballVel.set(0, 0, 0);
+        } else if (fingertip) {
+          // keeps much of its pace, turned away from goal: round the post or over the bar
+          const side = Math.sign(this.ballPos.x || c.pos.x || 1);
+          const high = this.ballPos.y > FIELD.goalHeight - 0.45;
+          this.ballVel.set(
+            side * (0.3 * speed + 2.2 + this.rng() * 1.5),
+            high ? 3.6 + this.rng() * 1.6 : Math.max(this.ballVel.y * 0.4, 0.8 + this.rng() * 1.2),
+            1.2 + 0.1 * speed + this.rng() * 1.2,
+          );
+          this.detail = '';
+          this.setOutcome('SAVE', high ? '손끝으로 크로스바 위로!' : '손끝 선방!');
+          return true;
         } else {
           const vn = this.ballVel.dot(n);
           if (vn < 0) this.ballVel.addScaledVector(n, -1.45 * vn);

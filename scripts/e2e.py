@@ -35,6 +35,15 @@ with sync_playwright() as p:
         user_agent='Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
     )
     ctx.add_init_script(seed_script({'HAZE': None}))  # UPDATE 4: saved squad → no first-login setup
+    # UPDATE 6 patch: record every result banner and every scorer card (solo modes)
+    ctx.add_init_script("""(() => { window.__res = []; window.__cards = []; let n = 0; new MutationObserver(() => {
+        const r = document.querySelector('.result');
+        const c = document.querySelector('[data-testid=goal-card]');
+        const rk = r ? r.className + '|' + r.innerText.split('\\n')[0] : '';
+        if (rk && window.__lastR !== rk) { window.__lastR = rk; n++; window.__res.push(n + ':' + r.innerText.split('\\n')[0]); }
+        if (!r) window.__lastR = '';
+        if (c && window.__lastC !== n) { window.__lastC = n; window.__cards.push(n + ':' + c.dataset.id + ':' + c.dataset.theme); }
+      }).observe(document, { subtree: true, childList: true, characterData: true }); })()""")
     page = ctx.new_page()
     errors = []
     page.on('pageerror', lambda e: errors.append(str(e)))
@@ -267,6 +276,12 @@ with sync_playwright() as p:
     check('free kick: ball collides with the wall (BLOCKED seen)', blocked_seen)
     s2 = scroll_state()
     check('no scroll / overflow after all play', s2['sy'] == 0 and s2['sw'] <= s2['iw'] and s2['sh'] <= s2['ih'], s2)
+    # UPDATE 6 patch: solo PENALTY / FREE KICK — the scorer card appears on goals only
+    res = page.evaluate('window.__res')
+    cards = page.evaluate('window.__cards')
+    goals = [x.split(':')[0] for x in res if 'GOAL' in x.split(':', 1)[1]]
+    check('GOAL card (solo): one card per goal, none for SAVE / MISS / BLOCKED', sorted(c.split(':')[0] for c in cards) == sorted(goals), f'results {res} cards {cards}')
+    check('GOAL card (solo): at least one goal produced a card in this run', len(cards) > 0, cards)
     check('no JS errors', not errors, errors[:3])
     page.screenshot(path=f'{OUT}/13_freekick_next.png')
     browser.close()

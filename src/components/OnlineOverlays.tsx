@@ -28,6 +28,9 @@ export function ChallengePanel({ lobby, snap }: { lobby: LobbyClient; snap: Lobb
         <br />
         대결을 신청했습니다.
       </p>
+      <p className="cp-mode" data-testid="cp-mode">
+        {inc.mode === 'freekick' ? 'FREE KICK DUEL' : 'PENALTY SHOOTOUT'}
+      </p>
       <div className="cp-actions">
         <button className="cp-accept" onClick={() => lobby.accept()} data-testid="cp-accept">
           수락

@@ -3,10 +3,13 @@ import { OnlineGameView } from '../game/OnlineGameView';
 import type { Channel } from '../online/channel/Channel';
 import type { LobbyClient, MatchInfo } from '../online/LobbyClient';
 import { OnlineMatchClient, type MatchView } from '../online/match/OnlineMatchClient';
-import type { DiveDir, MatchState, WireResult } from '../online/match/protocol';
+import type { DiveDir, MatchMode, MatchState, WireResult } from '../online/match/protocol';
+import { freeKickSpotIndex } from '../online/match/penaltyRound';
+import { formatMP } from '../players/ownership';
 import { MatchFoundScreen } from './MatchFoundScreen';
 import { NameBanner } from '../components/NameBanner';
 import { useSpecialPop } from '../components/SpecialPop';
+import { useGoalCard } from '../components/GoalCard';
 import { keeperLookOf, kickerLookOf } from '../players/looks';
 import { getPlayer } from '../players/players';
 import { sanitizeSquad, type Squad } from '../players/squad';
@@ -22,7 +25,10 @@ const DIVE_TEXT: Record<DiveDir, string> = {
   lowRight: '오른쪽 낮게 →',
 };
 
-const OUTCOME_WORD: Record<WireResult['outcome'], string> = { GOAL: 'GOAL!', SAVE: 'SAVE!', MISS: 'MISS!' };
+const OUTCOME_WORD: Record<WireResult['outcome'], string> = { GOAL: 'GOAL!', SAVE: 'SAVE!', MISS: 'MISS!', BLOCKED: 'BLOCKED!' };
+/** POST / CROSSBAR are misses (or goals) off the woodwork — shown by the server's detail */
+const outcomeWord = (r: WireResult) =>
+  r.outcome === 'MISS' && /골대/.test(r.detail) ? 'POST!' : r.outcome === 'MISS' && /크로스바/.test(r.detail) ? 'CROSSBAR!' : OUTCOME_WORD[r.outcome];
 
 /** re-render at ~10 fps while something time-based is on screen */
 function useTicker(on: boolean) {
@@ -69,8 +75,9 @@ export function OnlineMatchScreen({
   if (ended && s?.phase !== 'finished') return <Disconnected lost={lost} match={match} onLeave={leave} />;
   if (v.error) return <Disconnected lost={false} match={match} text={v.error} onLeave={leave} />;
   if (!s || s.phase === 'waiting') return <ReadyRoom v={v} match={match} lobby={lobby} client={client} onLeave={leave} />;
-  if (s.phase === 'finished') return <FinalResult v={v} s={s} client={client} opponentLeft={ended} onLeave={leave} />;
-  return <MatchPlay v={v} s={s} client={client} onLeave={leave} />;
+  const mode: MatchMode = s.mode ?? match.mode ?? 'penalty';
+  if (s.phase === 'finished') return <FinalResult v={v} s={s} mode={mode} client={client} opponentLeft={ended} onLeave={leave} />;
+  return <MatchPlay key={mode} v={v} s={s} client={client} mode={mode} onLeave={leave} />;
 }
 
 // ── 2. 경기 준비 화면 ─────────────────────────────────────────────────────
@@ -122,19 +129,22 @@ function ReadyRoom({ v, match, lobby, client, onLeave }: { v: MatchView; match: 
 }
 
 // ── 3–9. 경기 ────────────────────────────────────────────────────────────
-function MatchPlay({ v, s, client, onLeave }: { v: MatchView; s: MatchState; client: OnlineMatchClient; onLeave: () => void }) {
+const DUEL_TITLE: Record<MatchMode, string> = { penalty: 'PENALTY SHOOTOUT', freekick: 'FREE KICK DUEL' };
+
+function MatchPlay({ v, s, client, mode, onLeave }: { v: MatchView; s: MatchState; client: OnlineMatchClient; mode: MatchMode; onLeave: () => void }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<OnlineGameView | null>(null);
   const [hint, setHint] = useState<string | null>(null);
   const [fatal, setFatal] = useState<string | null>(null);
   const [intro, setIntro] = useState<{ round: number; until: number } | null>(null);
   const special = useSpecialPop();
+  const goalCard = useGoalCard();
   useTicker(true);
 
   const kickerNick = s.players.find((p) => p.peer === s.kicker)?.nickname ?? '';
   const role = v.role;
   // UPDATE 4: each side uses its own squad — the kicker's next taker in order, the keeper's GK
-  const { kickerPlayer, keeperPlayer } = roundPlayers(s);
+  const { kickerPlayer, keeperPlayer } = roundPlayers(s, mode);
 
   // the 3D view lives for the whole match
   useEffect(() => {
@@ -142,14 +152,18 @@ function MatchPlay({ v, s, client, onLeave }: { v: MatchView; s: MatchState; cli
     if (!host) return;
     let view: OnlineGameView | null = null;
     try {
-      view = new OnlineGameView(host, {
-        onShot: (input) => client.shoot(input),
-        onDive: (dir, at) => {
-          client.dive(dir, at);
+      view = new OnlineGameView(
+        host,
+        {
+          onShot: (input) => client.shoot(input),
+          onDive: (dir, at) => {
+            client.dive(dir, at);
+          },
+          onHint: setHint,
+          onSpecial: (id) => special.show(id),
         },
-        onHint: setHint,
-        onSpecial: (id) => special.show(id),
-      });
+        mode,
+      );
     } catch (e) {
       console.error(e);
       setFatal('이 기기에서 3D(WebGL)를 시작할 수 없습니다.');
@@ -170,6 +184,7 @@ function MatchPlay({ v, s, client, onLeave }: { v: MatchView; s: MatchState; cli
       kickerNick,
       canShoot: false,
       looks: { kickerLook: kickerLookOf(kickerPlayer), keeperLook: keeperLookOf(keeperPlayer), keeperStats: keeperPlayer?.gk, kickerPlayer },
+      spot: mode === 'freekick' ? freeKickSpotIndex(s.id, s.round) : 0,
     });
     if (s.round > 1) setIntro({ round: s.round, until: Date.now() + 1500 });
     else setIntro(null);
@@ -214,6 +229,12 @@ function MatchPlay({ v, s, client, onLeave }: { v: MatchView; s: MatchState; cli
   const opp = v.opp;
   const res = s.phase === 'result' ? s.result : null;
   const myResult = res ? (res.kicker === v.myPeer ? (res.outcome === 'GOAL' ? 'good' : 'bad') : res.outcome === 'GOAL' ? 'bad' : 'good') : null;
+  // UPDATE 6 patch: GOAL → the scorer's card on both phones (player id from the server's result)
+  const goalKey = res && res.outcome === 'GOAL' ? `${s.id}:${s.startAt}:${res.round}` : '';
+  useEffect(() => {
+    if (!goalKey || !res) return;
+    goalCard.show(goalKey, getPlayer(res.playerId) ?? kickerPlayer);
+  }, [goalKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className={`screen game online-game role-${role ?? 'none'}`} data-testid="online-game" data-phase={s.phase} data-round={s.round} data-role={role ?? ''}>
@@ -228,6 +249,9 @@ function MatchPlay({ v, s, client, onLeave }: { v: MatchView; s: MatchState; cli
         <div className="ohud-board">
           <PlayerScore name={me?.nickname ?? ''} score={v.myScore} history={s.history} peer={v.myPeer} you testid="score-me" />
           <div className="ohud-mid">
+            <span className="ohud-title" data-testid="duel-title">
+              {DUEL_TITLE[mode]}
+            </span>
             <span className="ohud-round" data-testid="round-label">
               ROUND {Math.min(s.round, s.totalRounds)}/{s.totalRounds}
             </span>
@@ -265,17 +289,18 @@ function MatchPlay({ v, s, client, onLeave }: { v: MatchView; s: MatchState; cli
 
       {res && (
         <div className={`result result-${res.outcome.toLowerCase()} online-result ${myResult}`} data-testid="result" data-outcome={res.outcome}>
-          <div className="result-word">{OUTCOME_WORD[res.outcome]}</div>
+          <div className="result-word">{outcomeWord(res)}</div>
           <div className="result-detail">{res.detail}</div>
           <div className="result-tap">{s.round >= s.totalRounds ? '최종 결과 집계 중…' : '다음 라운드 준비 중…'}</div>
         </div>
       )}
 
       {!count && !showIntro && !res && kickOff && (
-        <Coach role={role} v={v} s={s} shotClock={shotClock} opponentNick={opp?.nickname ?? ''} />
+        <Coach role={role} v={v} s={s} mode={mode} shotClock={shotClock} opponentNick={opp?.nickname ?? ''} />
       )}
       {hint && <div className="coach coach-hint">{hint}</div>}
       {special.el}
+      {goalCard.el}
       {fatal && (
         <div className="fatal">
           <p>{fatal}</p>
@@ -289,14 +314,18 @@ function MatchPlay({ v, s, client, onLeave }: { v: MatchView; s: MatchState; cli
 }
 
 /** which real players appear this round (ids from the server state, same DB on both phones) */
-function roundPlayers(s: MatchState) {
+function roundPlayers(s: MatchState, mode: MatchMode) {
   const kicker = s.players.find((p) => p.peer === s.kicker);
   const keeper = s.players.find((p) => p.peer === s.keeper);
   // kicker's n-th kick in this match → n-th taker in his order (wraps after 5)
   const n = s.history.filter((h) => h.kicker === s.kicker && h.round < s.round).length;
-  const ks = sanitizeSquad(kicker?.squad ? { ...kicker.squad, freeKickTakerId: kicker.squad.penaltyOrder?.[0] } : null);
-  const gs = sanitizeSquad(keeper?.squad ? { ...keeper.squad, freeKickTakerId: keeper.squad.penaltyOrder?.[0] } : null);
-  return { kickerPlayer: getPlayer(ks.penaltyOrder[n % ks.penaltyOrder.length]), keeperPlayer: getPlayer(gs.goalkeeperId) };
+  const withFk = (q: typeof kicker) =>
+    q?.squad ? { ...q.squad, freeKickTakerId: q.squad.freeKickTakerId && q.squad.penaltyOrder?.includes(q.squad.freeKickTakerId) ? q.squad.freeKickTakerId : q.squad.penaltyOrder?.[0] } : null;
+  const ks = sanitizeSquad(withFk(kicker));
+  const gs = sanitizeSquad(withFk(keeper));
+  // UPDATE 6: FREE KICK DUEL — every kick is taken by his FREE KICK TAKER
+  const taker = mode === 'freekick' ? ks.freeKickTakerId : ks.penaltyOrder[n % ks.penaltyOrder.length];
+  return { kickerPlayer: getPlayer(taker), keeperPlayer: getPlayer(gs.goalkeeperId) };
 }
 
 function PlayerScore({ name, score, history, peer, you, testid }: { name: string; score: number; history: WireResult[]; peer: string; you?: boolean; testid: string }) {
@@ -315,13 +344,13 @@ function PlayerScore({ name, score, history, peer, you, testid }: { name: string
   );
 }
 
-function Coach({ role, v, s, shotClock, opponentNick }: { role: MatchView['role']; v: MatchView; s: MatchState; shotClock: number | null; opponentNick: string }) {
+function Coach({ role, v, s, mode, shotClock, opponentNick }: { role: MatchView['role']; v: MatchView; s: MatchState; mode: MatchMode; shotClock: number | null; opponentNick: string }) {
   if (role === 'kicker') {
     if (s.phase === 'aim' && !v.shotSent)
       return (
         <div className="coach" data-testid="coach">
           <b>공을 누른 채 슛 경로를 그려보세요 {shotClock !== null && <em className="shot-clock">{shotClock}</em>}</b>
-          <span>빠르게 = 강하게 · 휘게 = 감아차기 · 상대 골키퍼는 사람이에요!</span>
+          <span>{mode === 'freekick' ? '수비벽을 넘기거나 돌아가게 · 상대 골키퍼는 사람이에요!' : '빠르게 = 강하게 · 휘게 = 감아차기 · 상대 골키퍼는 사람이에요!'}</span>
         </div>
       );
     if (s.phase === 'aim') return <div className="coach" data-testid="coach"><b>슛 전송 중…</b></div>;
@@ -351,9 +380,11 @@ function Coach({ role, v, s, shotClock, opponentNick }: { role: MatchView['role'
 }
 
 // ── 10. 최종 결과 ─────────────────────────────────────────────────────────
-function FinalResult({ v, s, client, opponentLeft, onLeave }: { v: MatchView; s: MatchState; client: OnlineMatchClient; opponentLeft: boolean; onLeave: () => void }) {
+function FinalResult({ v, s, mode, client, opponentLeft, onLeave }: { v: MatchView; s: MatchState; mode: MatchMode; client: OnlineMatchClient; opponentLeft: boolean; onLeave: () => void }) {
   const f = s.final!;
   const verdict = f.draw ? 'DRAW' : f.winner === v.myPeer ? 'VICTORY' : 'DEFEAT';
+  // UPDATE 6: the MP the server paid me for this game (penalty wins only for now)
+  const myReward = f.winner === v.myPeer ? f.reward ?? 0 : 0;
   const winner = s.players.find((p) => p.peer === f.winner);
   const iAsked = !!v.me?.rematch;
   const oppAsked = !!v.opp?.rematch;
@@ -361,10 +392,15 @@ function FinalResult({ v, s, client, opponentLeft, onLeave }: { v: MatchView; s:
     <div className={`screen matchfound final ${verdict.toLowerCase()}`} data-testid="match-result" data-verdict={verdict}>
       <div className="mf-glow" aria-hidden />
       <span className="mini-logo mf-logo">PIPA</span>
-      <p className="eyebrow mf-eyebrow">MATCH RESULT</p>
+      <p className="eyebrow mf-eyebrow">{mode === 'freekick' ? 'FREE KICK RESULT' : 'MATCH RESULT'}</p>
       <h1 className="mf-title final-title" data-testid="verdict">
         {verdict}
       </h1>
+      {mode === 'penalty' && (
+        <p className={`final-reward ${myReward > 0 ? '' : 'zero'}`} data-testid="final-reward" data-reward={myReward}>
+          {myReward > 0 ? `+${formatMP(myReward)}` : '0 MP'}
+        </p>
+      )}
       <div className="final-board">
         <div className={`final-row ${f.winner === v.myPeer ? 'win' : ''}`}>
           <span>{v.me?.nickname}</span>

@@ -34,6 +34,17 @@ export function frameCamera(cam: THREE.PerspectiveCamera, game: KickGame, w: num
   }
   cam.fov = clamp((lo + hi) / 2, c.minFov, c.maxFov);
   cam.updateProjectionMatrix();
+  // the whole kicker stays on screen (left-footers stand on the other side of the ball)
+  const k = game.kicker.body.root.position;
+  const pts = [-0.55, 0.55].flatMap((dx) => [0.05, 1.95].map((y) => new THREE.Vector3(k.x + dx, y, k.z)));
+  const inside = () => pts.every((p) => {
+    a.copy(p).project(cam);
+    return Math.abs(a.x) <= 0.97 && a.y >= -0.985 && a.y <= 0.97;
+  });
+  for (let i = 0; i < 16 && !inside(); i++) {
+    cam.fov += 1;
+    cam.updateProjectionMatrix();
+  }
   cam.updateMatrixWorld();
 }
 

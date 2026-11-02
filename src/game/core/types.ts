@@ -37,4 +37,7 @@ export interface PlayerProfile {
   token?: string;
   /** squad saved on the server for this account */
   savedSquad?: unknown;
+  /** UPDATE 6: MP balance + owned market players (server accounts only) */
+  mp?: number;
+  owned?: string[];
 }

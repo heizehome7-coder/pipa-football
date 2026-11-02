@@ -98,11 +98,17 @@ const K_STEP: Pose = {
 
 /** hips → fingertips with arms overhead */
 const ARM_REACH = 1.08;
+/**
+ * UPDATE 6 keeper buff — REACH only (reaction, prediction and dive start untouched):
+ *   arms +4 %, gloves +3 cm, dive travel +4.5 %, and the gloves' effective reach from the
+ *   chest +10 % while stretching (fingertips) → about +5–7 % save range at full extension.
+ */
+export const KEEPER_BUFF = { arm: 1.04, glove: 0.03, travel: 1.045, stretch: 1.1 } as const;
 const HIPS_IDLE_Y = 0.82;
 const HIPS_SET_Y = 0.74;
 
 const MARKERS: [MarkerName, number][] = [
-  ['lHand', 0.17], ['rHand', 0.17], ['lForearm', 0.11], ['rForearm', 0.11],
+  ['lHand', 0.17 + KEEPER_BUFF.glove], ['rHand', 0.17 + KEEPER_BUFF.glove], ['lForearm', 0.11], ['rForearm', 0.11],
   ['head', 0.15], ['chest', 0.24], ['pelvis', 0.2],
   ['lKnee', 0.12], ['rKnee', 0.12], ['lFoot', 0.12], ['rFoot', 0.12],
 ];
@@ -257,7 +263,8 @@ export class Goalkeeper {
    *   POSITIONING → steadier AI read · PENALTY READ → AI guesses right more often
    * They never choose a direction for a human keeper online.
    */
-  private tuned(k: KeeperTuning): KeeperTuning {
+  private tuned(base: KeeperTuning): KeeperTuning {
+    const k = { ...base, maxHipTravel: base.maxHipTravel * KEEPER_BUFF.travel };
     const g = this.stats;
     if (!g) return k;
     const d = (v: number) => (v - 90) / 9; // 81 → −1 … 99 → +1
@@ -275,7 +282,7 @@ export class Goalkeeper {
 
   /** REACH physically lengthens the arms a touch (the hand colliders move with them) */
   private get armScale() {
-    return this.stats ? 1 + 0.035 * ((this.stats.reach - 90) / 9) : 1;
+    return KEEPER_BUFF.arm * (this.stats ? 1 + 0.035 * ((this.stats.reach - 90) / 9) : 1);
   }
   private reachFor(_py: number) {
     return ARM_REACH * this.armScale;
@@ -606,6 +613,12 @@ export class Goalkeeper {
   updateColliders() {
     this.body.root.updateMatrixWorld(true);
     for (let i = 0; i < MARKERS.length; i++) this.body.markerWorld(MARKERS[i][0], this.colliders[i].pos);
+    // UPDATE 6: fingertip stretch — the gloves reach a little further out from the chest
+    const chest = this.colliders[5].pos;
+    for (let i = 0; i < 2; i++) {
+      const h = this.colliders[i].pos;
+      h.set(chest.x + (h.x - chest.x) * KEEPER_BUFF.stretch, chest.y + (h.y - chest.y) * KEEPER_BUFF.stretch, h.z);
+    }
   }
 
   handsCenter(out: THREE.Vector3) {

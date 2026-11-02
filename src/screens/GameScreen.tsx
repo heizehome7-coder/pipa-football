@@ -7,6 +7,7 @@ import { GameView } from '../game/GameView';
 import { LocalSession } from '../game/session/MatchSession';
 import { NameBanner } from '../components/NameBanner';
 import { keeperLookOf, kickerLookOf } from '../players/looks';
+import { useGoalCard } from '../components/GoalCard';
 import { GOALKEEPERS } from '../players/players';
 import { useSpecialPop } from '../components/SpecialPop';
 import type { PlayerDef } from '../players/players';
@@ -20,6 +21,9 @@ export function GameScreen({ mode, user, player = null, onExit }: { mode: GameMo
   const [error, setError] = useState<string | null>(null);
   const [tutorial, setTutorial] = useState(true);
   const special = useSpecialPop();
+  // UPDATE 6 patch: the scorer's big card on every GOAL
+  const goalCard = useGoalCard();
+  const shotNo = useRef(0);
   // UPDATE 5: single player faces a real keeper (random each session) — his abilities count
   const [keeper] = useState(() => GOALKEEPERS[Math.floor(Math.random() * GOALKEEPERS.length)]);
 
@@ -36,7 +40,11 @@ export function GameScreen({ mode, user, player = null, onExit }: { mode: GameMo
           if (p === 'aim') setResult(null);
           if (p === 'runup') setTutorial(false);
         },
-        onOutcome: (o, detail) => setResult({ outcome: o, detail }),
+        onOutcome: (o, detail) => {
+          setResult({ outcome: o, detail });
+          shotNo.current++;
+          if (o === 'GOAL') goalCard.show(`solo:${mode}:${shotNo.current}`, player);
+        },
         onHint: setHint,
         onSpecial: special.show,
       }, { kicker: kickerLookOf(player), kickerPlayer: player, keeperLook: keeperLookOf(keeper), keeperStats: keeper.gk });
@@ -69,6 +77,7 @@ export function GameScreen({ mode, user, player = null, onExit }: { mode: GameMo
         sub={`GK · ${keeper.name.toUpperCase()}`}
       />
       {special.el}
+      {goalCard.el}
       {phase === 'aim' && tutorial && !hint && (
         <div className="coach">
           <b>공을 누른 채 슛 경로를 그려보세요</b>

@@ -16,11 +16,11 @@ from squad_seed import seed_script  # noqa: E402
 
 SQUADS = {
     'HAZE': {'penaltyOrder': ['ronaldo', 'messi', 'son', 'mbappe', 'salah'], 'goalkeeperId': 'courtois', 'freeKickTakerId': 'messi'},
-    'FRIEND': {'penaltyOrder': ['haaland', 'kane', 'yamal', 'neymar', 'vinicius'], 'goalkeeperId': 'martinez', 'freeKickTakerId': 'kane'},
+    'FRIEND': {'penaltyOrder': ['haaland', 'kane', 'yamal', 'neymar', 'vinicius'], 'goalkeeperId': 'alisson', 'freeKickTakerId': 'kane'},
 }
 NAMES = {'ronaldo': 'CRISTIANO RONALDO', 'messi': 'LIONEL MESSI', 'son': 'SON HEUNG-MIN', 'mbappe': 'KYLIAN MBAPPÉ', 'salah': 'MOHAMED SALAH',
          'haaland': 'ERLING HAALAND', 'kane': 'HARRY KANE', 'yamal': 'LAMINE YAMAL', 'neymar': 'NEYMAR JR.', 'vinicius': 'VINÍCIUS JÚNIOR',
-         'courtois': 'THIBAUT COURTOIS', 'martinez': 'EMILIANO MARTÍNEZ'}
+         'courtois': 'THIBAUT COURTOIS', 'alisson': 'ALISSON BECKER'}
 
 BASE = os.environ.get('PIPA_URL', 'http://localhost:8787/')
 OUT = sys.argv[1] if len(sys.argv) > 1 else 'match-shots'
@@ -95,6 +95,7 @@ with sync_playwright() as p:
         pg.fill('input[type=password]', 'pw1234')
         pg.click('text=게임 시작')
         pg.click('[data-testid=play-online]')
+        pg.click('[data-testid=online-penalty]')
         pg.wait_for_selector('.lobby')
 
     A = page(A_ctx, 'A')
@@ -265,7 +266,7 @@ with sync_playwright() as p:
     nb = ' | '.join(B.evaluate('window.__names'))
     missing = [k for k, g in want_names if k not in na or k not in nb]
     check('UPDATE 4: every round shows the right kicker (each side’s own order) on both phones', not missing, missing or want_names[:4])
-    check('UPDATE 4: the defending side’s own GK is shown (COURTOIS / MARTÍNEZ)', 'GK · THIBAUT COURTOIS' in na and 'GK · EMILIANO MARTÍNEZ' in na)
+    check('UPDATE 4: the defending side’s own GK is shown (COURTOIS / ALISSON)', 'GK · THIBAUT COURTOIS' in na and 'GK · ALISSON BECKER' in na)
     check('9. roles alternate every round (A,B,A,B…)', all(roles_seen[i] != roles_seen[i + 1] for i in range(len(roles_seen) - 1)) and len(roles_seen) == 10, ''.join(roles_seen))
     check('8. all 10 results identical on both screens', len(outcomes) == 10)
     check('6. each phone’s own replay matched the server’s result (deterministic sync)', synced_local >= 9, f'{synced_local}/{len(outcomes)} · A {la} · B {lb}')
@@ -283,6 +284,17 @@ with sync_playwright() as p:
     check('10. final score = sum of round results, same on both', fa == (fb[1], fb[0]) and fa == (str(goals_a), str(goals_b)), f'A {fa} B {fb}')
     ok_verdict = (va, vb) in (('VICTORY', 'DEFEAT'), ('DEFEAT', 'VICTORY'), ('DRAW', 'DRAW'))
     check('10. VICTORY / DEFEAT / DRAW consistent', ok_verdict and ((goals_a > goals_b) == (va == 'VICTORY')), f'{va}/{vb}')
+    # UPDATE 6: the server pays the winner +10,000,000 MP (loser / draw: 0 MP)
+    ra_ = A.get_attribute('[data-testid=final-reward]', 'data-reward')
+    rb_ = B.get_attribute('[data-testid=final-reward]', 'data-reward')
+    want = {'VICTORY': '10000000', 'DEFEAT': '0', 'DRAW': '0'}
+    check('UPDATE 6: VICTORY shows +10,000,000 MP, DEFEAT / DRAW 0 MP', ra_ == want[va] and rb_ == want[vb]
+          and (va != 'VICTORY' or '+10,000,000 MP' in A.inner_text('[data-testid=final-reward]')), f'{va}:{ra_} {vb}:{rb_}')
+    win = A if va == 'VICTORY' else B if vb == 'VICTORY' else None
+    if win:
+        tok = win.evaluate("JSON.parse(localStorage.getItem('pipa.session.v1')).token")
+        v, _ = wait_for(lambda: win.evaluate("t => fetch('/api/me', {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({token: t})}).then(r => r.json())", tok)['mp'] == 10_000_000, 10, 0.3)
+        check('UPDATE 6: the winner’s server balance is +10,000,000 MP (paid once)', bool(v))
     A.screenshot(path=f'{OUT}/12_final_A.png')
     B.screenshot(path=f'{OUT}/13_final_B.png')
 
