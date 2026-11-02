@@ -10,7 +10,7 @@ import time
 from playwright.sync_api import sync_playwright
 
 sys.path.insert(0, os.path.dirname(__file__))
-from squad_seed import seed_script  # noqa: E402
+from squad_seed import seed_script, NO_DAILY_JS, game_version  # noqa: E402
 
 BASE = os.environ.get('PIPA_URL', 'http://localhost:8787/')
 OUT = sys.argv[1] if len(sys.argv) > 1 else 'online-shots'
@@ -39,8 +39,11 @@ def wait_for(fn, timeout=8.0, step=0.05):
 with sync_playwright() as p:
     browser = p.chromium.launch(executable_path='/usr/bin/google-chrome')
     A_ctx = browser.new_context(viewport={'width': 1280, 'height': 800})
+    A_ctx.add_init_script(NO_DAILY_JS)
     B_ctx = browser.new_context(viewport={'width': 390, 'height': 844}, is_mobile=True, has_touch=True, device_scale_factor=2)
+    B_ctx.add_init_script(NO_DAILY_JS)
     C_ctx = browser.new_context(viewport={'width': 390, 'height': 844}, is_mobile=True, has_touch=True)
+    C_ctx.add_init_script(NO_DAILY_JS)
     for c in (A_ctx, B_ctx, C_ctx):
         c.add_init_script(seed_script({'제작자': None, 'MINHO': None, 'JIN': None}))
     errors = []

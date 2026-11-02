@@ -18,7 +18,7 @@ import time
 from playwright.sync_api import sync_playwright
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from squad_seed import seed_script  # noqa: E402
+from squad_seed import seed_script, NO_DAILY_JS, game_version  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PORT = 8790
@@ -92,6 +92,7 @@ try:
 
         # ── 1. TRANSFER MARKET ─────────────────────────────────────────
         ctx = browser.new_context(viewport={'width': 390, 'height': 844}, is_mobile=True, has_touch=True, device_scale_factor=1)
+        ctx.add_init_script(NO_DAILY_JS)
         pg = ctx.new_page()
         pg.on('pageerror', lambda e: errors.append(str(e)))
         pg.goto(BASE)
@@ -102,7 +103,7 @@ try:
         check('HOME: 혼자서 / 온라인 / SQUAD / TRANSFER MARKET', all(pg.is_visible(f'[data-testid={t}]') for t in ['play-solo', 'play-online', 'play-squad', 'play-market']))
         v, _ = wait_for(lambda: pg.get_attribute('[data-testid=mp-badge]', 'data-mp') == '500000000')
         check('HOME: MP top right from the server (500,000,000)', bool(v) and '500,000,000' in pg.inner_text('[data-testid=mp-badge]'), pg.inner_text('[data-testid=mp-badge]'))
-        check('UPDATE 6 badge', pg.inner_text('[data-testid=version-badge]') == 'UPDATE 6')
+        check('UPDATE badge (current version)', pg.inner_text('[data-testid=version-badge]') == f'UPDATE {game_version()}')
         pg.screenshot(path=f'{OUT}/01_home.png')
 
         pg.click('[data-testid=play-market]')
@@ -205,6 +206,7 @@ try:
         # ── 2. ONLINE FREE KICK DUEL ──────────────────────────────────
         def mk(label):
             c = browser.new_context(viewport={'width': 390, 'height': 844}, is_mobile=True, has_touch=True, device_scale_factor=1)
+            c.add_init_script(NO_DAILY_JS)
             c.add_init_script(seed_script(SQUADS))
             c.add_init_script("""(() => { window.__banners = []; new MutationObserver(() => {
                 const el = document.querySelector('[data-testid=result]');

@@ -12,7 +12,7 @@ import time
 from playwright.sync_api import sync_playwright
 
 sys.path.insert(0, os.path.dirname(__file__))
-from squad_seed import seed_script  # noqa: E402
+from squad_seed import seed_script, NO_DAILY_JS, game_version  # noqa: E402
 
 SQUADS = {
     'HAZE': {'penaltyOrder': ['ronaldo', 'messi', 'son', 'mbappe', 'salah'], 'goalkeeperId': 'courtois', 'freeKickTakerId': 'messi'},
@@ -65,7 +65,9 @@ SHOOT_JS = """([side, high, dur]) => {
 with sync_playwright() as p:
     browser = p.chromium.launch(executable_path='/usr/bin/google-chrome', args=['--use-gl=swiftshader', '--enable-unsafe-swiftshader'])
     A_ctx = browser.new_context(viewport={'width': 390, 'height': 844}, is_mobile=True, has_touch=True, device_scale_factor=1)
+    A_ctx.add_init_script(NO_DAILY_JS)
     B_ctx = browser.new_context(viewport={'width': 390, 'height': 844}, is_mobile=True, has_touch=True, device_scale_factor=1)
+    B_ctx.add_init_script(NO_DAILY_JS)
     errors = []
 
     # record every result banner the moment it appears (slow test machines can't poll fast enough)

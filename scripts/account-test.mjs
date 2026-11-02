@@ -106,7 +106,7 @@ srv.kill();
     old: { key: 'old', nickname: 'Old', salt: 's', hash: 'h', tokens: [], createdAt: '2026-10-31',
       data: { squad: { penaltyOrder: ['debruyne', 'messi', 'kane', 'son', 'salah'], goalkeeperId: 'donnarumma', freeKickTakerId: 'debruyne' } } },
   }));
-  const acc = await createAccounts({ dataDir: dir2, catalog: { marketPrice: judge.marketPrice, isStarter: judge.isStarter, getPlayer: judge.getPlayer }, developerCode: 'unit-test-dev-code' });
+  const acc = await createAccounts({ dataDir: dir2, catalog: judge, developerCode: 'unit-test-dev-code' });
   const call = (route, body) =>
     new Promise((res) => {
       const req = new (class extends (await_ee()) {})();
@@ -188,6 +188,131 @@ srv.kill();
   for (let i = 0; i < 6; i++) await call('/api/dev/auth', { code: 'guess' + i });
   const locked = await call('/api/dev/auth', { code: 'unit-test-dev-code' });
   check('DEV: too many wrong codes → temporarily locked (429)', locked.status === 429);
+
+  // ── UPDATE 7: XP / LEVEL / FV ───────────────────────────────────────
+  const prog = [];
+  acc.setProgressPush((nick, r) => prog.push([nick, r]));
+  const r2 = await call('/api/auth', { nickname: 'Lev', password: 'pass1234' });
+  const w1 = await acc.recordResult('Lev', 'lv#1', 'penalty', 'win');
+  check('XP: a finished online win gives +120 XP → LEVEL 1 (100 needed), 20 XP into level 1', w1.gained === 120 && w1.after.level === 1 && w1.after.xp === 20 && w1.after.xpNext === 120, JSON.stringify(w1.after));
+  const dup = await acc.recordResult('Lev', 'lv#1', 'penalty', 'win');
+  check('XP: the same match key never gives XP twice', dup === false);
+  const l1 = await acc.recordResult('Lev', 'lv#2', 'freekick', 'loss');
+  const d1 = await acc.recordResult('Lev', 'lv#3', 'penalty', 'draw');
+  check('XP: loss +60, draw +80 (free kick and penalty alike)', l1.gained === 60 && d1.gained === 80 && d1.after.level === 2 && d1.after.xp === 40, JSON.stringify(d1.after));
+  check('XP: LEVEL UP pushed to the player (progress:update)', prog.length === 3 && prog[0][0] === 'Lev' && prog[2][1].before.level === 1 && prog[2][1].after.level === 2);
+  for (let i = 4; i < 40; i++) await acc.recordResult('Lev', `lv#${i}`, 'penalty', 'win');
+  const meL = await call('/api/me', { token: r2.token });
+  check('LEVEL: 38 games → level 10+ (fast early levels)', meL.level >= 10 && meL.level < 20, `LV ${meL.level} ${meL.xp}/${meL.xpNext}`);
+  const c5 = await call('/api/level/claim', { token: r2.token, level: 5 });
+  const c5b = await call('/api/level/claim', { token: r2.token, level: 5 });
+  check('LEVEL REWARD: CLAIM LV 5 → +100 FV once (second CLAIM refused)', c5.ok && c5.fv === 100 && c5.claimedLevelRewards.includes(5) && c5b.status === 409, JSON.stringify([c5.fv, c5b.status]));
+  const c10 = await call('/api/level/claim', { token: r2.token, level: 10 });
+  check('LEVEL REWARD: LV 10 → +200 FV (FV 300, MP untouched)', c10.ok && c10.fv === 300 && c10.mp === meL.mp);
+  const c50 = await call('/api/level/claim', { token: r2.token, level: 50 });
+  const c7 = await call('/api/level/claim', { token: r2.token, level: 7 });
+  check('LEVEL REWARD: a LOCKED level or a non-reward level is refused', c50.status === 403 && c7.status === 400);
+  const { addXp, xpToNext } = judge;
+  check('XP curve: 0→1 100 · 5→6 200 · 9→10 280 · 10 300 · 20 650 · 30 1200 · 40 2200', [0, 5, 9, 10, 20, 30, 40].map(xpToNext).join() === '100,200,280,300,650,1200,2200');
+  check('MAX LEVEL 50: no level past 50, no XP kept', JSON.stringify(addXp(49, 0, 10_000_000)) === JSON.stringify({ level: 50, xp: 0 }) && xpToNext(50) === 0);
+
+  // ── UPDATE 7: DAILY LOGIN ─────────────────────────────────────────
+  const dd1 = await call('/api/daily/claim', { token: r2.token });
+  const dd1b = await call('/api/daily/claim', { token: r2.token });
+  check('DAILY: DAY 1 → +2,000,000 MP, once per (server) day', dd1.ok && dd1.day === 1 && dd1.rewardMp === 2_000_000 && dd1.mp === meL.mp + 2_000_000 && dd1b.status === 409, JSON.stringify([dd1.day, dd1.mp, dd1b.status]));
+  // simulate later days by moving lastDailyClaim back one day each time (server-side data)
+  const shiftDay = async (days) => {
+    const r = await acc._store.get('lev');
+    r.data.lastDailyClaim = judge.kstDay(Date.now() - days * 86_400_000);
+    await acc._store.put(r);
+  };
+  const got = [];
+  for (let d = 2; d <= 8; d++) {
+    await shiftDay(1);
+    const x = await call('/api/daily/claim', { token: r2.token });
+    got.push(`${x.day}:${x.rewardMp || x.rewardPacks + 'P'}`);
+  }
+  const packs = (await call('/api/me', { token: r2.token })).unopenedPacks;
+  check('DAILY: DAY 2–7 = 3M/5M/7M/10M MP, PLAYER PACK, PLAYER PACK; then back to DAY 1', got.join(' ') === '2:3000000 3:5000000 4:7000000 5:10000000 6:1P 7:1P 1:2000000' && packs === 2, got.join(' ') + ' packs ' + packs);
+  await shiftDay(3);
+  const gap = await call('/api/daily/claim', { token: r2.token });
+  check('DAILY: a skipped day restarts at DAY 1', gap.day === 1);
+
+  // ── UPDATE 7: RANKING / PROFILE ──────────────────────────────────
+  const rk = await call('/api/ranking', { token: r2.token, board: 'mp' });
+  check('RANKING MP: sorted by server MP, with MY RANK', rk.ok && rk.rows[0].nickname === 'Rich' && rk.rows.every((r, i) => i === 0 || rk.rows[i - 1].mp >= r.mp) && rk.me?.nickname === 'Lev', JSON.stringify(rk.rows.map((r) => [r.nickname, r.mp])));
+  const rp = await call('/api/ranking', { token: r2.token, board: 'penalty' });
+  check('RANKING PENALTY WINS: only online penalty wins count', rp.rows[0].nickname === 'Lev' && rp.rows[0].wins === 37, JSON.stringify(rp.rows[0]));
+  const rf = await call('/api/ranking', { board: 'freekick' });
+  check('RANKING FREE KICK WINS: separate from penalty', rf.rows.every((r) => r.wins === 0) && rf.me === null);
+  const pf = await call('/api/profile', { nickname: 'lev' });
+  check('PROFILE: level, MP, FV, penalty/free-kick record', pf.ok && pf.profile.level === meL.level && pf.profile.fv === 300 && pf.profile.stats.penalty.wins === 37 && pf.profile.stats.freekick.losses === 1);
+
+  // ── UPDATE 7: SELL · user listings first · 30 % fee · atomic ──────────
+  const sold = [];
+  acc.setSalePush((nick, n, mp) => sold.push([nick, n, mp]));
+  // Rich owns gundogan (in his squad) and coman (not in squad) from the UPDATE 6 checks
+  const inSq = await call('/api/market/sell', { token: r1.token, playerId: 'gundogan', price: 150_000_000 });
+  check('SELL: a player used in the squad → "현재 스쿼드에서 사용 중인 선수입니다."', inSq.status === 409 && inSq.message === '현재 스쿼드에서 사용 중인 선수입니다.');
+  const st1 = await call('/api/market/sell', { token: r1.token, playerId: 'messi', price: 1 });
+  check('SELL: starters are UNTRADEABLE', st1.status === 403 && st1.error === 'untradeable');
+  const owns = (await call('/api/me', { token: r1.token })).owned;
+  const mine = owns.includes('coman') ? 'coman' : 'felix';
+  const val = judge.marketPrice(mine);
+  const lo = await call('/api/market/sell', { token: r1.token, playerId: mine, price: Math.floor(val * 0.79) });
+  const hi = await call('/api/market/sell', { token: r1.token, playerId: mine, price: Math.ceil(val * 1.21) });
+  check('SELL: price must stay within 80–120 % of market value', lo.status === 400 && hi.status === 400);
+  const mpBefore = (await call('/api/me', { token: r1.token })).mp;
+  const ls1 = await call('/api/market/sell', { token: r1.token, playerId: mine, price: val });
+  check('SELL: listed → player leaves MY PLAYERS (LISTED), no MP yet', ls1.ok && !ls1.owned.includes(mine) && ls1.listed.includes(mine) && ls1.mp === mpBefore);
+  const selfBuy = await call('/api/market/buy', { token: r1.token, playerId: mine });
+  check('BUY: a seller cannot buy his own listing', selfBuy.status === 409 && selfBuy.error === 'owned');
+  // others: Seller2 / Buyer / Buyer2 / Buyer3 / Buyer4 (rich enough)
+  const tk = {};
+  for (const nick of ['Seller2', 'Buyer', 'Buyer2', 'Buyer3', 'Buyer4']) {
+    tk[nick] = (await call('/api/auth', { nickname: nick, password: 'pass1234' })).token;
+    for (let i = 0; i < 300; i++) await acc.grantReward(nick, `g${nick}${i}`, 10_000_000);
+  }
+  const mpOf = async (t) => (await call('/api/me', { token: t })).mp;
+  // a. Seller2 wants that player: Rich's listing is sold first (not a new system card)
+  const richBefore = await mpOf(r1.token);
+  const bA = await call('/api/market/buy', { token: tk.Seller2, playerId: mine });
+  const richAfter = await call('/api/me', { token: r1.token });
+  check('BUY: an existing USER listing is sold before the system card', bA.ok && bA.source === 'user' && bA.seller === 'Rich' && bA.price === val);
+  check('SALE: seller loses the player and receives 70 % (30 % fee) + a "sold" notice', !richAfter.listed.includes(mine) && !richAfter.owned.includes(mine)
+    && richAfter.mp === richBefore + val - Math.round(val * 0.3) && sold.length === 1 && sold[0][0] === 'Rich' && sold[0][1].revenue === val - Math.round(val * 0.3)
+    && richAfter.notices.some((n) => n.type === 'sold' && n.playerId === mine), `${richAfter.mp - richBefore}`);
+  const ack = await call('/api/notices/ack', { token: r1.token, ids: richAfter.notices.map((n) => n.id) });
+  check('SALE notice is cleared once shown', ack.ok && (await call('/api/me', { token: r1.token })).notices.length === 0);
+  // b. no listing left → Buyer3 gets the system card
+  const bB = await call('/api/market/buy', { token: tk.Buyer3, playerId: mine });
+  check('BUY: no user listing → system card at market value', bB.ok && bB.source === 'system' && bB.price === val);
+  // c. two listings: Seller2 cheap (80 %), Buyer3 dear (100 %, later)
+  await call('/api/market/sell', { token: tk.Seller2, playerId: mine, price: Math.ceil(val * 0.8) });
+  await call('/api/market/sell', { token: tk.Buyer3, playerId: mine, price: val });
+  const state = await call('/api/market/state', { token: tk.Buyer });
+  check('MARKET state: 2 user listings, cheapest shown', state.listings[mine].count === 2 && state.listings[mine].min === Math.ceil(val * 0.8), JSON.stringify(state.listings[mine]));
+  const s2mp = await mpOf(tk.Seller2);
+  const bC = await call('/api/market/buy', { token: tk.Buyer, playerId: mine, maxPrice: Math.ceil(val * 0.8) });
+  check('BUY: the CHEAPEST user listing first (Seller2 at 80 %)', bC.ok && bC.source === 'user' && bC.seller === 'Seller2' && bC.price === Math.ceil(val * 0.8)
+    && (await mpOf(tk.Seller2)) === s2mp + bC.price - Math.round(bC.price * 0.3));
+  const bD = await call('/api/market/buy', { token: tk.Buyer2, playerId: mine, maxPrice: Math.ceil(val * 0.8) });
+  check('BUY: the next listing is dearer → a new confirm is needed (price_changed)', bD.status === 409 && bD.error === 'price_changed' && bD.price === val);
+  const bE = await call('/api/market/buy', { token: tk.Buyer2, playerId: mine, maxPrice: val });
+  check('BUY: then the remaining user listing (Buyer3) — still before any system card', bE.ok && bE.source === 'user' && bE.seller === 'Buyer3');
+  const bF = await call('/api/market/buy', { token: tk.Buyer4, playerId: mine, maxPrice: val });
+  check('BUY: listings sold out → system card again', bF.ok && bF.source === 'system');
+  const r6 = { token: tk.Buyer4 };
+  const buy3 = bF;
+  // cancel
+  const lsC = await call('/api/market/sell', { token: r6.token, playerId: mine, price: val });
+  const cc = await call('/api/market/cancel', { token: r6.token, listingId: lsC.listing.id });
+  check('CANCEL LISTING: the player returns to MY PLAYERS, no fee', cc.ok && cc.owned.includes(mine) && !cc.listed.includes(mine) && cc.mp === buy3.mp);
+  // two buyers race for one listing → exactly one wins
+  await call('/api/market/sell', { token: r6.token, playerId: mine, price: val });
+  const race = await Promise.all([call('/api/market/buy', { token: r2.token, playerId: mine, maxPrice: val }), call('/api/market/buy', { token: tk.Buyer3, playerId: mine, maxPrice: val })]);
+  const lstate = await call('/api/market/state', {});
+  check('BUY race: one listing sold once — the other buyer gets the system card or an error, never both from the listing', race.filter((x) => x.ok && x.source === 'user').length === 1 && !lstate.listings[mine]);
 }
 console.log(fails ? `${fails} ACCOUNT CHECKS FAILED` : 'ALL ACCOUNT CHECKS PASSED');
 process.exit(fails ? 1 : 0);

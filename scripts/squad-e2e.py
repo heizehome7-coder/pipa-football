@@ -10,6 +10,9 @@ import sys
 import time
 
 from playwright.sync_api import sync_playwright
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+from squad_seed import NO_DAILY_JS, game_version  # noqa: E402
 
 BASE = os.environ.get('PIPA_URL', 'http://localhost:8787/')
 OUT = sys.argv[1] if len(sys.argv) > 1 else 'squad-shots'
@@ -25,6 +28,7 @@ def check(name, ok, info=''):
 with sync_playwright() as p:
     browser = p.chromium.launch(executable_path='/usr/bin/google-chrome', args=['--use-gl=swiftshader', '--enable-unsafe-swiftshader'])
     ctx = browser.new_context(viewport={'width': 390, 'height': 844}, is_mobile=True, has_touch=True, device_scale_factor=2)
+    ctx.add_init_script(NO_DAILY_JS)
     errors = []
     # record every name banner the moment it appears (slow test browsers)
     ctx.add_init_script("""(() => { window.__names = []; new MutationObserver(() => {
@@ -45,7 +49,7 @@ with sync_playwright() as p:
     login('HAZE')
     pg.wait_for_selector('[data-testid=squad-pick]', timeout=8000)
     check('first login → BUILD YOUR SQUAD', 'BUILD YOUR SQUAD' in pg.inner_text('body'))
-    check('UPDATE badge (current version)', pg.inner_text('[data-testid=version-badge]') == 'UPDATE 6')
+    check('UPDATE badge (current version)', pg.inner_text('[data-testid=version-badge]') == f'UPDATE {game_version()}')
     check('UPDATE 5: cards show OVR + POWER/ACCURACY/CURVE', pg.inner_text('[data-testid=player-card][data-id="messi"] [data-testid=card-ovr]').startswith('92') and 'PWR' in pg.inner_text('[data-testid=player-card][data-id="messi"]'))
     n = pg.locator('[data-testid=player-card]').count()
     check('UPDATE 6: BUILD YOUR SQUAD shows the 15 free starters (market players must be bought)', n == 15, n)
@@ -152,6 +156,7 @@ with sync_playwright() as p:
 
     # another device: same account → squad comes from the server
     ctx2 = browser.new_context(viewport={'width': 390, 'height': 760}, device_scale_factor=1)
+    ctx2.add_init_script(NO_DAILY_JS)
     p2 = ctx2.new_page()
     p2.goto(BASE)
     p2.fill('input[autocomplete=username]', 'haze')
@@ -168,6 +173,7 @@ with sync_playwright() as p:
 
     # mobile: touch scrolling on the squad screens
     ctx3 = browser.new_context(viewport={'width': 360, 'height': 640}, device_scale_factor=1, is_mobile=True, has_touch=True)
+    ctx3.add_init_script(NO_DAILY_JS)
     p3 = ctx3.new_page()
     p3.goto(BASE)
     p3.fill('input[autocomplete=username]', 'MOBI')
