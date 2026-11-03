@@ -289,6 +289,56 @@ check('lobby presence messages pass through untouched', mgr.handle(A, { t: 'pres
   check('UPDATE 6: a squad with players the account does not own is not used online', last('cheat')!.state!.players[0].squad === null);
 }
 
+// ── UPDATE 8: keeper joystick — along the goal line only, server-clamped, frozen at the strike ──
+{
+  const P = 'peerJ1';
+  const Q = 'peerJ2';
+  const jid = 'cjoystick0001';
+  const hj = (peer: string, m: Record<string, unknown>) => mgr.handle(peer, { matchId: jid, ...m });
+  hj(P, { t: 'match:join', opponentPeer: Q, nickname: 'J1', userId: 'uj1' });
+  hj(Q, { t: 'match:join', opponentPeer: P, nickname: 'J2', userId: 'uj2' });
+  hj(P, { t: 'match:ready', ready: true });
+  hj(Q, { t: 'match:ready', ready: true });
+  advance(judge.MATCH_RULES.countdownMs);
+  const st = last(P)!.state!;
+  const kick = st.kicker!;
+  const keep = st.keeper!;
+  const moves = (peer: string) => (inbox[peer] || []).filter((m) => m.t === 'keeper:move') as unknown as { x: number; round: number }[];
+  hj(kick, { t: 'keeper:move', round: 1, x: 2 });
+  check('UPDATE 8: only the keeper can move the keeper', moves(kick).length === 0 && (last(kick)!.state!.keeperX ?? 0) === 0);
+  hj(keep, { t: 'keeper:move', round: 1, x: 1.2 });
+  check('UPDATE 8: keeper:move is relayed to the kicker (x only)', moves(kick).at(-1)?.x === 1.2, JSON.stringify(moves(kick).at(-1)));
+  advance(50);
+  hj(keep, { t: 'keeper:move', round: 1, x: 99 });
+  check('UPDATE 8: the server clamps him inside the posts (±3.0 m)', moves(kick).at(-1)?.x === judge.KEEPER_LINE.maxX);
+  advance(50);
+  hj(keep, { t: 'keeper:move', round: 1, x: -1.5, y: 3, z: 5 });
+  hj(keep, { t: 'keeper:move', round: 1, x: 0.5 }); // < 40 ms later: flood guard drops it
+  check('UPDATE 8: forward / back values are ignored; floods are dropped', moves(kick).at(-1)?.x === -1.5 && !('z' in (moves(kick).at(-1) as object)), JSON.stringify(moves(kick).at(-1)));
+  advance(50);
+  hj(keep, { t: 'keeper:move', round: 1, x: 1.8 });
+  hj(kick, { t: 'shot:submit', round: 1, shot: shotTo(3.2, 1.0) });
+  const ss = last(P, 'shot:start')!.state!;
+  check('UPDATE 8: the strike freezes the keeper’s spot (shot.keeperX, same for both)', ss.shot?.keeperX === 1.8 && JSON.stringify(last(Q, 'shot:start')!.state!.shot) === JSON.stringify(ss.shot));
+  const n0 = moves(kick).length;
+  hj(keep, { t: 'keeper:move', round: 1, x: -2 });
+  check('UPDATE 8: no moving after the strike', moves(kick).length === n0);
+  hj(keep, { t: 'keeper:dive', round: 1, dir: 'right', at: judge.PENALTY_CONTACT_TIME });
+  advance(4000);
+  const r = last(P, 'round:result')!.state!.result!;
+  const seed = judge.roundSeed(jid, 1);
+  const here = judge.simulateRound(seed, ss.shot!.input, { dir: 'right', at: judge.PENALTY_CONTACT_TIME }, null, { mode: 'penalty', keeperX: 1.8 });
+  const mid = judge.simulateRound(seed, ss.shot!.input, { dir: 'right', at: judge.PENALTY_CONTACT_TIME }, null, { mode: 'penalty', keeperX: 0 });
+  check('UPDATE 8: the judge dives from where he stood (moved right + dive right ≠ from the middle)', r.outcome === here.outcome && (here.outcome !== mid.outcome || here.detail !== mid.detail || here.decidedAt !== mid.decidedAt), `${here.outcome} vs mid ${mid.outcome}`);
+  advance(judge.MATCH_RULES.resultShowMs + 50);
+  check('UPDATE 8: the next round starts with the keeper in the middle again', (last(P)!.state!.keeperX ?? 0) === 0 && last(P)!.state!.round === 2);
+  // the keeper never leaves his line: depth fixed, x clamped, for any position
+  const g = new (await import('../src/online/match/penaltyRound')).OnlineKickGame('K', 1, false, {}, 'penalty', 0, 50);
+  g.start();
+  for (let i = 0; i < 60; i++) g.update(1 / 60);
+  check('UPDATE 8: OnlineKickGame keeps the keeper on his line (z fixed, |x| ≤ 3.0)', Math.abs(g.keeper.body.root.position.z - 0.45) < 1e-9 && Math.abs(g.keeper.body.root.position.x) <= 3.0 + 1e-9, JSON.stringify(g.keeper.body.root.position));
+}
+
 const fails = results.filter(([, ok]) => !ok);
 console.log(`\n${fails.length ? `${fails.length} FAILED` : `ALL ${results.length} MATCH CHECKS PASSED`}`);
 process.exit(fails.length ? 1 : 0);

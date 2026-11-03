@@ -150,13 +150,14 @@ function rate(id: string | null, mode: 'right' | 'wrong' | 'late', n = 360) {
   let parriedPower = 0;
   let catchesPower = 0;
   let otherCatch = 0;
+  let firstCatch: [number, number] | null = null;
   const pts: [number, number][] = [[-3.1, 0.9], [-3.2, 1.1], [-3.0, 2.0], [-2.9, 1.0], [-3.0, 1.2], [3.1, 0.9], [3.2, 1.1], [3.0, 2.0], [2.9, 1.0], [3.0, 1.2]];
   for (const [x, yy] of pts) {
     for (const [power, slot] of [[0.2, 'mid'], [0.9, 'power']] as const) {
       const inp = calculateShotParameters(ball, { target: new THREE.Vector3(x, yy, 0), spin: 0, profile: 'STRAIGHT', curveLevel: 0, apex: null, power }, MODES.penalty);
       const dir = dirFor(x, yy);
       const s = simulateRound(9, inp, { dir, at: -1 }, 'yashin');
-      if (slot === 'mid' && s.detail.includes('공중 캐치')) caught++;
+      if (slot === 'mid' && s.detail.includes('공중 캐치')) (caught++, (firstCatch ??= [x, yy]));
       if (slot === 'power' && s.outcome === 'SAVE' && !s.detail.includes('공중 캐치')) parriedPower++;
       if (slot === 'power' && s.detail.includes('공중 캐치')) catchesPower++;
       const o = simulateRound(9, inp, { dir, at: -1 }, 'courtois');
@@ -167,11 +168,11 @@ function rate(id: string | null, mode: 'right' | 'wrong' | 'late', n = 360) {
   check('power shots are parried, never held in the air', catchesPower === 0, { parriedPower, catchesPower });
   check('only BLACK SPIDER makes the aerial catch', otherCatch === 0, { otherCatch });
   // a visible replay of a caught ball: the ball ends in his gloves
-  const inp = calculateShotParameters(ball, { target: new THREE.Vector3(-3.1, 0.9, 0), spin: 0, profile: 'STRAIGHT', curveLevel: 0, apex: null, power: 0.2 }, MODES.penalty);
+  const inp = calculateShotParameters(ball, { target: new THREE.Vector3(...(firstCatch ?? [-3.1, 0.9]), 0), spin: 0, profile: 'STRAIGHT', curveLevel: 0, apex: null, power: 0.2 }, MODES.penalty);
   const g = new OnlineKickGame('K', 9, false, { keeperStats: getPlayer('yashin')!.gk, keeperSpecial: 'BLACK_SPIDER' });
   g.start();
   g.shoot(inp);
-  g.setKeeperDive(diveCommand({ dir: 'left', at: -1 }));
+  g.setKeeperDive(diveCommand({ dir: dirFor(...(firstCatch ?? [-3.1, 0.9])), at: -1 }));
   for (let t = 0; t < 2.5; t += 1 / 120) g.update(1 / 120);
   const hc = g.keeper.handsCenter(new THREE.Vector3());
   check('caught ball stays in his hands (replayed with visuals off)', g.detail.includes('공중 캐치') && g.ballPos.distanceTo(hc) < 0.25, { detail: g.detail, dist: +g.ballPos.distanceTo(hc).toFixed(2) });

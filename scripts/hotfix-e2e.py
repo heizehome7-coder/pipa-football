@@ -118,7 +118,7 @@ try:
         pg.fill('input[type=password]', 'pw1234')
         pg.click('text=게임 시작')
         pg.wait_for_selector('[data-testid=play-developer]', timeout=20000)
-        check('version stays UPDATE 7 (hotfix, no bump)', pg.inner_text('[data-testid=version-badge]') == 'UPDATE 7' and game_version() == 7, pg.inner_text('[data-testid=version-badge]'))
+        check('version badge = current version', pg.inner_text('[data-testid=version-badge]') == f'UPDATE {game_version()}', pg.inner_text('[data-testid=version-badge]'))
         pg.click('[data-testid=play-developer]')
         pg.wait_for_selector('[data-testid=dev-access]')
         pg.fill('[data-testid=dev-code]', DEV_CODE)

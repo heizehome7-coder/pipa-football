@@ -1,7 +1,7 @@
 """
 UPDATE 7 browser test — DAILY LOGIN, LEVEL / XP / FV, LEVEL REWARDS, RANKING (+ live refresh),
 PROFILE, SELL (user listing sold first, 30 % fee, live sale notice), CANCEL LISTING,
-match SOUNDS (kick at contact, net + crowd on GOAL), SOUND ON/OFF, goal vibration,
+goal vibration (UPDATE 8: the game has no sound — checked that nothing makes any),
 and an online PENALTY SHOOTOUT that ends with XP + LEVEL UP + NEW REWARD.
 
 Own server on port 8791 (slow-browser timers) with seeded accounts. Needs `npm run build`.
@@ -91,6 +91,8 @@ try:
         def ctx(daily=True):
             c = browser.new_context(viewport={'width': 390, 'height': 844}, is_mobile=True, has_touch=True, device_scale_factor=1)
             c.add_init_script(VIBE_JS)
+            # UPDATE 8: count every AudioContext the page tries to make (must stay 0)
+            c.add_init_script("(() => { window.__audioCtx = 0; for (const k of ['AudioContext', 'webkitAudioContext']) { const A = window[k]; if (A) window[k] = function (...a) { window.__audioCtx++; return new A(...a); }; } })()")
             if not daily:
                 c.add_init_script(NO_DAILY_JS)
             return c
@@ -227,48 +229,38 @@ try:
         S.screenshot(path=f'{OUT}/06_sale_toast.png')
         B.click('[data-testid=market-back]')
 
-        # ── SOUND + VIBRATION (solo penalty) ───────────────────────
+        # ── VIBRATION, NO SOUND (solo penalty) — UPDATE 8 removed every sound ────
         S.click('[data-testid=play-solo]')
         S.click('text=PENALTY KICK')
         S.click('[data-testid=player-card][data-id="messi"] .pcard-hit')
         S.wait_for_function('window.__PIPA && window.__PIPA.debug().phase === "aim"', timeout=20000)
-        S.mouse.click(30, 300)  # a user gesture unlocks audio (autoplay rules)
-        v, _ = wait_for(lambda: S.evaluate('window.__PIPA_SOUND().ready'), 5)
-        check('audio ready after the first touch (sounds made in code, preloaded)', bool(v))
-        check('🔊 SOUND toggle in the game HUD', S.is_visible('[data-testid=sound-toggle]'))
+        S.mouse.click(30, 300)  # a user gesture (would have unlocked audio before UPDATE 8)
+        check('UPDATE 8: no SOUND toggle in the game HUD, no sound engine', S.locator('[data-testid=sound-toggle]').count() == 0 and S.evaluate('typeof window.__PIPA_SOUND') == 'undefined')
         goal_seen = False
         for k in range(8):
             S.wait_for_function('window.__PIPA.debug().phase === "aim"', timeout=40000)
-            before = S.evaluate('window.__PIPA_SOUND()')
             S.evaluate("""(fx) => { const v = window.__PIPA, d = v.debug(), b = d.ball, g = d.goal;
                 const gx = g.left + (g.right - g.left) * fx, gy = g.bottom + (g.top - g.bottom) * 0.25, pts = [];
                 for (let i = 0; i <= 24; i++) { const t = i / 24; pts.push({ x: b.x + (gx - b.x) * t, y: b.y + (gy - b.y) * t, t: 1000 + 160 * t }); }
                 v.simulateSwipe(pts); }""", 0.08 if k % 2 else 0.92)
-            mid = S.evaluate('[window.__PIPA.debug().phase, window.__PIPA_SOUND().kick || 0]')
             S.wait_for_function('window.__PIPA.debug().phase === "result"', timeout=40000)
-            after = S.evaluate('window.__PIPA_SOUND()')
             outcome = S.evaluate('window.__PIPA.debug().outcome')
-            if k == 0:
-                check('KICK sound not before contact (run-up), exactly once at contact', (mid[0] != 'runup' or mid[1] == (before.get('kick') or 0)) and (after.get('kick') or 0) == (before.get('kick') or 0) + 1, f'{mid} {after}')
             if outcome == 'GOAL':
-                check('GOAL → NET + CROWD sound once', (after.get('net') or 0) == (before.get('net') or 0) + 1 and (after.get('crowd') or 0) == (before.get('crowd') or 0) + 1, after)
                 check('GOAL → one short vibration (45 ms)', S.evaluate('window.__vibes') == [45], S.evaluate('window.__vibes'))
                 goal_seen = True
                 break
             else:
-                check(f'{outcome} → no net / crowd / vibration', (after.get('net') or 0) == (before.get('net') or 0) and not S.evaluate('window.__vibes'))
+                check(f'{outcome} → no vibration', not S.evaluate('window.__vibes'))
             S.wait_for_function('window.__PIPA.game.canContinue()', timeout=30000)
             S.mouse.click(195, 420)
-        check('a GOAL happened in the sound test', goal_seen)
+        check('a GOAL happened in the vibration test', goal_seen)
+        check('UPDATE 8: kicks and goals made no audio at all (0 AudioContext)', S.evaluate('window.__audioCtx') == 0, S.evaluate('window.__audioCtx'))
         S.wait_for_function('window.__PIPA.game.canContinue()', timeout=30000)
         S.mouse.click(195, 420)
         S.wait_for_function('window.__PIPA.debug().phase === "aim"', timeout=30000)
-        S.click('[data-testid=sound-toggle]')
-        check('🔇 MUTED', 'MUTED' in S.evaluate("document.querySelector('[data-testid=sound-toggle]').getAttribute('aria-pressed') === 'false' ? 'MUTED' : 'SOUND'") and S.evaluate('window.__PIPA_SOUND().muted'))
         S.reload()
         S.wait_for_selector('[data-testid=progress-header]', timeout=20000)
-        check('MUTED remembered after reload (localStorage)', S.evaluate("localStorage.getItem('pipa.sound')") == 'off')
-        S.click('[data-testid=sound-toggle]')  # sound back on for the match
+        check('UPDATE 8: no SOUND toggle on the home screen', S.locator('[data-testid=sound-toggle]').count() == 0)
 
         # ── ONLINE MATCH → XP · LEVEL UP · NEW REWARD · live RANKING ──
         T_ctx = ctx(daily=False)
@@ -301,8 +293,7 @@ try:
             wait_for(lambda: S.get_attribute('[data-testid=online-game]', 'data-phase') == 'result' or S.is_visible('[data-testid=match-result]'), 45)
         v, _ = wait_for(lambda: S.is_visible('[data-testid=match-result]') and B.is_visible('[data-testid=match-result]'), 60)
         check('online PENALTY SHOOTOUT finished', bool(v))
-        snd = S.evaluate('window.__PIPA_SOUND()')
-        check('online match played kick sounds (and goal sounds for goals)', (snd.get('kick') or 0) >= 5, snd)
+        check('UPDATE 8: the online match made no audio either', S.evaluate('window.__audioCtx') == 0)
         v, _ = wait_for(lambda: S.is_visible('[data-testid=xp-gain]'), 15)
         xs = S.inner_text('[data-testid=xp-gain]') if v else ''
         verdict = S.get_attribute('[data-testid=match-result]', 'data-verdict')
