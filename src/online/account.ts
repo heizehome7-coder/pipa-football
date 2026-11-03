@@ -85,6 +85,15 @@ export interface Profile {
   stats: { total: RecordStats; penalty: RecordStats; freekick: RecordStats };
 }
 
+/** UPDATE 8: one pack result (decided by the server) */
+export interface PackPull {
+  id: string;
+  cardId: string;
+  playerId: string;
+  tier: 'base' | 'rare' | 'epic' | 'elite' | 'icon';
+  at: string;
+}
+
 export interface AccountReply {
   ok: boolean;
   created?: boolean;
@@ -95,6 +104,10 @@ export interface AccountReply {
   mp?: number;
   owned?: string[];
   playerId?: string;
+  /** UPDATE 8 */
+  cards?: { id: string; playerId: string; source: string | null }[];
+  pull?: PackPull;
+  packsOpened?: number;
   /** UPDATE 7 */
   listed?: string[];
   level?: number;
@@ -168,7 +181,9 @@ export const accountApi = {
   me: (token: string) => post('/api/me', { token }, 30_000),
   buy: (token: string, playerId: string, maxPrice?: number) => post('/api/market/buy', { token, playerId, maxPrice }, 30_000),
   // ── UPDATE 7 ──
-  sell: (token: string, playerId: string, price: number) => post('/api/market/sell', { token, playerId, price }, 30_000),
+  sell: (token: string, playerId: string, price: number, cardId?: string) => post('/api/market/sell', { token, playerId, price, cardId }, 30_000),
+  /** UPDATE 8: open one PLAYER PACK — the SERVER draws the player */
+  openPack: (token: string) => post('/api/packs/open', { token }, 30_000),
   cancel: (token: string, listingId: string) => post('/api/market/cancel', { token, listingId }, 30_000),
   marketState: (token: string | null) =>
     post('/api/market/state', { token }, 30_000) as Promise<AccountReply & { listings?: Record<string, { count: number; min: number }>; mine?: Listing[] }>,
@@ -228,4 +243,7 @@ export const devApi = {
   users: (devToken: string, q = '') => devPost('/api/dev/users', { devToken, q }),
   grant: (devToken: string, nickname: string, amount: number) => devPost('/api/dev/grant', { devToken, nickname, amount }),
   squad: (devToken: string, nickname: string) => devPost('/api/dev/squad', { devToken, nickname }),
+  /** UPDATE 8: give a user PLAYER PACKS */
+  grantPacks: (devToken: string, nickname: string, count: number) =>
+    devPost('/api/dev/grant-packs', { devToken, nickname, count }) as Promise<DevReply & { unopenedPacks?: number }>,
 };

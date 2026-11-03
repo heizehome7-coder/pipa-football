@@ -7,6 +7,7 @@
  * apart in 3D and on their cards. Stats come in UPDATE 5+.
  */
 import { MARKET_EXISTING_PRICES, MARKET_NEW, MARKET_ORDER, STARTER_IDS, type MarketCountry } from './market';
+import { CLUB, PRIMARY_POSITION } from './clubs';
 
 export type PlayerRole = 'FW' | 'MF' | 'DF' | 'GK';
 export type CountryCode = MarketCountry;
@@ -46,7 +47,8 @@ export type SpecialId =
   | 'POWER_BURST' | 'FINESSE_MASTER' | 'KNUCKLE_DRIVE' | 'LOW_DISGUISE' | 'LEFT_CURL' | 'TWO_FOOT_FINESSE'
   | 'PENALTY_PRECISION' | 'POWER_FINISH' | 'QUICK_LOW_CURL' | 'BALANCED_FINISH' | 'CONTROLLED_DRIVE'
   | 'LEFT_FINESSE' | 'DRIVEN_CURVE' | 'CLINICAL_FINISH' | 'SET_PIECE_CONTROL'
-  | 'LONG_REACH' | 'POSITION_MASTER' | 'LOW_SAVE' | 'HIGH_REACH' | 'PENALTY_SPECIALIST' | 'BLACK_SPIDER';
+  | 'LONG_REACH' | 'POSITION_MASTER' | 'LOW_SAVE' | 'HIGH_REACH' | 'PENALTY_SPECIALIST' | 'BLACK_SPIDER'
+  | 'KOREAN_LEGEND' | 'RED_FINISHER';
 
 export const SPECIALS: Record<SpecialId, { name: string; desc: string }> = {
   POWER_BURST: { name: 'POWER BURST', desc: '빠르고 곧은 강한 스트로크에서 더 빠른 슛' },
@@ -69,6 +71,8 @@ export const SPECIALS: Record<SpecialId, { name: string; desc: string }> = {
   LOW_SAVE: { name: 'LOW SAVE', desc: '낮은 슛에 강함' },
   HIGH_REACH: { name: 'HIGH REACH', desc: '상단 코너 슛에 강함' },
   PENALTY_SPECIALIST: { name: 'PENALTY SPECIALIST', desc: 'AI 모드에서 페널티 방향 예측력 최고' },
+  KOREAN_LEGEND: { name: 'KOREAN LEGEND', desc: '강하고 정확한 ST 마무리 · 파워 슛 속도와 낮은 슛 정확도 보너스' },
+  RED_FINISHER: { name: 'RED FINISHER', desc: '빠르고 강한 ST 마무리, 강하게 차도 흔들림이 적음' },
   BLACK_SPIDER: { name: 'BLACK SPIDER', desc: '폭발적인 다이빙과 긴 손끝 리치, 높은 체공 · 중간 속도 슛은 공중에서 잡아냄' },
 };
 
@@ -98,6 +102,14 @@ export interface PlayerDef {
   price?: number;
   /** retired legend (market filter LEGEND) */
   legend?: boolean;
+  /** UPDATE 8: ICON card (retired legend or PIPA custom icon) — shows ICON instead of a club */
+  isIcon: boolean;
+  /** UPDATE 8: current club (./clubs.ts), null for ICONS */
+  club: string | null;
+  /** UPDATE 8: the ONE position shown in a pack reveal */
+  primaryPosition: string;
+  /** UPDATE 8: can be sold / bought / pulled from packs (free starters: false) */
+  tradeable: boolean;
 }
 
 export const COUNTRY_NAME: Record<CountryCode, string> = {
@@ -133,12 +145,18 @@ export const COUNTRY_NAME: Record<CountryCode, string> = {
   NIR: 'N. IRELAND',
   CIV: 'IVORY COAST',
   CMR: 'CAMEROON',
+  SRB: 'SERBIA',
+  TUR: 'TÜRKIYE',
+  JPN: 'JAPAN',
+  GUI: 'GUINEA',
+  BUL: 'BULGARIA',
+  UKR: 'UKRAINE',
 };
 
 const p = (
   id: string, name: string, nameKo: string, first: string, last: string, shirt: string, number: string,
   positions: string[], role: PlayerRole, country: CountryCode, look: PlayerLook,
-): PlayerDef => ({ id, name, nameKo, first, last, shirt, number, positions, role, country, look, special: 'BALANCED_FINISH', foot: 'R', starter: true });
+): PlayerDef => ({ id, name, nameKo, first, last, shirt, number, positions, role, country, look, special: 'BALANCED_FINISH', foot: 'R', starter: true, isIcon: false, club: null, primaryPosition: positions[0], tradeable: false });
 
 const L = (skin: number, hair: number, hairStyle: HairStyle, beard: Beard = 'none', height = 1, build = 1): PlayerLook => ({ skin, hair, hairStyle, beard, height, build });
 
@@ -223,6 +241,14 @@ for (const r of MARKET_NEW) {
   });
 }
 
+// ── UPDATE 8: one central record per player (pack + market read the same fields) ──
+for (const pl of PLAYERS) {
+  pl.isIcon = !!pl.legend;
+  pl.club = pl.isIcon ? null : CLUB[pl.id] ?? null;
+  pl.primaryPosition = PRIMARY_POSITION[pl.id] ?? pl.positions[0];
+  pl.tradeable = !pl.starter;
+}
+
 /** OVR: plain average of the seven abilities (no position weighting) */
 export function ovr(p: PlayerDef) {
   const v = p.stats ? Object.values(p.stats) : p.gk ? Object.values(p.gk) : [];
@@ -242,7 +268,7 @@ export const PLAYER_BY_ID: Record<string, PlayerDef> = Object.fromEntries(PLAYER
 export const FIELD_PLAYERS = PLAYERS.filter((x) => x.role !== 'GK');
 export const GOALKEEPERS = PLAYERS.filter((x) => x.role === 'GK');
 export const STARTER_PLAYERS = PLAYERS.filter((x) => x.starter);
-/** the 100 TRANSFER MARKET players in catalogue order */
+/** the 150 TRANSFER MARKET players in catalogue order (UPDATE 8: +50) */
 export const MARKET_PLAYERS: PlayerDef[] = MARKET_ORDER.map((id) => PLAYER_BY_ID[id]);
 export const isStarter = (id: string) => !!PLAYER_BY_ID[id]?.starter;
 export const marketPrice = (id: string): number | null => {

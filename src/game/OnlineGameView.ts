@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { goalHaptic, playCrowd, playKick, playNet } from '../audio/sound';
+import { goalHaptic } from '../feedback/haptics';
 import { FIELD } from './core/config';
 import type { ShotInput } from './core/types';
 import { SwipeController } from './input/SwipeController';
@@ -11,7 +11,7 @@ import { buildStadium } from './world/Stadium';
 import { diveCommand, OnlineKickGame } from '../online/match/penaltyRound';
 import type { KickGameOptions } from './KickGame';
 import type { PlayerDef } from '../players/players';
-import type { DiveDir, MatchMode, WireDive, WireShot } from '../online/match/protocol';
+import { clampKeeperX, KEEPER_LINE, type DiveDir, type MatchMode, type WireDive, type WireShot } from '../online/match/protocol';
 
 export type OnlineRole = 'kicker' | 'keeper';
 
@@ -22,6 +22,8 @@ export interface OnlineViewCallbacks {
   onDive(dir: DiveDir, at: number): void;
   onHint(msg: string | null): void;
   onSpecial?(id: string): void;
+  /** UPDATE 8: the keeper moved along his line (joystick) → server (throttled here) */
+  onKeeperMove?(x: number): void;
 }
 
 /** what a swipe means for the keeper: dives the way the finger went on screen */
@@ -58,7 +60,7 @@ export class OnlineGameView {
   role: OnlineRole = 'kicker';
   /** UPDATE 6: FREE KICK DUEL spot for this round (same on both phones and the server) */
   private spot = 0;
-  /** UPDATE 7: sounds already played this match (k<round> kick, g<round> goal) */
+  /** goal vibration already given this match (g<round>) — UPDATE 8: no sound */
   private soundDone = new Set<string>();
   private renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
@@ -88,6 +90,12 @@ export class OnlineGameView {
   private keyBuf: Set<string> = new Set();
   private keyTimer = 0;
   lastDiveDir: DiveDir | null = null;
+  /** UPDATE 8: keeper's spot on the goal line this round (world x) + joystick input −1…1 */
+  private keeperX = 0;
+  private joy = 0;
+  private sentX = 0;
+  private sentAt = 0;
+  private lineAt = 0;
   /** this phone's own replay result per round (tests compare it with the server's) */
   readonly localOutcomes: Record<number, string> = {};
 
@@ -158,24 +166,16 @@ export class OnlineGameView {
   // ── round control (driven by server state) ────────────────────────────
   private makeGame(nick: string, seed: number) {
     const { kickerLook, keeperLook, keeperStats, keeperSpecial } = this.looks ?? {};
-    const g = new OnlineKickGame(nick, seed, true, { kickerLook, keeperLook, keeperStats, keeperSpecial }, this.mode, this.spot);
+    // UPDATE 8: a struck shot uses the server's keeper position; while aiming he starts mid-line
+    const g = new OnlineKickGame(nick, seed, true, { kickerLook, keeperLook, keeperStats, keeperSpecial }, this.mode, this.spot, this.shot?.keeperX ?? 0);
     g.start();
-    // UPDATE 7: sounds from this phone's replay of the server's shot (same moment on both
-    // phones). Once per round — a replay after a late dive does not play them again, and a
-    // phone that is catching up (far behind real time) stays quiet.
+    // GOAL vibration from this phone's replay of the server's shot, once per round (a
+    // replay after a late dive or a phone catching up stays quiet). UPDATE 8: no sound.
     g.listener = {
-      onLaunch: () => {
-        const r = this.shot?.round ?? -1;
-        if (this.soundDone.has(`k${r}`) || this.runClock() - this.simT > 0.6) return;
-        this.soundDone.add(`k${r}`);
-        playKick(this.shot?.input.power ?? 0.7);
-      },
       onOutcome: (o) => {
         const r = this.shot?.round ?? -1;
         if (o !== 'GOAL' || this.soundDone.has(`g${r}`) || this.runClock() - this.simT > 0.8) return;
         this.soundDone.add(`g${r}`);
-        playNet();
-        playCrowd();
         goalHaptic();
       },
     };
@@ -209,6 +209,9 @@ export class OnlineGameView {
     this.lastDiveDir = null;
     this.finalPath = null;
     this.stroke = null;
+    this.keeperX = 0;
+    this.joy = 0;
+    this.sentX = 0;
     this.swapGame(this.makeGame(r.kickerNick, 1));
     this.frameCamera();
   }
@@ -221,7 +224,6 @@ export class OnlineGameView {
   playShot(shot: WireShot, runStartLocal: number, dive: WireDive | null) {
     if (this.shot && this.shot.round === shot.round && this.shot.runStart === shot.runStart) return;
     // a new shot (also round 1 of a rematch) may play its sounds again
-    this.soundDone.delete(`k${shot.round}`);
     this.soundDone.delete(`g${shot.round}`);
     this.shot = shot;
     this.runStartLocal = runStartLocal;
@@ -244,7 +246,7 @@ export class OnlineGameView {
     this.dive = d;
     const when = Math.max(d.at, this.game.kicker.contactTime - 0.03);
     if (!this.started || this.simT <= when + 1e-6) {
-      if (this.started) this.game.setKeeperDive(diveCommand(d));
+      if (this.started) this.game.setKeeperDive(diveCommand(d, this.game.keeperLineX));
       return;
     }
     // arrived after its moment (network delay): replay the kick with the dive in place
@@ -266,7 +268,7 @@ export class OnlineGameView {
     if (!this.started) {
       this.started = true;
       this.game.shoot(this.shot.input);
-      if (this.dive) this.game.setKeeperDive(diveCommand(this.dive));
+      if (this.dive) this.game.setKeeperDive(diveCommand(this.dive, this.game.keeperLineX));
     }
     while (this.simT < t - 1e-9) {
       const d = Math.min(STEP_CHUNK, t - this.simT);
@@ -388,6 +390,37 @@ export class OnlineGameView {
     return true;
   }
 
+  // ── UPDATE 8: keeper joystick (left ↔ right along the goal line only) ──
+  /** −1 … +1 from the on-screen stick (screen left = world −x on both cameras) */
+  setJoystick(v: number) {
+    this.joy = Math.max(-1, Math.min(1, Number.isFinite(v) ? v : 0));
+  }
+  /** can the keeper still walk his line? (only while the kicker aims) */
+  keeperCanMove() {
+    return this.role === 'keeper' && !this.shot && this.game.phase === 'aim';
+  }
+  /** the opponent keeper moved (relayed by the server) → he shuffles there on this phone */
+  setRemoteKeeperX(x: number) {
+    if (this.role === 'keeper' || this.shot) return;
+    this.keeperX = clampKeeperX(x);
+    this.game.keeper.shuffleTo(this.keeperX, KEEPER_LINE.maxSpeed);
+  }
+  private stepKeeperLine(dt: number) {
+    if (!this.keeperCanMove()) return;
+    if (this.joy !== 0) {
+      // a little push = slow side-step, full push = quick shuffle (never a sprint)
+      const sp = KEEPER_LINE.maxSpeed * Math.sign(this.joy) * Math.pow(Math.abs(this.joy), 1.4);
+      this.keeperX = clampKeeperX(this.keeperX + sp * dt);
+      this.game.keeper.shuffleTo(this.keeperX, KEEPER_LINE.maxSpeed);
+    }
+    const now = performance.now();
+    if (Math.abs(this.keeperX - this.sentX) > 0.015 && now - this.sentAt >= KEEPER_LINE.sendMs) {
+      this.sentX = this.keeperX;
+      this.sentAt = now;
+      this.cb.onKeeperMove?.(this.keeperX);
+    }
+  }
+
   keeperDive(dir: DiveDir) {
     if (!this.keeperCanDive()) return false;
     this.lastDiveDir = dir;
@@ -426,12 +459,16 @@ export class OnlineGameView {
     this.raf = requestAnimationFrame(this.frame);
     const dt = Math.min(0.1, Math.max(0, (now - this.last) / 1000));
     this.last = now;
+    const lineAt = this.lineAt;
+    this.lineAt = now;
     if (this.shot) {
       const before = this.game.phase;
       this.catchUp();
       if (before !== 'flight' && this.game.phase === 'flight') this.launchAt = now;
       if (this.game.outcome && !(this.shot.round in this.localOutcomes)) this.localOutcomes[this.shot.round] = this.game.outcome;
     } else {
+      // the walk uses real time (a slow phone still moves at the same metres per second)
+      this.stepKeeperLine(lineAt ? Math.min(0.25, Math.max(0, (now - lineAt) / 1000)) : 0);
       this.game.update(dt); // idle animation while aiming
     }
     this.renderer.render(this.scene, this.camera);
@@ -468,6 +505,10 @@ export class OnlineGameView {
     return {
       role: this.role,
       mode: this.mode,
+      keeperX: this.keeperX,
+      keeperLineX: this.game.keeper.lineX,
+      keeperZ: this.game.keeper.body.root.position.z,
+      keeperHome: this.game.keeperLineX,
       spot: this.spot,
       wall: g.wall ? g.wall.players.filter((p) => p.root.visible).length : 0,
       w: this.w,

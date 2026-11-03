@@ -117,6 +117,7 @@ export function simulateBallPhysics(
   const magnusMax = lim.magnusMax * Math.min(1.45, Math.max(1, Math.abs(spin) / lim.spinMax));
   // knuckle (no-spin) shot: small, smooth, deterministic air wobble late in the flight
   const kn = (opts.knuckle ?? 0) * cfg.knuckleScale;
+  const onset = cfg.curveOnset && spin !== 0 ? cfg.curveOnset : null;
   const ks = (opts.kseed ?? 0) >>> 0;
   const dt = BALL.dt;
   const stopZ = opts.stopZ ?? 0;
@@ -166,6 +167,12 @@ export function simulateBallPhysics(
     if (m > magnusMax) {
       mx *= magnusMax / m;
       mz *= magnusMax / m;
+    }
+    if (onset) {
+      // UPDATE 8: early curl — strong at the strike, fading along the flight
+      const w = onset.gain * Math.exp(-(i * dt) / onset.tau);
+      mx *= w;
+      mz *= w;
     }
     ax += mx;
     az += mz;

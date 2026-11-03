@@ -16,10 +16,18 @@ const WALL_JUMP: Pose = {
   lAnkle: [-0.4, 0, 0], rAnkle: [-0.4, 0, 0],
 };
 
-// collision spheres (height above the player's feet, radius)
-const BODY: [number, number][] = [[0.32, 0.19], [0.7, 0.21], [1.08, 0.25], [1.38, 0.24], [1.66, 0.14]];
+/**
+ * UPDATE 8: the wall is a touch bigger — players and their collision +4 % wider (+1 % taller;
+ * same scale, so what you see is what blocks), same spots, still 4–5 players.
+ */
+export const WALL_SCALE = 1.04;
+/** height grows less than width: a well-struck ball over the wall must still clear it */
+export const WALL_HEIGHT_SCALE = 1.01;
+const WALL_SPACING = 0.56;
+// collision spheres (height above the player's feet, radius) — scaled with the players
+const BODY: [number, number][] = ([[0.32, 0.19], [0.7, 0.21], [1.08, 0.25], [1.38, 0.24], [1.66, 0.14]] as [number, number][]).map(([h, r]) => [h * WALL_HEIGHT_SCALE, r * WALL_SCALE]);
 // between neighbours (height, radius)
-const GAP: [number, number][] = [[0.4, 0.15], [0.85, 0.16], [1.25, 0.18]];
+const GAP: [number, number][] = ([[0.4, 0.15], [0.85, 0.16], [1.25, 0.18]] as [number, number][]).map(([h, r]) => [h * WALL_HEIGHT_SCALE, r * WALL_SCALE]);
 
 const WALL_KIT = {
   jersey: 0xd8323c,
@@ -46,6 +54,7 @@ export class DefensiveWall {
   constructor(max = 5) {
     for (let i = 0; i < max; i++) {
       const h = new Humanoid({ ...WALL_KIT, skin: SKINS[i % SKINS.length], backNumber: String([4, 5, 6, 8, 3][i]) });
+      h.root.scale.set(WALL_SCALE, WALL_HEIGHT_SCALE, WALL_SCALE);
       this.players.push(h);
       this.group.add(h.root);
     }
@@ -59,7 +68,7 @@ export class DefensiveWall {
     let perpOut = new THREE.Vector3(-toPost.z, 0, toPost.x);
     if (!central && Math.sign(perpOut.x) !== Math.sign(ball.x)) perpOut.negate();
     const base = new THREE.Vector3(ball.x, 0, ball.z).addScaledVector(toPost, 9.15);
-    const spacing = 0.56;
+    const spacing = WALL_SPACING;
 
     this.colliders.length = 0;
     this.delays = [];

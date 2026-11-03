@@ -7,7 +7,6 @@ import type { DiveDir, MatchMode, MatchState, WireResult } from '../online/match
 import { freeKickSpotIndex } from '../online/match/penaltyRound';
 import { formatMP } from '../players/ownership';
 import type { ProgressEvent } from '../App';
-import { SoundToggle } from '../components/SoundToggle';
 import { MatchFoundScreen } from './MatchFoundScreen';
 import { NameBanner } from '../components/NameBanner';
 import { useSpecialPop } from '../components/SpecialPop';
@@ -166,6 +165,8 @@ function MatchPlay({ v, s, client, mode, onLeave }: { v: MatchView; s: MatchStat
           },
           onHint: setHint,
           onSpecial: (id) => special.show(id),
+          // UPDATE 8: keeper joystick → server (throttled by the view, clamped by the server)
+          onKeeperMove: (x) => client.moveKeeper(x),
         },
         mode,
       );
@@ -174,7 +175,12 @@ function MatchPlay({ v, s, client, mode, onLeave }: { v: MatchView; s: MatchStat
       setFatal('이 기기에서 3D(WebGL)를 시작할 수 없습니다.');
     }
     viewRef.current = view;
+    // UPDATE 8: the opponent keeper walking his line, live on the kicker's phone
+    const offMove = client.onKeeperMove((x, round) => {
+      if (round === client.getSnapshot().state?.round) viewRef.current?.setRemoteKeeperX(x);
+    });
     return () => {
+      offMove();
       view?.dispose();
       viewRef.current = null;
     };
@@ -244,6 +250,7 @@ function MatchPlay({ v, s, client, mode, onLeave }: { v: MatchView; s: MatchStat
   return (
     <div className={`screen game online-game role-${role ?? 'none'}`} data-testid="online-game" data-phase={s.phase} data-round={s.round} data-role={role ?? ''}>
       <div className="game-host" ref={hostRef} />
+      {role === 'keeper' && (s.phase === 'aim' || s.phase === 'shot') && <KeeperJoystick view={viewRef} locked={s.phase !== 'aim'} />}
 
       <div className="ohud" data-testid="online-hud">
         <button className="hud-back ohud-back" onClick={onLeave} aria-label="경기 나가기">
@@ -266,9 +273,7 @@ function MatchPlay({ v, s, client, mode, onLeave }: { v: MatchView; s: MatchStat
           </div>
           <PlayerScore name={opp?.nickname ?? ''} score={v.oppScore} history={s.history} peer={opp?.peer ?? ''} testid="score-opp" />
         </div>
-        <span className="hud-spacer ohud-sound">
-          <SoundToggle compact />
-        </span>
+        <span className="hud-spacer" />
       </div>
 
       {count && (
@@ -490,6 +495,66 @@ function Disconnected({ lost, match, text, onLeave }: { lost: boolean; match: Ma
           온라인 로비로 돌아가기
         </button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * UPDATE 8 — the keeper's analog stick (bottom left): LEFT ↔ RIGHT only, along the goal
+ * line. A small push side-steps slowly, a full push shuffles quickly. Diving stays the
+ * swipe on the rest of the screen. Locked once the kicker has struck the ball.
+ */
+function KeeperJoystick({ view, locked }: { view: React.MutableRefObject<OnlineGameView | null>; locked: boolean }) {
+  const [dx, setDx] = useState(0);
+  const pid = useRef<number | null>(null);
+  const cx = useRef(0);
+  const R = 46;
+  useEffect(() => {
+    if (locked) {
+      pid.current = null;
+      setDx(0);
+      view.current?.setJoystick(0);
+    }
+  }, [locked, view]);
+  const move = (x: number) => {
+    const d = Math.max(-R, Math.min(R, x - cx.current));
+    setDx(d);
+    view.current?.setJoystick(Math.abs(d) < 5 ? 0 : d / R);
+  };
+  const end = () => {
+    pid.current = null;
+    setDx(0);
+    view.current?.setJoystick(0);
+  };
+  return (
+    <div
+      className={`gk-joy ${locked ? 'locked' : ''}`}
+      data-testid="gk-joystick"
+      data-locked={locked ? '1' : '0'}
+      onPointerDown={(e) => {
+        if (locked) return;
+        e.stopPropagation();
+        e.preventDefault();
+        const r = e.currentTarget.getBoundingClientRect();
+        cx.current = r.left + r.width / 2;
+        pid.current = e.pointerId;
+        e.currentTarget.setPointerCapture?.(e.pointerId);
+        move(e.clientX);
+      }}
+      onPointerMove={(e) => {
+        if (pid.current !== e.pointerId) return;
+        e.stopPropagation();
+        move(e.clientX);
+      }}
+      onPointerUp={(e) => pid.current === e.pointerId && end()}
+      onPointerCancel={(e) => pid.current === e.pointerId && end()}
+    >
+      <span className="gk-joy-track" aria-hidden>
+        <i>‹</i>
+        <i>›</i>
+      </span>
+      <span className="gk-joy-knob" style={{ transform: `translateX(${dx}px)` }} aria-hidden />
+      <em>{locked ? 'LOCKED' : 'MOVE'}</em>
     </div>
   );
 }

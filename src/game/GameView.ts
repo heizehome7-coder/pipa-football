@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { goalHaptic, playCrowd, playKick, playNet } from '../audio/sound';
+import { goalHaptic } from '../feedback/haptics';
 import { FIELD } from './core/config';
 import type { GameMode, Phase, ShotOutcome } from './core/types';
 import { FreeKickGame } from './FreeKickGame';
@@ -106,17 +106,11 @@ export class GameView {
           this.session.recordShot({ input: this.game.lastInput, outcome: o, detail, attempt: this.game.attempt, at: Date.now() });
         }
         this.cb.onOutcome(o, detail);
-        // UPDATE 7: GOAL → net + crowd + a short buzz (never for SAVE / MISS / POST / BAR / wall)
-        if (o === 'GOAL') {
-          playNet();
-          playCrowd();
-          goalHaptic();
-        }
+        // GOAL → a short buzz (UPDATE 8: no sound; never for SAVE / MISS / POST / BAR / wall)
+        if (o === 'GOAL') goalHaptic();
       },
       onLaunch: () => {
         this.launchAt = performance.now();
-        // UPDATE 7: the ball leaves on the frame the boot meets it
-        playKick(this.game.lastInput?.power ?? 0.7);
       },
     };
 

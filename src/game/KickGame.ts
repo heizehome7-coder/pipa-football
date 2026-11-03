@@ -5,6 +5,9 @@ import type { Phase, ShotInput, ShotOutcome } from './core/types';
 import { Ball } from './entities/Ball';
 import { DefensiveWall } from './entities/DefensiveWall';
 import { Goalkeeper, PERFECT_WINDOW, type Collider } from './entities/Goalkeeper';
+
+/** UPDATE 8: extra weight-shift time before an online free-kick dive (s) — reach unchanged */
+export const FK_DIVE_DELAY = 0.14;
 import type { GkStats, SpecialId } from '../players/players';
 import { Kicker, type KickerLook, type KickStyle } from './entities/Player';
 import { buildShotPlan, shotPositionAt, shotVelocityAt, type ShotPlan } from './physics/ShotModel';
@@ -267,7 +270,9 @@ export abstract class KickGame {
         const b = this.spot.ball;
         const tz = v0.z < -0.5 ? (this.keeper.home.z - b.z) / v0.z : 0;
         const read = tz > 0 ? { x: b.x + v0.x * tz, y: b.y + v0.y * tz - 4.9 * tz * tz } : undefined;
-        this.keeper.diveTo(d.x, d.y, d.at >= c - PERFECT_WINDOW.before && d.at <= c + PERFECT_WINDOW.after, read);
+        // UPDATE 8: online FREE KICK only — the dive starts a little later (penalty unchanged)
+        const delay = this.style === 'freekick' ? FK_DIVE_DELAY : 0;
+        this.keeper.diveTo(d.x, d.y, d.at >= c - PERFECT_WINDOW.before && d.at <= c + PERFECT_WINDOW.after, read, delay);
       }
     } else if (this.style === 'penalty' && this.plan && !this.keeper.committed && this.phase !== 'aim' &&
         this.kicker.elapsed >= this.kicker.contactTime - this.keeperLead) {

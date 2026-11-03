@@ -97,6 +97,7 @@ const K_STEP: Pose = {
   lHip: [0.5, 0, -0.42], rHip: [0.6, 0, 0.08], lKnee: [-0.6, 0, 0], rKnee: [-1.0, 0, 0],
 };
 
+const K_STEP_R: Pose = mirrorPose(K_STEP);
 /** hips → fingertips with arms overhead */
 const ARM_REACH = 1.08;
 /** a stat as a small signed step: 90 → 0, 99 → +1, 81 → −1 (clamped) */
@@ -205,6 +206,9 @@ export class Goalkeeper {
   private hist: { t: number; p: THREE.Vector3; v: THREE.Vector3 }[] = [];
   private bias = new THREE.Vector2();
   private lastEval = -1;
+  /** UPDATE 8: online joystick target on the goal line (world x) — null = AI / not used */
+  private lineGoal: number | null = null;
+  private lineSpeed = 2.3;
   /** penalty: watching only for a late hand/step adjustment after staying up */
   private lateOnly = false;
   private adjusted = false;
@@ -264,6 +268,7 @@ export class Goalkeeper {
     this.lateOnly = false;
     this.adjusted = false;
     this.rootX = this.rootV = this.stepGoal = 0;
+    this.lineGoal = null;
     this.roll = 0;
     this.reactKind = '';
     this.reactT = 0;
@@ -282,6 +287,16 @@ export class Goalkeeper {
   /** dive phase timings (debug / tests) */
   get diveTimes() {
     return { push: this.pushT, flight: this.flightT, hang: this.hangT, perfect: this.perfect };
+  }
+
+  /** UPDATE 8: walk (shuffle) to world x on the goal line; the depth never changes */
+  shuffleTo(x: number, maxSpeed = 2.3) {
+    this.lineGoal = x;
+    this.lineSpeed = maxSpeed;
+  }
+  /** UPDATE 8: where his feet are on the line right now (world x) */
+  get lineX() {
+    return this.home.x + this.rootX;
   }
 
   get committed() {
@@ -478,7 +493,7 @@ export class Goalkeeper {
   }
 
   /** Online PvP: a person chose where to go — same body limits as the AI (speed, reach). */
-  diveTo(px: number, py: number, perfect = false, read?: { x: number; y: number }) {
+  diveTo(px: number, py: number, perfect = false, read?: { x: number; y: number }, startDelay = 0) {
     if (this.stage === 'action') return;
     this.guess = null;
     this.perfect = perfect;
@@ -495,15 +510,21 @@ export class Goalkeeper {
         px = this.feetX + (dx / L) * want;
         py = HIPS_IDLE_Y + (dy / L) * want;
         // and a little higher / lower towards the strike's line when it is on his side
+        // (a low strike pulls a side dive down more than a high one lifts it: he can
+        // throw himself low, but he cannot jump higher than his dive)
         if (proj > 0) {
-          const perp = (-(read.x - this.feetX) * dy + (read.y - HIPS_IDLE_Y) * dx) / L;
-          const shift = clamp(perp * 0.3, -0.25, 0.25);
-          px += (-dy / L) * shift;
-          py += (dx / L) * shift;
+          const off = read.y - py;
+          py += off < 0 ? clamp(off * 0.75, -0.5, 0) : clamp(off * 0.3, 0, 0.25);
         }
       }
     }
     this.commit(clamp(px, -3.9, 3.9), clamp(py, 0.12, 2.6));
+    if (startDelay > 0) {
+      // UPDATE 8 (online free kick): a longer, visible weight shift before the push-off —
+      // the dive starts later, its speed and final reach stay the same
+      if (this.action === 'dive') this.pushT += startDelay;
+      else this.actT = -startDelay;
+    }
   }
 
   // ── action (shared) ───────────────────────────────────────────────────
@@ -595,7 +616,8 @@ export class Goalkeeper {
     const moving = Math.min(1, Math.abs(this.rootV) / 1.5);
     if (moving > 0.02) {
       const s = Math.abs(Math.sin(this.stepPhase));
-      blendPose(this.pose, K_STEP, s * moving, this.pose);
+      // the leading leg opens towards where he is going (he faces +z: world +x = his right)
+      blendPose(this.pose, this.rootV > 0 ? K_STEP_R : K_STEP, s * moving, this.pose);
     }
     this.body.applyPose(this.pose);
     const bob = this.stage === 'idle' ? Math.sin(t * 3.1) * 0.012 : Math.sin(t * 7) * 0.006;
@@ -617,6 +639,15 @@ export class Goalkeeper {
       this.rootV += clamp(want - this.rootV, -16 * dt, 16 * dt);
       this.rootX += this.rootV * dt;
       this.stepPhase += Math.abs(this.rootV) * dt * 4.5;
+    } else if (this.stage !== 'action' && this.lineGoal !== null) {
+      // UPDATE 8 (online joystick): side-steps along the goal line — x only, never z
+      const err = this.lineGoal - (this.home.x + this.rootX);
+      const vmax = this.lineSpeed * (this.stats ? 1 + 0.04 * sd(this.stats.positioning) : 1);
+      const want = clamp(err * 7, -vmax, vmax);
+      this.rootV += clamp(want - this.rootV, -14 * dt, 14 * dt);
+      if (Math.abs(err) < 0.01 && Math.abs(this.rootV) < 0.05) this.rootV = 0;
+      this.rootX += this.rootV * dt;
+      this.stepPhase += Math.abs(this.rootV) * dt * 5;
     } else if (this.stage !== 'action') {
       this.rootV = 0;
     }

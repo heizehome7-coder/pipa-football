@@ -4,6 +4,7 @@ import { AccountError, accountsAvailable, devApi, type DevSquadUser, type DevSta
 import { formatMP } from '../players/ownership';
 import { PlayerCard } from '../components/PlayerArt';
 import { getPlayer, SPECIALS, type PlayerDef } from '../players/players';
+import { PACK_CONFIG } from '../progress/packs';
 
 /**
  * UPDATE 6 patch — DEVELOPER MODE.
@@ -85,7 +86,7 @@ function DevAccess({ onOk, onBack }: { onOk: (t: string) => void; onBack: () => 
 }
 
 // ── 5. DEVELOPER DASHBOARD ──────────────────────────────────────────────
-type Tab = 'recent' | 'records' | 'mp' | 'squads';
+type Tab = 'recent' | 'records' | 'mp' | 'packs' | 'squads';
 type RecMode = 'total' | 'penalty' | 'freekick';
 
 /** server ISO time → "YYYY-MM-DD HH:mm" in Korean time */
@@ -160,6 +161,7 @@ function DevDashboard({ devToken, onExpired, onBack }: { devToken: string; onExp
             ['recent', '최근 접속자'],
             ['records', '유저 전적'],
             ['mp', 'MP 관리'],
+            ['packs', 'PACK 지급'],
             ['squads', 'USER SQUADS'],
           ] as [Tab, string][]
         ).map(([t, label]) => (
@@ -225,6 +227,7 @@ function DevDashboard({ devToken, onExpired, onBack }: { devToken: string; onExp
       )}
 
       {tab === 'mp' && <MpManager users={users} devToken={devToken} onExpired={onExpired} onGranted={() => void load()} />}
+      {tab === 'packs' && <PackGrant users={users} devToken={devToken} onExpired={onExpired} onGranted={() => void load()} />}
       {tab === 'squads' && <UserSquads devToken={devToken} onExpired={onExpired} />}
     </div>
   );
@@ -449,6 +452,99 @@ function SquadCard({ player, order, fk }: { player: PlayerDef; order?: number; f
     <div className="dev-sq-card" data-testid="dev-sq-card" data-id={player.id}>
       <PlayerCard player={player} selected={false} order={order} freeKick={fk} compact />
       <span className="dev-sq-special">⚡ {SPECIALS[player.special].name}</span>
+    </div>
+  );
+}
+
+// ── UPDATE 8 — PACK 지급 (server-checked: developer token, 1 … 100 packs) ─────
+function PackGrant({ users, devToken, onExpired, onGranted }: { users: DevUser[]; devToken: string; onExpired: () => void; onGranted: () => void }) {
+  const [sel, setSel] = useState<string | null>(null);
+  const [raw, setRaw] = useState('1');
+  const [confirm, setConfirm] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ text: string; tone: 'good' | 'bad' } | null>(null);
+  const user = useMemo(() => users.find((u) => u.nickname === sel) ?? null, [users, sel]);
+  const count = /^[0-9]+$/.test(raw.trim()) ? Number(raw.trim()) : NaN;
+  const valid = Number.isSafeInteger(count) && count >= 1 && count <= PACK_CONFIG.maxDevGrant;
+
+  const grant = async () => {
+    if (!user || !valid || busy) return;
+    setBusy(true);
+    try {
+      const r = await devApi.grantPacks(devToken, user.nickname, count);
+      setMsg({ text: `PLAYER PACK ${r.granted ?? count}개 지급 완료 (보유 ${r.unopenedPacks ?? '-'}개)`, tone: 'good' });
+      onGranted();
+    } catch (e) {
+      if (e instanceof AccountError && e.code === 'dev') return onExpired();
+      setMsg({ text: e instanceof Error ? e.message : '지급하지 못했어요', tone: 'bad' });
+    } finally {
+      setBusy(false);
+      setConfirm(false);
+    }
+  };
+
+  return (
+    <div className="dev-mp" data-testid="dev-packs">
+      <ul className="dev-list dev-pick">
+        {users.map((u) => (
+          <li key={u.nickname}>
+            <button className={`dev-row pick ${sel === u.nickname ? 'on' : ''}`} onClick={() => (setSel(u.nickname), setMsg(null))} data-testid="dev-pack-pick" data-nick={u.nickname}>
+              <b>{u.nickname}</b>
+              <span className="dev-time">PACK {u.unopenedPacks ?? 0}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      {user && (
+        <div className="dev-grant" data-testid="dev-pack-grant">
+          <div className="dev-grant-row">
+            <span>유저</span>
+            <b>{user.nickname}</b>
+          </div>
+          <div className="dev-grant-row">
+            <span>보유 팩</span>
+            <b data-testid="dev-current-packs">{user.unopenedPacks ?? 0}개</b>
+          </div>
+          <label className="field">
+            <span>지급할 PLAYER PACK 개수 (1 ~ {PACK_CONFIG.maxDevGrant})</span>
+            <input inputMode="numeric" value={raw} onChange={(e) => (setRaw(e.target.value), setMsg(null))} placeholder="예: 10" data-testid="dev-pack-count" />
+          </label>
+          {raw && !valid && <p className="dev-msg bad">1 ~ {PACK_CONFIG.maxDevGrant} 사이의 정수만 입력할 수 있어요</p>}
+          <button className="btn-primary" disabled={!valid || busy} onClick={() => setConfirm(true)} data-testid="dev-pack-btn">
+            PACK 지급
+          </button>
+        </div>
+      )}
+      {msg && (
+        <p className={`dev-msg ${msg.tone}`} data-testid="dev-pack-msg">
+          {msg.text}
+        </p>
+      )}
+      {confirm && user && valid && (
+        <div className="detail-backdrop confirm" data-testid="dev-pack-confirm">
+          <div className="detail-card confirm-card">
+            <p className="confirm-q">
+              {user.nickname}에게
+              <br />
+              <b className="confirm-name">PLAYER PACK {count}개</b>를 지급하시겠습니까?
+            </p>
+            <dl className="confirm-rows">
+              <dt>현재</dt>
+              <dd>{user.unopenedPacks ?? 0}개</dd>
+              <dt>지급 후</dt>
+              <dd className="after">{(user.unopenedPacks ?? 0) + count}개</dd>
+            </dl>
+            <div className="detail-actions">
+              <button className="btn-primary" onClick={grant} disabled={busy} data-testid="dev-pack-ok">
+                {busy ? '지급 중…' : '확인'}
+              </button>
+              <button className="btn-ghost" onClick={() => setConfirm(false)} disabled={busy}>
+                취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

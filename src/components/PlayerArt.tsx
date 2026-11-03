@@ -270,6 +270,42 @@ export function Flag({ code, size = 18 }: { code: CountryCode; size?: number }) 
         </>
       );
       break;
+    // UPDATE 8
+    case 'SRB':
+      body = stripesH('#c6363c', '#0c4076', '#ffffff');
+      break;
+    case 'BUL':
+      body = stripesH('#ffffff', '#00966e', '#d62612');
+      break;
+    case 'GUI':
+      body = stripesV('#ce1126', '#fcd116', '#009460');
+      break;
+    case 'UKR':
+      body = (
+        <>
+          <rect width="30" height="10" fill="#0057b7" />
+          <rect width="30" height="10" y="10" fill="#ffd700" />
+        </>
+      );
+      break;
+    case 'JPN':
+      body = (
+        <>
+          <rect width="30" height="20" fill="#ffffff" />
+          <circle cx="15" cy="10" r="5.5" fill="#bc002d" />
+        </>
+      );
+      break;
+    case 'TUR':
+      body = (
+        <>
+          <rect width="30" height="20" fill="#e30a17" />
+          <circle cx="12" cy="10" r="5" fill="#ffffff" />
+          <circle cx="13.3" cy="10" r="4" fill="#e30a17" />
+          <circle cx="18.2" cy="10" r="1.6" fill="#ffffff" />
+        </>
+      );
+      break;
     default:
       body = <rect width="30" height="20" fill="#2a3a34" />;
   }

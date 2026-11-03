@@ -66,6 +66,12 @@ export interface ModeConfig {
   loftPerScreen: number;
   /** UPDATE 5: knuckle wobble strength (short penalty flights need more to be visible) */
   knuckleScale: number;
+  /**
+   * UPDATE 8 (free kick): the curl shows EARLY — the side force starts `gain` × stronger and
+   * fades with time constant `tau` (s), so most of the bend forms in the first part of the
+   * flight and the ball then keeps its line into the goal (no late hook). Penalty: none.
+   */
+  curveOnset?: { gain: number; tau: number };
   /** swipe speed (screen-heights / s) mapped to power 0 and 1 */
   swipeSpeedMin: number;
   swipeSpeedMax: number;
@@ -123,6 +129,7 @@ export const MODES: Record<GameMode, ModeConfig> = {
     maxApex: 4.6,
     loftPerScreen: 14,
     knuckleScale: 0.6,
+    curveOnset: { gain: 1.3, tau: 1.0 },
     swipeSpeedMin: 0.55,
     swipeSpeedMax: 3.0,
     keeper: {

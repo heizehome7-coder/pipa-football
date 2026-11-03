@@ -51,6 +51,18 @@ npm run build:single   # dist-single/ — index.html 한 파일 (어디서나 �
 - 골 세리머니: 모든 선수 공통 "두 손 들고 환호" + 실패(SAVE/MISS/POST/CROSSBAR) 리액션 — `reactions.ts`; 리액션 중 입력 잠금(~2초)
 - 카드 앞면 OVR + POWER/ACCURACY/CURVE, 상세에 전체 능력 + SPECIAL ABILITY. 등 이름 크기 확대
 
+## UPDATE 8 — PLAYER PACK & ONLINE GAMEPLAY
+- **선수 DB 하나**: `src/players/players.ts`(+ `market.ts` 데이터, `clubs.ts` 클럽) — `primaryPosition`, `club`, `isIcon`, `tradeable`, 가격·능력치·특수능력. 팩과 이적시장이 같은 레코드를 씀. 신규 50명(현역 30 · ICON 18 · 김인직 ICON ST · 허신 LIVERPOOL ST) → 이적시장 150명
+- **PLAYER PACK** (`src/progress/packs.ts` 확률 설정 한 곳, `/api/packs/open`): 서버가 팩 확인 → 1개 차감 → 거래 가능 선수 풀(스타터 제외) → crypto 가중 추첨 → 카드 저장 → 결과 반환. 새로고침해도 다시 뽑을 수 없음. 확률: 10M~150M 45% · ~400M 30% · ~800M 17% · ~1.4B 6% · 그 이상(최고 ICON) 2%
+- **카드 인스턴스**: `cards[{id, playerId, source}]` (중복 가능, `owned`는 그 playerId 목록). 같은 선수 2장 보유 가능, 한 스쿼드에 같은 선수 2명은 불가, 스쿼드에 쓰는 1장 외 여분은 판매 가능, 판매 취소 시 같은 카드 id로 복귀
+- **팩 개봉 연출**(무음): OPEN → 빛/파티클 → COUNTRY → POSITION(대표 1개) → CLUB 또는 ICON(PIPA 자체 엠블럼) → 큰 PLAYER CARD. 티어별 글로우(그린 → 블루/퍼플 → 골드 → 프리미엄 골드+화이트), 0.5초 뒤 SKIP. CSS 파티클만 사용(영상 없음)
+- **일일 로그인** DAY 6/7 → `unopenedPacks` → PACKS의 AVAILABLE ×N
+- **개발자 모드 · PACK 지급** (`/api/dev/grant-packs`, 1~100개, 개발자 토큰, 로그 GRANT_PACKS, 유저 화면에 바로 반영)
+- **사운드 전부 삭제**(킥/그물/관중/토글/AudioContext). GOAL 진동(45ms)은 유지
+- **온라인 GK 조이스틱**(왼쪽 아래, 좌↔우만): 골라인을 따라 x만 이동(z 고정), ±3.0 m(포스트 − 몸 여유)로 서버가 clamp, 약 12 Hz 전송, 키커 화면에 셔플 애니메이션으로 표시. 슛 순간 위치가 고정되어(`shot.keeperX`) 서버 판정·양쪽 재생이 같은 위치에서 다이빙(다이빙 방향은 서 있는 위치 기준). PENALTY·FREE KICK 모두
+- **온라인 FREE KICK 밸런스**: 수비벽 +4 % 폭(+1 % 높이, 위치·인원 그대로) · GK 다이빙 시작 +0.14 s(체중 이동이 더 보이고 최종 리치는 그대로, PENALTY는 변경 없음) · 감아차기가 일찍 휨(사이드 포스가 처음 1.3배에서 서서히 줄어듦 → 비행 60 %에서 방향 변화의 76 %, 이전 66 %; 총 휘는 양은 거의 같음, 후반에 반대로 꺾이지 않음, 점선 미리보기 = 실제 궤적, 너클은 그대로)
+- 테스트: `node scripts/update8-test.mjs`, `npx tsx scripts/update8-physics-test.ts`, `npx tsx scripts/fk-balance-exp.ts`, `python3 scripts/update8-e2e.py`
+
 ## UPDATE 7 핫픽스 — 골키퍼 다이빙 리워크 & USER SQUADS (버전 표기는 UPDATE 7 유지)
 - **다이빙** (`src/game/entities/Goalkeeper.ts` → `DIVE`, `updateDive`): READY → 체중 이동·사이드 로드 → 반대발 푸시오프 → 이륙 → 풀 익스텐션 → 체공(hang) → 착지. 엉덩이는 속도 곡선(초반 빠르게, 뻗을수록 감속)과 포물선으로 날아감(목표 지점 lerp 아님). LOW / MID / HIGH × 좌우 미러 포즈, 두 손을 함께 뻗음
 - **리치**: 보이는 손 = 충돌 위치(UPDATE 6의 보이지 않는 장갑 스트레치 제거). 리치는 실제 팔 길이(풀 스트레치에서 팔이 눈에 보이게 늘어남)와 몸 이동량. 위팔에도 충돌체 추가(머리와 팔뚝 사이 구멍 제거). 표준 GK 측면 도달 2.95 → 3.26 m(+10.6 %), 낮은 다이빙 1.74 → 1.91 m(+9.8 %), 착지 0.81 → 1.04 s

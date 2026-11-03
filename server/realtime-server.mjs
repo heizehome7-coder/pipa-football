@@ -132,6 +132,8 @@ function pushTo(nick, msg) {
 }
 // XP / LEVEL UP after a finished online match
 accounts.setProgressPush((nick, res) => pushTo(nick, { t: 'progress:update', ...res }));
+// UPDATE 8: the developer gave this account packs → its PACKS count updates live
+accounts.setPacksPush((nick, unopenedPacks) => pushTo(nick, { t: 'packs:update', unopenedPacks }));
 // a listing of yours was bought (the notice also stays in the account until shown)
 accounts.setSalePush((nick, notice, mp) => {
   pushTo(nick, { t: 'market:sold', notice });

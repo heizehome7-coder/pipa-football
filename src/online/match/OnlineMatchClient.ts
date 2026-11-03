@@ -163,6 +163,21 @@ export class OnlineMatchClient {
     return d;
   }
 
+  /** UPDATE 8: keeper joystick position (world x on the goal line); the server clamps it */
+  moveKeeper(x: number) {
+    const s = this.view.state;
+    if (!s || this.view.role !== 'keeper' || s.phase !== 'aim') return;
+    this.send({ t: 'keeper:move', round: s.round, x: Math.round(x * 1000) / 1000 });
+  }
+  /** UPDATE 8: the opponent keeper's position while I aim */
+  onKeeperMove(fn: (x: number, round: number) => void) {
+    this.moveFns.add(fn);
+    return () => {
+      this.moveFns.delete(fn);
+    };
+  }
+  private moveFns = new Set<(x: number, round: number) => void>();
+
   rematch() {
     this.send({ t: 'match:rematch' });
   }
@@ -184,6 +199,11 @@ export class OnlineMatchClient {
         this.bestRtt = rtt;
         this.offset = m.s - (m.c + rtt / 2);
       }
+      return;
+    }
+    if ((m.t as string) === 'keeper:move') {
+      const mm = m as unknown as { x?: number; round?: number; matchId?: string };
+      if (mm.matchId === this.info.matchId && typeof mm.x === 'number') for (const f of this.moveFns) f(mm.x, mm.round ?? 0);
       return;
     }
     if (m.t === 'match:error') {

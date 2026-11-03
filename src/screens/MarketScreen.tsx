@@ -48,7 +48,7 @@ export function MarketScreen({
   const [sort, setSort] = useState<Sort>('PRICE LOW');
   const [detail, setDetail] = useState<PlayerDef | null>(null);
   const [confirm, setConfirm] = useState<{ p: PlayerDef; price: number; user: boolean } | null>(null);
-  const [selling, setSelling] = useState<PlayerDef | null>(null);
+  const [selling, setSelling] = useState<{ p: PlayerDef; cardId?: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<{ text: string; tone: 'good' | 'warn' } | null>(null);
   const [offers, setOffers] = useState<Offers>({});
@@ -179,7 +179,7 @@ export function MarketScreen({
           mine={mine}
           token={token}
           onReply={onReply}
-          onSell={(p) => setSelling(p)}
+          onSell={(p, cardId) => setSelling({ p, cardId })}
           onChanged={loadState}
           toast={(text, tone) => setToast({ text, tone })}
         />
@@ -265,7 +265,8 @@ export function MarketScreen({
 
       {selling && token && (
         <SellDialog
-          player={selling}
+          player={selling.p}
+          cardId={selling.cardId}
           token={token}
           onDone={(r, msg) => {
             if (r) onReply(r);
@@ -302,13 +303,24 @@ function MyPlayers({
   mine: Listing[];
   token: string | null;
   onReply: (r: AccountReply) => void;
-  onSell: (p: PlayerDef) => void;
+  onSell: (p: PlayerDef, cardId?: string) => void;
   onChanged: () => void;
   toast: (t: string, tone: 'good' | 'warn') => void;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const used = new Set(squad ? [...squad.penaltyOrder, squad.goalkeeperId, squad.freeKickTakerId] : []);
-  const bought = PLAYERS.filter((p) => !p.starter && wallet.owned.has(p.id));
+  // UPDATE 8: one row per CARD (two cards of a player = two rows); the squad keeps one
+  const byId = new Map(PLAYERS.map((p) => [p.id, p]));
+  const bought: { card: { id: string; playerId: string; source: string | null }; p: PlayerDef; locked: boolean }[] = [];
+  const seenSquad = new Set<string>();
+  for (const card of wallet.cards ?? []) {
+    const p = byId.get(card.playerId);
+    if (!p || p.starter) continue;
+    const locked = used.has(p.id) && !seenSquad.has(p.id);
+    if (locked) seenSquad.add(p.id);
+    bought.push({ card, p, locked });
+  }
+  bought.sort((a, b) => a.p.name.localeCompare(b.p.name) || Number(b.locked) - Number(a.locked));
   const starters = PLAYERS.filter((p) => p.starter);
   const cancelListing = async (l: Listing) => {
     if (!token || busy) return;
@@ -325,13 +337,16 @@ function MyPlayers({
       onChanged();
     }
   };
-  const Row = ({ p, children, tag }: { p: PlayerDef; children: React.ReactNode; tag?: string }) => (
-    <li className="mine-row" data-testid="mine-row" data-id={p.id} data-tag={tag ?? ''}>
+  const Row = ({ p, children, tag, card }: { p: PlayerDef; children: React.ReactNode; tag?: string; card?: { id: string; source: string | null } }) => (
+    <li className="mine-row" data-testid="mine-row" data-id={p.id} data-tag={tag ?? ''} data-card={card?.id ?? ''}>
       <span className="mine-ava">
         <PlayerAvatar player={p} size={40} />
       </span>
       <span className="mine-name">
-        <b>{p.name}</b>
+        <b>
+          {p.name}
+          {card?.source === 'pack' && <i className="mine-pack">PACK</i>}
+        </b>
         <em>
           {p.positions.join(' / ')} · OVR {ovr(p)}
           {p.price ? ` · 가치 ${formatMPKo(p.price)}` : ''}
@@ -357,16 +372,16 @@ function MyPlayers({
           );
         })}
       </ul>
-      <p className="mine-head">구매한 선수 · SELL 가능 (수수료 {Math.round(PROGRESSION.market.fee * 100)}%)</p>
+      <p className="mine-head">보유 카드 (구매 · 팩) · SELL 가능 (수수료 {Math.round(PROGRESSION.market.fee * 100)}%)</p>
       <ul className="mine-list">
-        {bought.map((p) => (
-          <Row key={p.id} p={p} tag={used.has(p.id) ? 'squad' : 'sellable'}>
-            {used.has(p.id) ? (
+        {bought.map(({ card, p, locked }) => (
+          <Row key={card.id} p={p} tag={locked ? 'squad' : 'sellable'} card={card}>
+            {locked ? (
               <button className="btn-ghost small" onClick={() => toast('현재 스쿼드에서 사용 중인 선수입니다.', 'warn')} data-testid="sell-blocked">
                 IN SQUAD
               </button>
             ) : (
-              <button className="btn-primary small" onClick={() => onSell(p)} data-testid="sell-player">
+              <button className="btn-primary small" onClick={() => onSell(p, card.id)} data-testid="sell-player">
                 SELL PLAYER
               </button>
             )}
@@ -387,7 +402,7 @@ function MyPlayers({
 }
 
 // ── SELL: price within 80–120 %, fee 30 % only when it actually sells ──
-function SellDialog({ player, token, onDone, onCancel }: { player: PlayerDef; token: string; onDone: (r: AccountReply | null, msg: { text: string; tone: 'good' | 'warn' }) => void; onCancel: () => void }) {
+function SellDialog({ player, cardId, token, onDone, onCancel }: { player: PlayerDef; cardId?: string; token: string; onDone: (r: AccountReply | null, msg: { text: string; tone: 'good' | 'warn' }) => void; onCancel: () => void }) {
   const value = player.price!;
   const { min, max } = saleRange(value);
   const [raw, setRaw] = useState(value.toLocaleString('en-US'));
@@ -398,7 +413,7 @@ function SellDialog({ player, token, onDone, onCancel }: { player: PlayerDef; to
     if (!ok || busy) return;
     setBusy(true);
     try {
-      const r = await accountApi.sell(token, player.id, price);
+      const r = await accountApi.sell(token, player.id, price, cardId);
       onDone(r, { text: `${player.name} 판매 등록 완료 (LISTED)`, tone: 'good' });
     } catch (e) {
       onDone(e instanceof AccountError && e.reply && typeof e.reply.mp === 'number' ? e.reply : null, { text: e instanceof Error ? e.message : '등록하지 못했어요', tone: 'warn' });

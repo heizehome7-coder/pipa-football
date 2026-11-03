@@ -30,6 +30,8 @@
  *   POST /api/dev/users {devToken, q?}             ← {ok, users:[…]}  recent 100 (lastSeenAt desc)
  *   POST /api/dev/grant {devToken, nickname, amount} ← {ok, nickname, mp, granted}
  *   POST /api/dev/squad {devToken, nickname}       ← {ok, user:{nickname, squad, owned, …}} | {ok, matches:[…]}
+ *   POST /api/packs/open {token}                    ← {ok, pull:{cardId, playerId, tier}, …me}   (UPDATE 8, server draw)
+ *   POST /api/dev/grant-packs {devToken, nickname, count} ← {ok, granted, unopenedPacks}  (UPDATE 8)
  *                                                     (UPDATE 7 hotfix: read-only, server data only)
  *   Every grant is written to the developer action log (file devlog.json / table pipa_dev_log).
  *   Accounts also keep lastLoginAt / lastSeenAt (server time) and online records per mode:
@@ -348,6 +350,42 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
   const isMarket = (id) => !!catalog && catalog.marketPrice(id) != null;
   const owns = (rec, id) => !!catalog && (catalog.isStarter(id) || (rec.data?.owned ?? []).includes(id));
 
+  // ── UPDATE 8: card instances ─────────────────────────────────────────
+  // `cards` = every market-player card the account holds, each with its own id (two Messi
+  // cards are two cards). `owned` stays the list of their player ids (duplicates allowed),
+  // so every UPDATE 6/7 check keeps working.
+  const newCardId = () => crypto.randomBytes(8).toString('base64url');
+  function cardsOf(data) {
+    const owned = data?.owned ?? [];
+    const cards = Array.isArray(data?.cards) ? data.cards : [];
+    if (cards.length === owned.length && cards.every((c, i) => c?.playerId === owned[i])) return cards;
+    // older data (or out of step): rebuild from `owned`, keeping the ids we already had
+    const pool = [...cards];
+    return owned.map((pid) => {
+      const i = pool.findIndex((c) => c?.playerId === pid);
+      return i >= 0 ? pool.splice(i, 1)[0] : { id: newCardId(), playerId: pid, source: 'legacy', at: null };
+    });
+  }
+  const withCards = (data, cards) => ({ ...data, cards, owned: cards.map((c) => c.playerId) });
+  const addCard = (data, playerId, source, id) => withCards(data, [...cardsOf(data), { id: id ?? newCardId(), playerId, source, at: new Date().toISOString() }]);
+  /** removes one card of that player (a given card id, else the newest) → {data, card} | null */
+  function takeCard(data, playerId, cardId) {
+    const cards = [...cardsOf(data)];
+    let i = cardId ? cards.findIndex((c) => c.id === cardId && c.playerId === playerId) : -1;
+    if (i < 0) for (let j = cards.length - 1; j >= 0; j--) if (cards[j].playerId === playerId) (i = j), (j = -1);
+    if (i < 0) return null;
+    const [card] = cards.splice(i, 1);
+    return { data: withCards(data, cards), card };
+  }
+  /** older data: give its cards ids once and save them, so a card id never changes */
+  function syncCards(rec) {
+    const cards = cardsOf(rec.data);
+    if (cards === rec.data?.cards) return false;
+    rec.data = withCards(rec.data ?? {}, cards);
+    return true;
+  }
+  const countOf = (rec, id) => (rec.data?.owned ?? []).filter((x) => x === id).length;
+
   /** accounts from before UPDATE 6: market players already in the saved squad become owned */
   function migrate(rec, squad = rec.data?.squad) {
     if (!rec || rec.data?.v6) return false;
@@ -400,6 +438,8 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
     squad: rec.data?.squad ?? null,
     mp: rec.data?.mp ?? 0,
     owned: rec.data?.owned ?? [],
+    // UPDATE 8: every card with its own id (duplicates allowed)
+    cards: cardsOf(rec.data).map((c) => ({ id: c.id, playerId: c.playerId, source: c.source ?? null })),
     // UPDATE 7
     listed: rec.data?.listed ?? [],
     ...progressOf(rec),
@@ -459,7 +499,8 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
     return withLock(found.key, async () => {
       const rec = (await load(found.key)) ?? found;
       if (!rec.tokens.includes(sha(token))) return NO_SESSION;
-      if (migrate(rec)) await store.put(rec);
+      const m = migrate(rec);
+      if (syncCards(rec) || m) await store.put(rec);
       return fn(rec);
     });
   }
@@ -527,6 +568,7 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
         const rec = (await load(found.key)) ?? found;
         if (!rec.tokens.includes(sha(token))) return NO_SESSION;
         migrate(rec);
+        syncCards(rec);
         const value = typeof playerId === 'string' && catalog ? catalog.marketPrice(playerId) : null;
         if (value == null) return { status: 400, body: { ok: false, error: 'not_for_sale', message: '판매하지 않는 선수예요' } };
         const owned = rec.data.owned ?? [];
@@ -539,7 +581,7 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
         const mp = rec.data.mp ?? 0;
         if (mp < price) return { status: 402, body: { ok: false, error: 'mp', message: 'MP가 부족합니다.', ...view(rec) } };
         if (!listing) {
-          rec.data = { ...rec.data, mp: mp - price, owned: [...owned, playerId] };
+          rec.data = { ...addCard(rec.data, playerId, 'market'), mp: mp - price };
           await store.put(rec);
           log(`accounts: "${rec.nickname}" bought ${playerId} for ${price} MP (system, left ${rec.data.mp})`);
           rankingChanged();
@@ -550,12 +592,13 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
           const seller = await load(listing.seller);
           if (!seller) return { status: 409, body: { ok: false, error: 'price_changed', message: '매물이 사라졌어요. 다시 시도해주세요', ...view(rec) } };
           const revenue = catalog.sellerRevenue(price);
-          const buyerNext = { ...rec, data: { ...rec.data, mp: mp - price, owned: [...owned, playerId] } };
+          const buyerNext = { ...rec, data: { ...addCard(rec.data, playerId, 'market'), mp: mp - price } };
           const sellerListed = [...(seller.data?.listed ?? [])];
           const at = sellerListed.indexOf(playerId);
           if (at >= 0) sellerListed.splice(at, 1);
+          const sellerCards = (seller.data?.listedCards ?? []).filter((c) => c.listingId !== listing.id);
           const sold = notice({ type: 'sold', playerId, price, revenue, fee: price - revenue, buyer: rec.nickname });
-          const sellerNext = { ...seller, data: { ...seller.data, mp: (seller.data?.mp ?? 0) + revenue, listed: sellerListed, notices: [...(seller.data?.notices ?? []), sold].slice(-30) } };
+          const sellerNext = { ...seller, data: { ...seller.data, mp: (seller.data?.mp ?? 0) + revenue, listed: sellerListed, listedCards: sellerCards, notices: [...(seller.data?.notices ?? []), sold].slice(-30) } };
           const ok = await store.tx([{ type: 'delListing', id: listing.id, required: true }, { type: 'put', rec: buyerNext }, { type: 'put', rec: sellerNext }]);
           if (!ok) return { status: 409, body: { ok: false, error: 'price_changed', message: '방금 다른 사람이 샀어요. 다시 시도해주세요', ...view(rec) } };
           remember(buyerNext);
@@ -574,7 +617,7 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
   }
 
   /** SELL: list an owned market player (not a starter, not in the squad) for 80–120 % of value */
-  function sell({ token, playerId, price }) {
+  function sell({ token, playerId, price, cardId }) {
     if (typeof token !== 'string' || token.length < 16) return NO_SESSION;
     return withLock(MARKET_LOCK, () =>
       withAccount(token, async (rec) => {
@@ -582,13 +625,23 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
         if (catalog.isStarter(playerId)) return { status: 403, body: { ok: false, error: 'untradeable', message: 'UNTRADEABLE — 무료 스타터 선수는 판매할 수 없어요' } };
         const owned = rec.data.owned ?? [];
         if (!owned.includes(playerId)) return { status: 403, body: { ok: false, error: 'not_owned', message: '보유하지 않은 선수예요', ...view(rec) } };
-        if (inSquad(rec, playerId)) return { status: 409, body: { ok: false, error: 'in_squad', message: '현재 스쿼드에서 사용 중인 선수입니다.' } };
+        // UPDATE 8: a spare copy of a squad player can be sold (the squad keeps one card)
+        if (inSquad(rec, playerId) && countOf(rec, playerId) <= 1) return { status: 409, body: { ok: false, error: 'in_squad', message: '현재 스쿼드에서 사용 중인 선수입니다.' } };
         const value = catalog.marketPrice(playerId);
         const { min, max } = catalog.saleRange(value);
         if (typeof price !== 'number' || !Number.isSafeInteger(price) || price < min || price > max)
           return { status: 400, body: { ok: false, error: 'price', message: `판매 가격은 ${min.toLocaleString('en-US')} ~ ${max.toLocaleString('en-US')} MP 사이여야 해요`, min, max } };
         const listing = { id: crypto.randomBytes(9).toString('base64url'), playerId, seller: rec.key, sellerName: rec.nickname, price, createdAt: new Date().toISOString() };
-        const next = { ...rec, data: { ...rec.data, owned: owned.filter((x) => x !== playerId), listed: [...(rec.data.listed ?? []), playerId] } };
+        const taken = takeCard(rec.data, playerId, typeof cardId === 'string' ? cardId : null);
+        if (!taken) return { status: 403, body: { ok: false, error: 'not_owned', message: '보유하지 않은 선수예요', ...view(rec) } };
+        const next = {
+          ...rec,
+          data: {
+            ...taken.data,
+            listed: [...(rec.data.listed ?? []), playerId],
+            listedCards: [...(rec.data.listedCards ?? []), { ...taken.card, listingId: listing.id }],
+          },
+        };
         await store.tx([{ type: 'addListing', listing }, { type: 'put', rec: next }]);
         remember(next);
         Object.assign(rec, next);
@@ -608,7 +661,9 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
         const listed = [...(rec.data.listed ?? [])];
         const at = listed.indexOf(l.playerId);
         if (at >= 0) listed.splice(at, 1);
-        const next = { ...rec, data: { ...rec.data, listed, owned: [...new Set([...(rec.data.owned ?? []), l.playerId])] } };
+        const lc = (rec.data.listedCards ?? []).find((c) => c.listingId === l.id);
+        const back = addCard(rec.data, l.playerId, lc?.source ?? 'market', lc?.id);
+        const next = { ...rec, data: { ...back, listed, listedCards: (rec.data.listedCards ?? []).filter((c) => c.listingId !== l.id) } };
         const ok = await store.tx([{ type: 'delListing', id: l.id, required: true }, { type: 'put', rec: next }]);
         if (!ok) return { status: 409, body: { ok: false, error: 'sold', message: '이미 판매된 매물이에요', ...view(rec) } };
         remember(next);
@@ -727,6 +782,39 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
     });
   }
 
+  // ── UPDATE 8: PLAYER PACKS (the result is decided HERE, never on a phone) ────────
+  /**
+   * OPEN one pack: check there is one → take it → weighted draw (crypto random) over the
+   * tradeable market players → add the card → save, all in one write under the account
+   * lock. A reload can't re-roll: the card is already saved before the reply goes out.
+   */
+  function openPack({ token }) {
+    return withAccount(token, async (rec) => {
+      if (!catalog?.drawPackPlayer) return { status: 503, body: { ok: false, error: 'packs', message: '팩을 열 수 없어요' } };
+      const left = rec.data?.unopenedPacks ?? 0;
+      if (!(left > 0)) return { status: 409, body: { ok: false, error: 'no_pack', message: '열 수 있는 팩이 없어요', ...view(rec) } };
+      const r = crypto.randomInt(0, 2 ** 47) / 2 ** 47;
+      let { player, tier } = catalog.drawPackPlayer(r);
+      // automated browser tests only (env on the TEST server, never set on Render): a fixed queue
+      const forced = TEST_PACKS.shift();
+      if (forced && catalog.getPlayer(forced) && catalog.marketPrice(forced)) {
+        player = catalog.getPlayer(forced);
+        tier = catalog.packTier(catalog.marketPrice(forced));
+      }
+      const cardId = newCardId();
+      const pull = { id: crypto.randomBytes(6).toString('hex'), cardId, playerId: player.id, tier, at: new Date().toISOString() };
+      rec.data = {
+        ...addCard(rec.data, player.id, 'pack', cardId),
+        unopenedPacks: left - 1,
+        packsOpened: (rec.data?.packsOpened ?? 0) + 1,
+        packLog: [...(rec.data?.packLog ?? []), pull].slice(-30),
+      };
+      await store.put(rec);
+      log(`packs: "${rec.nickname}" opened a pack → ${player.id} (${tier}), ${left - 1} left`);
+      return { status: 200, body: { ok: true, pull, ...view(rec) } };
+    });
+  }
+
   // ── UPDATE 7: RANKING · PROFILE ─────────────────────────────────────
   let rankCache = { at: 0, rows: null };
   const allRows = async () => {
@@ -798,6 +886,8 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
   let isOnline = () => false;
   let onWallet = () => {};
   let onProgress = () => {};
+  const TEST_PACKS = (process.env.PIPA_TEST_PACKS ?? '').split(',').filter(Boolean);
+  let onPacks = () => {};
   let onSold = () => {};
   let onRanking = () => {};
   let rankTimer = null;
@@ -954,6 +1044,39 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
     };
   }
 
+  /** UPDATE 8: give a user PLAYER PACKS (whole number 1 … PACK_CONFIG.maxDevGrant) */
+  async function devGrantPacks({ devToken, nickname, count }, ip) {
+    if (!devOk(devToken)) return NO_DEV;
+    const max = catalog?.PACK_CONFIG?.maxDevGrant ?? 100;
+    if (typeof count !== 'number' || !Number.isSafeInteger(count) || count <= 0 || count > max)
+      return { status: 400, body: { ok: false, error: 'count', message: `팩은 1 ~ ${max}개까지 지급할 수 있어요` } };
+    if (typeof nickname !== 'string' || !nickname.trim()) return { status: 400, body: { ok: false, error: 'user', message: '유저를 선택해주세요' } };
+    const k = nickKey(cleanNick(nickname));
+    const r = await withLock(k, async () => {
+      const rec = await load(k);
+      if (!rec) return null;
+      migrate(rec);
+      const before = rec.data?.unopenedPacks ?? 0;
+      rec.data = { ...rec.data, unopenedPacks: before + count };
+      await store.put(rec);
+      return { nickname: rec.nickname, before, after: rec.data.unopenedPacks };
+    });
+    if (!r) return { status: 404, body: { ok: false, error: 'user', message: '그런 유저가 없어요' } };
+    const entry = { developer_action: 'GRANT_PACKS', action: 'GRANT_PACKS', target: r.nickname, amount: count, before: r.before, after: r.after, timestamp: new Date().toISOString(), ip };
+    try {
+      await store.logAction(entry);
+    } catch (e) {
+      log(`devlog failed: ${e.message}`);
+    }
+    log(`dev: GRANT_PACKS ${count} → "${r.nickname}" (${r.before} → ${r.after})`);
+    try {
+      onPacks(r.nickname, r.after);
+    } catch {
+      /* the user may be offline */
+    }
+    return { status: 200, body: { ok: true, nickname: r.nickname, granted: count, before: r.before, unopenedPacks: r.after } };
+  }
+
   async function devLog({ devToken }) {
     if (!devOk(devToken)) return NO_DEV;
     return { status: 200, body: { ok: true, actions: await store.actions(50) } };
@@ -1015,6 +1138,8 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
     '/api/dev/grant': devGrant,
     '/api/dev/log': devLog,
     '/api/dev/squad': devSquad,
+    '/api/dev/grant-packs': devGrantPacks,
+    '/api/packs/open': openPack,
   };
 
   /** returns true when it handled the request */
@@ -1066,6 +1191,7 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
     setOnlineCheck: (fn) => (isOnline = fn),
     setWalletPush: (fn) => (onWallet = fn),
     setProgressPush: (fn) => (onProgress = fn),
+    setPacksPush: (fn) => (onPacks = fn),
     setSalePush: (fn) => (onSold = fn),
     setRankingPush: (fn) => (onRanking = fn),
     kind: store.kind,

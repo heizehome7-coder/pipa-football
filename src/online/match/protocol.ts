@@ -12,6 +12,7 @@
  *   match:ready  {matchId, ready}                    shot:start                   (kicker's shot + run-up time)
  *   shot:submit  {matchId, round, shot}              keeper:dive                  (keeper's dive, for both views)
  *   keeper:dive  {matchId, round, dir, at}           round:result                 (authoritative GOAL/SAVE/MISS)
+ *   keeper:move  {matchId, round, x}   (UPDATE 8)    keeper:move {round, x}       (to the kicker, ~12 Hz)
  *   match:rematch{matchId}                           round:next                   (roles swapped)
  *   match:leave  {matchId}                           match:finished               (final score / winner)
  *   time:ping    {c}                                 match:opponentDisconnected
@@ -34,6 +35,13 @@ export const MATCH_RULES = {
 
 export type DiveDir = 'left' | 'right' | 'upLeft' | 'upRight' | 'up' | 'down' | 'lowLeft' | 'lowRight';
 export const DIVE_DIRS: DiveDir[] = ['left', 'right', 'upLeft', 'upRight', 'up', 'down', 'lowLeft', 'lowRight'];
+
+/**
+ * UPDATE 8: online keeper joystick — he may walk ALONG his goal line only (never forward,
+ * back or past a post): x ∈ [−maxX, +maxX] (post 3.66 m − body margin). Depth never changes.
+ */
+export const KEEPER_LINE = { maxX: 3.0, maxSpeed: 2.3, sendMs: 80 } as const;
+export const clampKeeperX = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) ? Math.max(-KEEPER_LINE.maxX, Math.min(KEEPER_LINE.maxX, x)) : 0);
 
 /** UPDATE 6: which online duel this match is */
 export type MatchMode = 'penalty' | 'freekick';
@@ -77,6 +85,8 @@ export interface WireShot {
   /** server ms when the kicker's run-up starts on every screen */
   runStart: number;
   seed: number;
+  /** UPDATE 8: where the keeper stood on his line when the shot was struck (server-clamped) */
+  keeperX?: number;
 }
 
 export interface WireDive {
@@ -116,6 +126,8 @@ export interface MatchState {
   /** hidden while aiming (the kicker must not see a pre-chosen dive) */
   dive: WireDive | null;
   result: WireResult | null;
+  /** UPDATE 8: the keeper's spot on his line while the kicker aims (server-clamped) */
+  keeperX?: number;
   /** reward = MP paid by the server to the winner (0 = none) */
   final: { winner: string | null; draw: boolean; reward?: number } | null;
   ended: null | 'opponent_left';

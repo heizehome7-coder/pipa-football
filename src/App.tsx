@@ -27,6 +27,7 @@ import { DailyRewardModal } from './components/ProgressHeader';
 import { MarketScreen } from './screens/MarketScreen';
 import { OnlineModeScreen } from './screens/OnlineModeScreen';
 import { DeveloperScreen } from './screens/DeveloperScreen';
+import { PacksScreen } from './screens/PacksScreen';
 import type { DuelMode } from './online/LobbyClient';
 
 /** UPDATE 7: XP / LEVEL UP for a finished online match (pushed by the server) */
@@ -50,6 +51,7 @@ type Screen =
   | { name: 'lobby' }
   | { name: 'online-modes' }
   | { name: 'market' }
+  | { name: 'packs' }
   | { name: 'developer' }
   | { name: 'ranking' }
   | { name: 'levels' }
@@ -136,7 +138,7 @@ export default function App() {
     }
   }, [screen.name, wallet.progress?.daily?.canClaim, wallet.progress?.daily?.today]);
   useEffect(() => {
-    if (['playtype', 'market', 'squad', 'online-modes', 'levels', 'ranking'].includes(screen.name)) refreshWallet();
+    if (['playtype', 'market', 'squad', 'online-modes', 'levels', 'ranking', 'packs'].includes(screen.name)) refreshWallet();
   }, [screen.name]); // eslint-disable-line react-hooks/exhaustive-deps
   // the server pushes the new balance right after paying a win
   useEffect(() => {
@@ -151,6 +153,8 @@ export default function App() {
       }
       if (m.t === 'market:sold' && m.notice) showSale(m.notice as SaleNotice, user?.token);
       if (m.t === 'ranking:changed') setRankTick((n) => n + 1);
+      // UPDATE 8: the developer gave packs → refresh the account (PACKS count)
+      if (m.t === 'packs:update') refreshWallet();
     });
   }, [channel, user]); // eslint-disable-line react-hooks/exhaustive-deps
   const logout = () => {
@@ -213,6 +217,7 @@ export default function App() {
       onOnline={() => setScreen({ name: 'online-modes' })}
       onSquad={() => setScreen({ name: 'squad' })}
       onMarket={() => setScreen({ name: 'market' })}
+      onPacks={() => setScreen({ name: 'packs' })}
       onDeveloper={() => setScreen({ name: 'developer' })}
       onRanking={() => setScreen({ name: 'ranking' })}
       onLevels={() => setScreen({ name: 'levels' })}
@@ -231,6 +236,8 @@ export default function App() {
     body = <SquadScreen initial={squad} firstTime={false} onSave={storeSquad} onBack={() => setScreen({ name: 'playtype' })} owned={wallet.owned} mp={wallet.mp} />;
   } else if (screen.name === 'market') {
     body = <MarketScreen wallet={wallet} token={user?.token ?? null} squad={squad} onReply={(r) => applyReply(r)} onBack={() => setScreen({ name: 'playtype' })} />;
+  } else if (screen.name === 'packs') {
+    body = <PacksScreen wallet={wallet} token={user?.token ?? null} onReply={(r) => applyReply(r)} onBack={() => setScreen({ name: 'playtype' })} />;
   } else if (screen.name === 'ranking') {
     body = <RankingScreen token={user?.token ?? null} me={user?.nickname ?? ''} tick={rankTick} onBack={() => setScreen({ name: 'playtype' })} />;
   } else if (screen.name === 'levels') {

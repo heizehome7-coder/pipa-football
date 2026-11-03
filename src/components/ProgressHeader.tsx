@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { AccountError, accountApi, type AccountReply } from '../online/account';
 import { PROGRESSION } from '../progress/progression';
 import { formatFV, formatMP, type Progress } from '../players/ownership';
-import { SoundToggle } from './SoundToggle';
 
 /** LV. 14 + a small XP bar (740 / 895 XP) — MAX LEVEL at 50 */
 export function XpBar({ progress, big, onClick }: { progress: Progress; big?: boolean; onClick?: () => void }) {
@@ -37,7 +36,6 @@ export function ProgressHeader({ nickname, mp, progress, onLevels }: { nickname:
     <div className="phead" data-testid="progress-header">
       <div className="phead-row">
         <b className="phead-name">{nickname}</b>
-        <SoundToggle />
       </div>
       {progress && (
         <div className="phead-row">

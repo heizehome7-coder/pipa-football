@@ -71,6 +71,7 @@ export function PlayTypeScreen({
   onOnline,
   onSquad,
   onMarket,
+  onPacks,
   onDeveloper,
   onRanking,
   onLevels,
@@ -84,6 +85,8 @@ export function PlayTypeScreen({
   onOnline: () => void;
   onSquad: () => void;
   onMarket: () => void;
+  /** UPDATE 8: PLAYER PACKS */
+  onPacks: () => void;
   /** UPDATE 6 patch: DEVELOPER MODE (server-checked code) */
   onDeveloper: () => void;
   /** UPDATE 7 */
@@ -168,6 +171,24 @@ export function PlayTypeScreen({
             ›
           </span>
         </button>
+        <button className="mode-card play-card packs-card" onClick={onPacks} data-testid="play-packs">
+          <div className="play-icon">
+            <svg viewBox="0 0 64 64" aria-hidden>
+              <rect x="16" y="8" width="32" height="48" rx="5" fill="none" stroke="currentColor" strokeWidth="3" />
+              <path d="M16 22 H48" stroke="currentColor" strokeWidth="3" />
+              <path d="M32 30 l4 8 8 1 -6 5 2 8 -8 -4 -8 4 2 -8 -6 -5 8 -1z" fill="var(--lime)" />
+            </svg>
+            {!!progress?.packs && <span className="pack-count" data-testid="home-pack-count">{progress.packs}</span>}
+          </div>
+          <div className="mode-text">
+            <strong>PACKS</strong>
+            <span className="mode-ko">플레이어 팩</span>
+            <span className="mode-desc">{progress?.packs ? `열 수 있는 팩 ${progress.packs}개` : '팩을 열어 새 선수 획득'}</span>
+          </div>
+          <span className="mode-arrow" aria-hidden>
+            ›
+          </span>
+        </button>
         <button className="mode-card play-card" onClick={onRanking} data-testid="play-ranking">
           <div className="play-icon">
             <svg viewBox="0 0 64 64" aria-hidden>
@@ -195,7 +216,7 @@ export function PlayTypeScreen({
           <div className="mode-text">
             <strong>개발자 모드</strong>
             <span className="mode-ko">DEVELOPER MODE</span>
-            <span className="mode-desc">접속자 · 전적 · MP 관리</span>
+            <span className="mode-desc">접속자 · 전적 · MP · 팩 관리</span>
           </div>
           <span className="mode-arrow" aria-hidden>
             ›

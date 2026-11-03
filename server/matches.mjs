@@ -80,6 +80,7 @@ export function createMatchManager(o) {
       // a dive picked while the kicker is still aiming stays secret until the shot is struck
       dive: m.phase === 'aim' ? null : m.dive,
       result: m.result,
+      keeperX: m.keeperX ?? 0,
       final: m.final,
       ended: m.ended,
       serverNow: now(),
@@ -121,6 +122,7 @@ export function createMatchManager(o) {
     m.result = null;
     m.shot = null;
     m.dive = null;
+    m.keeperX = 0;
     m.round = 1;
     m.game = (m.game || 0) + 1; // rematches are new games of the same match (reward key)
     m.firstKicker = random() < 0.5 ? 0 : 1; // the server decides who kicks first
@@ -134,6 +136,8 @@ export function createMatchManager(o) {
     m.phase = 'aim';
     m.shot = null;
     m.dive = null;
+    // UPDATE 8: every round starts with the keeper in the middle of his line
+    m.keeperX = 0;
     m.result = null;
     m.aimDeadline = now() + R.aimTimeoutMs;
     emit(m, event);
@@ -194,7 +198,7 @@ export function createMatchManager(o) {
   }
 
   function roundOpts(m) {
-    return { mode: m.mode, spot: m.mode === 'freekick' ? judge.freeKickSpotIndex(m.id, m.round) : 0 };
+    return { mode: m.mode, spot: m.mode === 'freekick' ? judge.freeKickSpotIndex(m.id, m.round) : 0, keeperX: m.shot?.keeperX ?? judge.clampKeeperX(m.keeperX ?? 0) };
   }
 
   function finishMatch(m) {
@@ -380,11 +384,24 @@ export function createMatchManager(o) {
         input.knuckle = msg.shot.knuckle;
         input.kseed = msg.shot.kseed >>> 0;
       }
-      m.shot = { round: m.round, input, runStart: now() + R.shotLeadMs, seed };
+      // UPDATE 8: the keeper's line position is fixed the moment the shot is struck
+      m.shot = { round: m.round, input, runStart: now() + R.shotLeadMs, seed, keeperX: judge.clampKeeperX(m.keeperX ?? 0) };
       m.flightMs = Math.round(sim.decidedAt * 1000);
       m.phase = 'shot';
       emit(m, 'shot:start');
       scheduleJudge(m);
+      return true;
+    }
+
+    // UPDATE 8: keeper joystick — along the goal line only, clamped here, ~12 Hz, aim phase only
+    if (t === 'keeper:move') {
+      if (m.phase !== 'aim' || msg.round !== m.round || keeperOf(m).peer !== peer) return true;
+      const t0 = now();
+      if (m.lastMoveAt && t0 - m.lastMoveAt < 40) return true; // flood guard (25/s max)
+      m.lastMoveAt = t0;
+      m.keeperX = judge.clampKeeperX(msg.x);
+      const k = kickerOf(m);
+      if (k.connected) send(k.peer, { t: 'keeper:move', matchId: m.id, round: m.round, x: m.keeperX });
       return true;
     }
 

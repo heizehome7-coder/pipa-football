@@ -114,6 +114,14 @@ export function shotModifiers(p: PlayerDef | null | undefined, c: ShotContext): 
     case 'CONTROLLED_DRIVE':
       if (straight) (errMul *= 0.75), (special = c.power > 0.6 ? p.special : null);
       break;
+    // UPDATE 8
+    case 'KOREAN_LEGEND':
+      if (c.power > 0.7 && !curl) (speedMul *= 1.04), (errMul *= 0.85), (special = p.special);
+      else if (c.low) (errMul *= 0.8), (special = p.special);
+      break;
+    case 'RED_FINISHER':
+      if (c.power > 0.65 && !c.lofted) (speedMul *= 1.03), (errMul *= 0.85), (special = straight ? p.special : null);
+      break;
     case 'BALANCED_FINISH':
       errMul *= 0.95;
       break;

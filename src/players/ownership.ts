@@ -15,6 +15,15 @@ export interface Wallet {
   listed?: string[];
   /** UPDATE 7: level / XP / FV / daily login (server accounts only) */
   progress?: Progress | null;
+  /** UPDATE 8: every market-player card, each with its own id (duplicates possible) */
+  cards?: OwnedCard[];
+}
+
+export interface OwnedCard {
+  id: string;
+  playerId: string;
+  /** 'market' | 'pack' | 'legacy' … */
+  source: string | null;
 }
 
 export interface Progress {
@@ -39,10 +48,12 @@ export function walletFrom(r: {
   claimedLevelRewards?: number[];
   unopenedPacks?: number;
   daily?: Progress['daily'];
+  cards?: OwnedCard[];
 }): Wallet {
   return {
     mp: r.mp ?? 0,
     owned: makeOwned(r.owned ?? []),
+    cards: r.cards ?? (r.owned ?? []).map((playerId, i) => ({ id: `${playerId}#${i}`, playerId, source: null })),
     listed: r.listed ?? [],
     progress:
       typeof r.level === 'number'

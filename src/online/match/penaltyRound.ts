@@ -5,7 +5,7 @@ import { KickGame, type KeeperDiveCommand, type KickGameOptions, type KickSpot }
 import { DefensiveWall } from '../../game/entities/DefensiveWall';
 import { freeKickSpot } from '../../game/FreeKickGame';
 import type { DiveDir, MatchMode, RoundOutcome, WireDive } from './protocol';
-import { DIVE_DIRS, roundSeed } from './protocol';
+import { clampKeeperX, DIVE_DIRS, roundSeed } from './protocol';
 import { BALL } from '../../game/physics/BallPhysics';
 import { getPlayer } from '../../players/players';
 
@@ -32,9 +32,18 @@ export class OnlineKickGame extends KickGame {
     looks: OnlineLooks = {},
     readonly mode: MatchMode = 'penalty',
     private spotIndex = 0,
+    /** UPDATE 8: where the keeper stands on his line (joystick, server-clamped) */
+    keeperX = 0,
   ) {
     super(mode === 'freekick' ? MODES.freekick : MODES.penalty, { visuals, nickname, seed, humanKeeper: true, ...looks });
+    // along the goal line only — the depth (z) never changes
+    this.keeperLineX = clampKeeperX(keeperX);
+    this.keeper.home.x = this.keeperLineX;
+    this.keeper.reset();
   }
+
+  /** UPDATE 8: the keeper's spot on his goal line for this shot */
+  readonly keeperLineX: number;
 
   protected createWall() {
     // NB: called from the base constructor (before field initialisers run)
@@ -88,8 +97,10 @@ const TARGETS = Object.fromEntries(
 
 export const PENALTY_CONTACT_TIME = 0.93;
 
-export function diveCommand(d: { dir: DiveDir; at: number }): KeeperDiveCommand {
-  const [x, y] = TARGETS[d.dir];
+/** UPDATE 8: dives are relative to where the keeper stands on his line (`keeperX`) */
+export function diveCommand(d: { dir: DiveDir; at: number }, keeperX = 0): KeeperDiveCommand {
+  const [bx, y] = TARGETS[d.dir];
+  const x = Math.max(-3.9, Math.min(3.9, bx + keeperX));
   // -1 = picked before the shot → goes at contact (the step clamps to contact anyway)
   return { x, y, at: d.at < 0 ? 0 : d.at };
 }
@@ -133,13 +144,13 @@ export function simulateRound(
   /** UPDATE 5: the defending player's goalkeeper (his DIVING/REACH apply; never a direction) */
   keeperId?: string | null,
   /** UPDATE 6: FREE KICK DUEL (spot from freeKickSpotIndex) */
-  opts: { mode?: MatchMode; spot?: number } = {},
+  opts: { mode?: MatchMode; spot?: number; keeperX?: number } = {},
 ): RoundSimulation {
   const kp = getPlayer(keeperId);
-  const g = new OnlineKickGame('KICKER', seed, false, { keeperStats: kp?.gk, keeperSpecial: kp?.gk ? kp.special : null }, opts.mode ?? 'penalty', opts.spot ?? 0);
+  const g = new OnlineKickGame('KICKER', seed, false, { keeperStats: kp?.gk, keeperSpecial: kp?.gk ? kp.special : null }, opts.mode ?? 'penalty', opts.spot ?? 0, opts.keeperX ?? 0);
   g.start();
   if (!g.shoot(shot)) throw new Error('shot rejected');
-  if (dive) g.setKeeperDive(diveCommand(dive));
+  if (dive) g.setKeeperDive(diveCommand(dive, g.keeperLineX));
   let t = 0;
   while (!g.outcome && t < 8) {
     g.update(STEP);
