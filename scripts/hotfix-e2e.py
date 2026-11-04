@@ -141,7 +141,7 @@ try:
         nums = pg.eval_on_selector_all('[data-testid=dev-sq-order] .pcard-order', 'els => els.map(e => e.innerText.trim())')
         check('PENALTY ORDER 1–5 = the server squad (not this phone’s local squad)', order == KID['penaltyOrder'] and nums == ['1', '2', '3', '4', '5'], f'{order} {nums}')
         gk = pg.eval_on_selector_all('[data-testid=dev-sq-gk] [data-testid=dev-sq-card]', 'els => els.map(e => [e.dataset.id, e.innerText])')
-        check('GOALKEEPER card: Yashin · OVR · GK · BLACK SPIDER', len(gk) == 1 and gk[0][0] == 'yashin' and 'YASHIN' in gk[0][1] and 'BLACK SPIDER' in gk[0][1] and '99' in gk[0][1] and 'GK' in gk[0][1], str(gk))
+        check('GOALKEEPER card: Yashin · OVR · GK · BLACK SPIDER', len(gk) == 1 and gk[0][0] == 'yashin' and '야신' in gk[0][1] and 'BLACK SPIDER' in gk[0][1] and '99' in gk[0][1] and 'GK' in gk[0][1], str(gk))
         fk = pg.eval_on_selector_all('[data-testid=dev-sq-fk] [data-testid=dev-sq-card]', 'els => els.map(e => [e.dataset.id, e.innerText])')
         check('FREE KICK TAKER card: Son (+ his special)', len(fk) == 1 and fk[0][0] == 'son' and '⚡' in fk[0][1], str(fk))
         cards = pg.eval_on_selector_all('[data-testid=dev-sq-user] [data-testid=dev-sq-card]', 'els => els.map(e => e.innerText)')

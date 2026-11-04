@@ -115,9 +115,9 @@ try:
 
         P = ctx().new_page()
         login(P, 'PACKER')
-        check('UPDATE 8 badge', P.inner_text('[data-testid=version-badge]') == 'UPDATE 8' and game_version() == 8)
+        check('UPDATE badge (current version)', P.inner_text('[data-testid=version-badge]') == f'UPDATE {game_version()}' and game_version() >= 8)
         order = P.eval_on_selector_all('.mode-list .mode-card', 'els => els.map(e => e.dataset.testid)')
-        check('HOME: 혼자서 · 온라인 · SQUAD · TRANSFER MARKET · PACKS · RANKING · DEVELOPER MODE', order == ['play-solo', 'play-online', 'play-squad', 'play-market', 'play-packs', 'play-ranking', 'play-developer'], order)
+        check('HOME: 혼자서 · 온라인 · SQUAD · TRANSFER MARKET · PACKS · (UPDATE 9: EVENT CENTER) · RANKING · DEVELOPER MODE', [x for x in order if x != 'play-events'] == ['play-solo', 'play-online', 'play-squad', 'play-market', 'play-packs', 'play-ranking', 'play-developer'], order)
         check('no SOUND toggle anywhere', P.locator('[data-testid=sound-toggle]').count() == 0)
         P.click('[data-testid=play-packs]')
         P.wait_for_selector('[data-testid=packs]')
@@ -185,7 +185,7 @@ try:
         check('pack order: OPEN → light → COUNTRY → POSITION → CLUB/ICON → CARD', seq == ['charge', 'country', 'position', 'club', 'flash', 'card'], seq)
         vals = {x[0]: x[1] for x in ph}
         check('KIM INJIK: KOREA → ST → ICON → KIM INJIK card', vals.get('country') == 'KOR' and vals.get('position') == 'ST' and vals.get('club') == 'ICON' and card[0] == 'kiminjik', vals)
-        check('final card: OVR · name · position · country · ICON · abilities · special', all(t in card[1] for t in ['INJIK', 'ST', 'KOREA', 'ICON', 'POWER', 'ACC', 'CURVE', 'FK', 'KOREAN LEGEND']), card[1].replace('\n', ' ')[:200])
+        check('final card: OVR · name · position · country · ICON · abilities · special', all(t in card[1] for t in ['김인직', 'ST', 'KOREA', 'ICON', 'POWER', 'ACC', 'CURVE', 'FK', 'KOREAN LEGEND']), card[1].replace('\n', ' ')[:200])
         check('ICON tier glow (premium gold) for an ICON', ph[-1][2] == 'icon', ph[-1])
         check('AVAILABLE ×4 after one open', P.get_attribute('[data-testid=pack-available]', 'data-count') == '4')
 
@@ -212,7 +212,7 @@ try:
         P.click('[data-testid=play-market]')
         P.wait_for_selector('[data-testid=market-grid]')
         n = P.locator('[data-testid=market-grid] [data-testid=player-card]').count()
-        check('TRANSFER MARKET: 150 players (100 + 50 new)', n == 150, n)
+        check('TRANSFER MARKET: 200 players (UPDATE 9: 150 + 50 new)', n == 200, n)
         P.click('[data-testid=market-tab-mine]')
         rows = P.eval_on_selector_all('[data-testid=mine-row][data-card]:not([data-card=""])', 'els => els.map(e => [e.dataset.id, e.dataset.card, e.dataset.tag, e.innerText.includes("PACK")])')
         mods = [r for r in rows if r[0] == 'modric']

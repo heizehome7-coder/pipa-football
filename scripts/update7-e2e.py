@@ -219,7 +219,7 @@ try:
         B.wait_for_selector('[data-testid=buy-confirm]')
         check('buy confirm says it is a user listing', B.is_visible('[data-testid=confirm-source]'))
         B.click('[data-testid=confirm-buy]')
-        v, _ = wait_for(lambda: 'Félix 영입 완료' in B.inner_text('[data-testid=market-toast]'), 15)
+        v, _ = wait_for(lambda: '주앙 펠릭스 영입 완료' in B.inner_text('[data-testid=market-toast]'), 15)
         check('BUYER: 영입 완료 (paid 180,000,000)', bool(v) and B.get_attribute('[data-testid=mp-badge]', 'data-mp') == str(2_000_000_000 - 180_000_000))
         v, _ = wait_for(lambda: S.is_visible('[data-testid=sale-toast]'), 10)
         st = S.inner_text('[data-testid=sale-toast]') if v else ''

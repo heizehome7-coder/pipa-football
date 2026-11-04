@@ -11,7 +11,7 @@ import { getPlayer } from '../src/players/players';
 import type { DiveDir } from '../src/online/match/protocol';
 
 const json = process.argv.includes('--json');
-const KEEPERS: (string | null)[] = [null, 'raya', 'maignan', 'courtois', 'alisson', 'donnarumma', 'yashin'];
+const KEEPERS: (string | null)[] = process.env.KEEPERS ? process.env.KEEPERS.split(',').map((s) => (s === 'null' ? null : s)) : [null, 'raya', 'maignan', 'courtois', 'neuer', 'alisson', 'donnarumma', 'yashin'];
 
 /** reach envelope of one dive: furthest glove x / highest glove y, airtime and when the hips hit the grass */
 function envelope(id: string | null, x: number, y: number) {

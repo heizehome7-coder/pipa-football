@@ -18,9 +18,10 @@ SQUADS = {
     'HAZE': {'penaltyOrder': ['ronaldo', 'messi', 'son', 'mbappe', 'salah'], 'goalkeeperId': 'courtois', 'freeKickTakerId': 'messi'},
     'FRIEND': {'penaltyOrder': ['haaland', 'kane', 'yamal', 'neymar', 'vinicius'], 'goalkeeperId': 'alisson', 'freeKickTakerId': 'kane'},
 }
-NAMES = {'ronaldo': 'CRISTIANO RONALDO', 'messi': 'LIONEL MESSI', 'son': 'SON HEUNG-MIN', 'mbappe': 'KYLIAN MBAPPÉ', 'salah': 'MOHAMED SALAH',
-         'haaland': 'ERLING HAALAND', 'kane': 'HARRY KANE', 'yamal': 'LAMINE YAMAL', 'neymar': 'NEYMAR JR.', 'vinicius': 'VINÍCIUS JÚNIOR',
-         'courtois': 'THIBAUT COURTOIS', 'alisson': 'ALISSON BECKER'}
+# UPDATE 9: player names are shown in Korean (the shirt stays English)
+NAMES = {'ronaldo': '크리스티아누 호날두', 'messi': '리오넬 메시', 'son': '손흥민', 'mbappe': '킬리안 음바페', 'salah': '모하메드 살라',
+         'haaland': '엘링 홀란', 'kane': '해리 케인', 'yamal': '라민 야말', 'neymar': '네이마르 주니오르', 'vinicius': '비니시우스 주니오르',
+         'courtois': '티보 쿠르투아', 'alisson': '알리송 베케르'}
 
 BASE = os.environ.get('PIPA_URL', 'http://localhost:8787/')
 OUT = sys.argv[1] if len(sys.argv) > 1 else 'match-shots'
@@ -268,7 +269,7 @@ with sync_playwright() as p:
     nb = ' | '.join(B.evaluate('window.__names'))
     missing = [k for k, g in want_names if k not in na or k not in nb]
     check('UPDATE 4: every round shows the right kicker (each side’s own order) on both phones', not missing, missing or want_names[:4])
-    check('UPDATE 4: the defending side’s own GK is shown (COURTOIS / ALISSON)', 'GK · THIBAUT COURTOIS' in na and 'GK · ALISSON BECKER' in na)
+    check('UPDATE 4: the defending side’s own GK is shown (COURTOIS / ALISSON)', 'GK · 티보 쿠르투아' in na and 'GK · 알리송 베케르' in na)
     check('9. roles alternate every round (A,B,A,B…)', all(roles_seen[i] != roles_seen[i + 1] for i in range(len(roles_seen) - 1)) and len(roles_seen) == 10, ''.join(roles_seen))
     check('8. all 10 results identical on both screens', len(outcomes) == 10)
     check('6. each phone’s own replay matched the server’s result (deterministic sync)', synced_local >= 9, f'{synced_local}/{len(outcomes)} · A {la} · B {lb}')

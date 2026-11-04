@@ -74,7 +74,7 @@ with sync_playwright() as p:
     pg.click('[data-testid=player-card][data-id="kane"] .pcard-info')
     pg.wait_for_selector('[data-testid=player-detail]')
     det = pg.inner_text('[data-testid=player-detail]')
-    check('tap ⓘ → detail: name, position, country, all 7 abilities + SPECIAL ABILITY, SELECT', 'Harry Kane' in det and 'ENGLAND' in det and 'SELECT' in det
+    check('tap ⓘ → detail: name (Korean), position, country, all 7 abilities + SPECIAL ABILITY, SELECT', '해리 케인' in det and 'ENGLAND' in det and 'SELECT' in det
           and all(k in det for k in ['POWER', 'ACCURACY', 'CURVE', 'KNUCKLE', 'LOW SHOT', 'FREE KICK', 'COMPOSURE']) and 'PENALTY PRECISION' in det)
     pg.screenshot(path=f'{OUT}/03_detail.png')
     pg.click('text=닫기')
@@ -108,7 +108,7 @@ with sync_playwright() as p:
     pg.click('[data-testid=player-card][data-id="ronaldo"] .pcard-hit')
     pg.wait_for_function('window.__PIPA && window.__names.length > 0', timeout=15000)
     pg.screenshot(path=f'{OUT}/07_penalty_ronaldo.png')
-    check('kicker name shown: CRISTIANO RONALDO', any('CRISTIANO RONALDO' in n for n in names()), names())
+    check('kicker name shown: 크리스티아누 호날두', any('크리스티아누 호날두' in n for n in names()), names())
     d = pg.evaluate('window.__PIPA.debug()')
     check('the existing penalty game runs (aim phase, drawn shots)', d['phase'] == 'aim')
     time.sleep(2.6)
@@ -121,8 +121,8 @@ with sync_playwright() as p:
     pg.click('.hud-back')
     pg.wait_for_selector('text=FREE KICK')
     pg.click('text=FREE KICK')
-    pg.wait_for_function("window.__names.some(n => n.includes('LIONEL MESSI'))", timeout=15000)
-    check('FREE KICK → my free-kick taker appears (LIONEL MESSI)', any('LIONEL MESSI' in n for n in names()), names())
+    pg.wait_for_function("window.__names.some(n => n.includes('리오넬 메시'))", timeout=15000)
+    check('FREE KICK → my free-kick taker appears (리오넬 메시)', any('리오넬 메시' in n for n in names()), names())
     time.sleep(1.0)
     pg.screenshot(path=f'{OUT}/08_freekick_messi.png')
     fk = pg.evaluate('window.__PIPA.debug()')

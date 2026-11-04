@@ -143,7 +143,7 @@ function rate(id: string | null, mode: 'right' | 'wrong' | 'late', n = 360) {
 // ── 6. Lev Yashin — BLACK SPIDER ───────────────────────────────────────
 {
   const y = getPlayer('yashin')!;
-  check('Yashin stats 99/99/99/99/97/99/98 + BLACK SPIDER', JSON.stringify(Object.values(y.gk!)) === JSON.stringify([99, 99, 99, 99, 97, 99, 98]) && y.special === 'BLACK_SPIDER' && !!SPECIALS.BLACK_SPIDER, { gk: y.gk, special: y.special, ovr: ovr(y) });
+  check('Yashin stats 99/99/99/99/98/99/99 (UPDATE 9) + BLACK SPIDER', JSON.stringify(Object.values(y.gk!)) === JSON.stringify([99, 99, 99, 99, 98, 99, 99]) && y.special === 'BLACK_SPIDER' && !!SPECIALS.BLACK_SPIDER, { gk: y.gk, special: y.special, ovr: ovr(y) });
   check('other keepers keep their identity', getPlayer('courtois')!.special === 'LONG_REACH' && getPlayer('donnarumma')!.special === 'HIGH_REACH' && getPlayer('alisson')!.special === 'LOW_SAVE' && getPlayer('martinez')!.special === 'PENALTY_SPECIALIST' && getPlayer('neuer')!.special === 'POSITION_MASTER');
   // medium pace into the middle of his gloves → held in the air; power → parried
   let caught = 0;
