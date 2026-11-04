@@ -3,7 +3,7 @@ import { FIELD, type ModeConfig } from '../core/config';
 import { clamp, lerp } from '../core/math';
 import type { ShotInput } from '../core/types';
 import { calculateShotParameters, shotProfile, type ShotIntent } from '../physics/BallPhysics';
-import { isInstep, shotModifiers, strokeHash } from '../../players/abilities';
+import { isInstep, knuckleStroke, shotModifiers, strokeHash } from '../../players/abilities';
 import type { PlayerDef } from '../../players/players';
 
 export interface SwipeSample {
@@ -186,7 +186,9 @@ export function readStroke(samples: SwipeSample[], ctx: StrokeContext, cfg: Mode
   // seen in perspective, an arched path drifts a little sideways on screen just from
   // being arched: discount that part so an arch over the wall stays a straight shot
   const arch = archPx / chord;
-  const shot = shotProfile(Math.sign(bend) * Math.max(0, Math.abs(bend) - Math.min(0.06, arch * 0.6)), cfg);
+  let shot = shotProfile(Math.sign(bend) * Math.max(0, Math.abs(bend) - Math.min(0.06, arch * 0.6)), cfg);
+  // UPDATE 9: KNUCKLE DRIVE — a fast, nearly straight stroke (light curve) becomes the knuckle profile
+  if (knuckleStroke(kicker, shot.level, power, lofted)) shot = { profile: 'STRAIGHT', spin: 0, level: 0 };
   // 6) UPDATE 5: the kicker's abilities — small modifiers, never overriding the stroke
   const seed = strokeHash(samples);
   const low = !lofted && T.y < 0.75;

@@ -4,7 +4,7 @@ import { mulberry32 } from './core/math';
 import type { Phase, ShotInput, ShotOutcome } from './core/types';
 import { Ball } from './entities/Ball';
 import { DefensiveWall } from './entities/DefensiveWall';
-import { Goalkeeper, PERFECT_WINDOW, type Collider } from './entities/Goalkeeper';
+import { Goalkeeper, PERFECT_WINDOW, BLACK_SPIDER, type Collider } from './entities/Goalkeeper';
 
 /** UPDATE 8: extra weight-shift time before an online free-kick dive (s) — reach unchanged */
 export const FK_DIVE_DELAY = 0.14;
@@ -363,7 +363,7 @@ export abstract class KickGame {
         // UPDATE 7 hotfix — BLACK SPIDER: a medium-pace ball into the middle of both gloves
         // is held in the air (power shots and fingertip touches are still parried)
         const aerial = a === 'dive' && this.keeper.special === 'BLACK_SPIDER' && !fingertip &&
-          speed < this.cfg.keeper.catchSpeed * 0.92 && this.keeper.ballInBothHands(this.ballPos);
+          speed < this.cfg.keeper.catchSpeed * BLACK_SPIDER.catchSpeed && this.keeper.ballInBothHands(this.ballPos); // UPDATE 9: surer hands
         if (((a === 'catch' || a === 'scoop' || a === 'jump') && speed < this.cfg.keeper.catchSpeed && !fingertip) || aerial) {
           this.caught = true;
           this.ballVel.set(0, 0, 0);

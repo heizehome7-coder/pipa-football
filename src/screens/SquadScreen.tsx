@@ -173,7 +173,7 @@ export function SquadScreen({
                   <PlayerAvatar player={p} size={40} />
                 </span>
                 <span className="taker-text">
-                  <b>{p.name}</b>
+                  <b>{p.nameKo}</b>
                   <span>
                     {p.positions.join(' / ')} · <Flag code={p.country} size={10} /> {COUNTRY_NAME[p.country]}
                   </span>
@@ -182,7 +182,7 @@ export function SquadScreen({
                   className={`fk-toggle ${fk === id ? 'on' : ''}`}
                   onClick={() => setFk(id)}
                   aria-pressed={fk === id}
-                  aria-label={`${p.name} 프리킥 키커로 지정`}
+                  aria-label={`${p.nameKo} 프리킥 키커로 지정`}
                   data-testid="fk-toggle"
                 >
                   ⭐{fk === id ? ' FREE KICK' : ''}
@@ -209,7 +209,7 @@ export function SquadScreen({
               <PlayerAvatar player={keeper} size={40} />
             </span>
             <span className="taker-text">
-              <b>{keeper.name}</b>
+              <b>{keeper.nameKo}</b>
               <span>
                 GK · <Flag code={keeper.country} size={10} /> {COUNTRY_NAME[keeper.country]}
               </span>
@@ -239,8 +239,11 @@ function DetailCard({ player, selected, onToggle, onClose }: { player: PlayerDef
             <PlayerAvatar player={player} size={72} />
           </span>
           <div className="detail-text">
-            <b>{player.name}</b>
-            <span>{player.nameKo}</span>
+            <b>{player.nameKo}</b>
+            <span className="detail-shirt">
+              {player.shirt}
+              {player.isIcon ? ' · ICON' : ''}
+            </span>
             <span>
               {player.positions.join(' / ')} · <Flag code={player.country} size={12} /> {COUNTRY_NAME[player.country]} · #{player.number}
             </span>

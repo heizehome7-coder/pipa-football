@@ -270,6 +270,26 @@ export function Flag({ code, size = 18 }: { code: CountryCode; size?: number }) 
         </>
       );
       break;
+    // UPDATE 9
+    case 'USA':
+      body = (
+        <>
+          {[0, 1, 2, 3, 4, 5, 6].map((i) => (
+            <rect key={i} width="30" height={20 / 13} y={(i * 2 * 20) / 13} fill="#b22234" />
+          ))}
+          <rect width="30" height="20" fill="#ffffff" opacity="0" />
+          <rect width="13" height={(20 * 7) / 13} fill="#3c3b6e" />
+        </>
+      );
+      break;
+    case 'MEX':
+      body = (
+        <>
+          {stripesV('#006847', '#ffffff', '#ce1126')}
+          <circle cx="15" cy="10" r="2" fill="#8c5a2b" />
+        </>
+      );
+      break;
     // UPDATE 8
     case 'SRB':
       body = stripesH('#c6363c', '#0c4076', '#ffffff');
@@ -459,7 +479,7 @@ export function PlayerCard({
       data-id={player.id}
       data-selected={selected ? '1' : '0'}
     >
-      <button className="pcard-hit" onClick={onToggle} aria-pressed={selected} aria-label={`${player.name} ${selected ? '선택 해제' : '선택'}`} />
+      <button className="pcard-hit" onClick={onToggle} aria-pressed={selected} aria-label={`${player.nameKo} ${selected ? '선택 해제' : '선택'}`} />
       <div className="pcard-top">
         <span className="pcard-ovr" data-testid="card-ovr">
           <b>{ovr(player)}</b>
@@ -477,8 +497,8 @@ export function PlayerCard({
         <PlayerAvatar player={player} size={compact ? 74 : 92} />
       </div>
       <div className="pcard-name">
-        <span>{player.first}</span>
-        <b>{player.last}</b>
+        <span>{player.koFirst || '\u00a0'}</span>
+        <b>{player.koLast}</b>
       </div>
       <div className="pcard-meta">
         <span className="pcard-pos">{player.positions.join(' / ')}</span>
@@ -510,7 +530,7 @@ export function PlayerCard({
         <div className="pcard-state">{selected ? '✓ SELECTED' : 'SELECT'}</div>
       )}
       {onInfo && (
-        <button className="pcard-info" onClick={onInfo} aria-label={`${player.name} 상세`}>
+        <button className="pcard-info" onClick={onInfo} aria-label={`${player.nameKo} 상세`}>
           i
         </button>
       )}

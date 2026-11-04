@@ -33,6 +33,10 @@ export interface Progress {
   fv: number;
   claimed: number[];
   packs: number;
+  /** UPDATE 9: GOOD PLAYER PACK / LEGEND PACK and the 홍 나와라 뚝딱 tokens */
+  goodPacks: number;
+  legendPacks: number;
+  hong: { bronze: number; silver: number; gold: number; red: number };
   daily: { canClaim: boolean; streak: number; nextDay: number; today: string } | null;
 }
 
@@ -47,6 +51,9 @@ export function walletFrom(r: {
   fv?: number;
   claimedLevelRewards?: number[];
   unopenedPacks?: number;
+  goodPacks?: number;
+  legendPacks?: number;
+  hong?: Progress['hong'];
   daily?: Progress['daily'];
   cards?: OwnedCard[];
 }): Wallet {
@@ -57,7 +64,7 @@ export function walletFrom(r: {
     listed: r.listed ?? [],
     progress:
       typeof r.level === 'number'
-        ? { level: r.level, xp: r.xp ?? 0, xpNext: r.xpNext ?? 0, fv: r.fv ?? 0, claimed: r.claimedLevelRewards ?? [], packs: r.unopenedPacks ?? 0, daily: r.daily ?? null }
+        ? { level: r.level, xp: r.xp ?? 0, xpNext: r.xpNext ?? 0, fv: r.fv ?? 0, claimed: r.claimedLevelRewards ?? [], packs: r.unopenedPacks ?? 0, goodPacks: r.goodPacks ?? 0, legendPacks: r.legendPacks ?? 0, hong: r.hong ?? { bronze: 0, silver: 0, gold: 0, red: 0 }, daily: r.daily ?? null }
         : null,
   };
 }

@@ -370,7 +370,13 @@ export function createMatchManager(o) {
         log(`[${m.id}] shot ignored (phase ${m.phase}, round ${msg.round}/${m.round})`);
         return true;
       }
-      if (!judge.validShot(msg.shot)) return send(peer, { t: 'match:error', code: 'bad_shot' }), true;
+      // UPDATE 9: checked against the player who really takes this kick (his abilities + special)
+      const kk = kickerOf(m);
+      const takerId = judge.roundTaker(kk.squad ?? null, m.mode, kk.shots);
+      if (!judge.validShotFor(msg.shot, takerId, m.mode)) {
+        log(`[${m.id}] shot rejected for ${takerId} (outside his shot profile)`);
+        return send(peer, { t: 'match:error', code: 'bad_shot' }), true;
+      }
       const seed = judge.roundSeed(m.id, m.round);
       let sim;
       try {

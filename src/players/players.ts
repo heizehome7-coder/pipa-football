@@ -48,7 +48,7 @@ export type SpecialId =
   | 'PENALTY_PRECISION' | 'POWER_FINISH' | 'QUICK_LOW_CURL' | 'BALANCED_FINISH' | 'CONTROLLED_DRIVE'
   | 'LEFT_FINESSE' | 'DRIVEN_CURVE' | 'CLINICAL_FINISH' | 'SET_PIECE_CONTROL'
   | 'LONG_REACH' | 'POSITION_MASTER' | 'LOW_SAVE' | 'HIGH_REACH' | 'PENALTY_SPECIALIST' | 'BLACK_SPIDER'
-  | 'KOREAN_LEGEND' | 'RED_FINISHER';
+  | 'KOREAN_LEGEND' | 'RED_FINISHER' | 'KING_OF_FOOTBALL';
 
 export const SPECIALS: Record<SpecialId, { name: string; desc: string }> = {
   POWER_BURST: { name: 'POWER BURST', desc: '빠르고 곧은 강한 스트로크에서 더 빠른 슛' },
@@ -71,6 +71,7 @@ export const SPECIALS: Record<SpecialId, { name: string; desc: string }> = {
   LOW_SAVE: { name: 'LOW SAVE', desc: '낮은 슛에 강함' },
   HIGH_REACH: { name: 'HIGH REACH', desc: '상단 코너 슛에 강함' },
   PENALTY_SPECIALIST: { name: 'PENALTY SPECIALIST', desc: 'AI 모드에서 페널티 방향 예측력 최고' },
+  KING_OF_FOOTBALL: { name: 'KING OF FOOTBALL', desc: '정확도·파워·감아차기·낮은 슛 모두 최상급, 강하게 차도 원하는 곳으로' },
   KOREAN_LEGEND: { name: 'KOREAN LEGEND', desc: '강하고 정확한 ST 마무리 · 파워 슛 속도와 낮은 슛 정확도 보너스' },
   RED_FINISHER: { name: 'RED FINISHER', desc: '빠르고 강한 ST 마무리, 강하게 차도 흔들림이 적음' },
   BLACK_SPIDER: { name: 'BLACK SPIDER', desc: '폭발적인 다이빙과 긴 손끝 리치, 높은 체공 · 중간 속도 슛은 공중에서 잡아냄' },
@@ -110,6 +111,9 @@ export interface PlayerDef {
   primaryPosition: string;
   /** UPDATE 8: can be sold / bought / pulled from packs (free starters: false) */
   tradeable: boolean;
+  /** UPDATE 9: Korean display name on two card lines (e.g. 리오넬 / 메시) — the shirt stays English */
+  koFirst: string;
+  koLast: string;
 }
 
 export const COUNTRY_NAME: Record<CountryCode, string> = {
@@ -151,12 +155,14 @@ export const COUNTRY_NAME: Record<CountryCode, string> = {
   GUI: 'GUINEA',
   BUL: 'BULGARIA',
   UKR: 'UKRAINE',
+  USA: 'USA',
+  MEX: 'MEXICO',
 };
 
 const p = (
   id: string, name: string, nameKo: string, first: string, last: string, shirt: string, number: string,
   positions: string[], role: PlayerRole, country: CountryCode, look: PlayerLook,
-): PlayerDef => ({ id, name, nameKo, first, last, shirt, number, positions, role, country, look, special: 'BALANCED_FINISH', foot: 'R', starter: true, isIcon: false, club: null, primaryPosition: positions[0], tradeable: false });
+): PlayerDef => ({ id, name, nameKo, first, last, shirt, number, positions, role, country, look, special: 'BALANCED_FINISH', foot: 'R', starter: true, isIcon: false, club: null, primaryPosition: positions[0], tradeable: false, koFirst: '', koLast: nameKo });
 
 const L = (skin: number, hair: number, hairStyle: HairStyle, beard: Beard = 'none', height = 1, build = 1): PlayerLook => ({ skin, hair, hairStyle, beard, height, build });
 
@@ -204,9 +210,10 @@ const ABILITIES: Record<string, { stats?: FieldStats; gk?: GkStats; special: Spe
   debruyne: { stats: F(96, 96, 97, 92, 91, 98, 97), special: 'DRIVEN_CURVE' },
   lewandowski: { stats: F(95, 98, 87, 80, 97, 85, 99), special: 'CLINICAL_FINISH' },
   bruno: { stats: F(92, 95, 94, 89, 90, 97, 97), special: 'SET_PIECE_CONTROL' },
-  courtois: { gk: G(96, 96, 99, 96, 93, 99, 92), special: 'LONG_REACH' },
-  neuer: { gk: G(94, 94, 95, 99, 94, 95, 91), special: 'POSITION_MASTER' },
-  alisson: { gk: G(98, 96, 94, 97, 99, 94, 95), special: 'LOW_SAVE' },
+  // UPDATE 9: the three free starter keepers a little weaker (shown stats = real performance)
+  courtois: { gk: G(93, 93, 95, 93, 90, 95, 90), special: 'LONG_REACH' },
+  neuer: { gk: G(92, 92, 92, 96, 91, 92, 89), special: 'POSITION_MASTER' },
+  alisson: { gk: G(95, 93, 91, 94, 95, 91, 92), special: 'LOW_SAVE' },
   donnarumma: { gk: G(97, 97, 99, 93, 94, 99, 92), special: 'HIGH_REACH' },
   martinez: { gk: G(96, 95, 95, 94, 97, 95, 99), special: 'PENALTY_SPECIALIST' },
 };
@@ -247,6 +254,24 @@ for (const pl of PLAYERS) {
   pl.club = pl.isIcon ? null : CLUB[pl.id] ?? null;
   pl.primaryPosition = PRIMARY_POSITION[pl.id] ?? pl.positions[0];
   pl.tradeable = !pl.starter;
+  // UPDATE 9: 리오넬 메시 → 리오넬 / 메시 · 손흥민 → 손흥민 (one word stays one line)
+  const sp = pl.nameKo.lastIndexOf(' ');
+  pl.koFirst = sp > 0 ? pl.nameKo.slice(0, sp) : '';
+  pl.koLast = sp > 0 ? pl.nameKo.slice(sp + 1) : pl.nameKo;
+}
+
+/** UPDATE 9: search by Korean or English name (spaces / accents / case ignored) */
+const fold = (s: string) =>
+  s
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .normalize('NFC')
+    .replace(/[^0-9a-z\u3131-\u318e\uac00-\ud7a3]/gi, '')
+    .toLowerCase();
+export function matchesSearch(p: PlayerDef, q: string): boolean {
+  const k = fold(q);
+  if (!k) return true;
+  return [p.nameKo, p.name, p.shirt, `${p.first} ${p.last}`, p.id].some((x) => fold(x).includes(k));
 }
 
 /** OVR: plain average of the seven abilities (no position weighting) */
@@ -268,7 +293,7 @@ export const PLAYER_BY_ID: Record<string, PlayerDef> = Object.fromEntries(PLAYER
 export const FIELD_PLAYERS = PLAYERS.filter((x) => x.role !== 'GK');
 export const GOALKEEPERS = PLAYERS.filter((x) => x.role === 'GK');
 export const STARTER_PLAYERS = PLAYERS.filter((x) => x.starter);
-/** the 150 TRANSFER MARKET players in catalogue order (UPDATE 8: +50) */
+/** the 200 TRANSFER MARKET players in catalogue order (UPDATE 8: +50, UPDATE 9: +50) */
 export const MARKET_PLAYERS: PlayerDef[] = MARKET_ORDER.map((id) => PLAYER_BY_ID[id]);
 export const isStarter = (id: string) => !!PLAYER_BY_ID[id]?.starter;
 export const marketPrice = (id: string): number | null => {

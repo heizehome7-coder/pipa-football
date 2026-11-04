@@ -94,8 +94,8 @@ export function PlayerCardGoalOverlay({ player }: { player: PlayerDef }) {
           <PlayerAvatar player={player} size={118} />
         </div>
         <div className="gcard-name">
-          <span>{player.first}</span>
-          <b>{player.last}</b>
+          <span>{player.koFirst || '\u00a0'}</span>
+          <b>{player.koLast}</b>
         </div>
         <div className="gcard-stats">
           {keyStats(player).map(([k, v]) => (

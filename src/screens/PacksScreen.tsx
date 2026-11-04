@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { VersionBadge } from '../components/VersionBadge';
 import { Flag, PlayerAvatar, PlayerCard } from '../components/PlayerArt';
 import { AccountError, accountApi, accountsAvailable, type AccountReply, type PackPull } from '../online/account';
 import { COUNTRY_NAME, getPlayer, ovr, SPECIALS, type PlayerDef } from '../players/players';
 import type { Wallet } from '../players/ownership';
-import { PACK_CONFIG, type PackTier } from '../progress/packs';
+import { PACK_CONFIG, SPECIAL_PACKS, type PackTier } from '../progress/packs';
 
 /**
  * UPDATE 8 — PLAYER PACKS.
@@ -14,10 +14,12 @@ import { PACK_CONFIG, type PackTier } from '../progress/packs';
  */
 export function PacksScreen({ wallet, token, onReply, onBack }: { wallet: Wallet; token: string | null; onReply: (r: AccountReply) => void; onBack: () => void }) {
   const packs = wallet.progress?.packs ?? 0;
+  const good = wallet.progress?.goodPacks ?? 0;
+  const legend = wallet.progress?.legendPacks ?? 0;
   const online = accountsAvailable() && !!token;
-  const [opening, setOpening] = useState(false);
+  const [opening, setOpening] = useState<null | 'player' | 'good' | 'legend'>(null);
   const [err, setErr] = useState<string | null>(null);
-  const recent = useMemo(() => (wallet.cards ?? []).filter((c) => c.source === 'pack').slice(-6).reverse(), [wallet.cards]);
+  const recent = useMemo(() => (wallet.cards ?? []).filter((c) => c.source === 'pack' || c.source === 'good-pack' || c.source === 'legend-pack' || c.source === 'hong').slice(-6).reverse(), [wallet.cards]);
 
   return (
     <div className="screen packs" data-testid="packs">
@@ -44,17 +46,44 @@ export function PacksScreen({ wallet, token, onReply, onBack }: { wallet: Wallet
         </div>
         <button
           className="btn-primary pack-open-btn"
-          disabled={!online || packs <= 0 || opening}
+          disabled={!online || packs <= 0 || !!opening}
           onClick={() => {
             setErr(null);
-            setOpening(true);
+            setOpening('player');
           }}
           data-testid="pack-open"
         >
           OPEN
         </button>
       </div>
-      {!packs && online && <p className="pack-hint">출석 DAY 6 · DAY 7 보상으로 PLAYER PACK을 받을 수 있어요</p>}
+      {/* UPDATE 9: GOOD PLAYER PACK (감자의 제왕) · LEGEND PACK (홍 나와라 뚝딱 금) */}
+      {(['good', 'legend'] as const).map((k) => {
+        const n = k === 'good' ? good : legend;
+        return (
+          <div className={`pack-slot pack-slot-${k}`} key={k} data-testid={`pack-slot-${k}`}>
+            <PackArt kind={k} />
+            <div className="pack-info">
+              <b>{SPECIAL_PACKS[k].name}</b>
+              <span data-testid={`pack-available-${k}`} data-count={n}>
+                AVAILABLE ×{n}
+              </span>
+              <em>{k === 'good' ? '1억 MP 이상 선수 1장' : '12억 ~ 20억 레전드 1장'}</em>
+            </div>
+            <button
+              className="btn-primary pack-open-btn"
+              disabled={!online || n <= 0 || !!opening}
+              onClick={() => {
+                setErr(null);
+                setOpening(k);
+              }}
+              data-testid={`pack-open-${k}`}
+            >
+              OPEN
+            </button>
+          </div>
+        );
+      })}
+      {!packs && online && <p className="pack-hint">출석 DAY 6 · DAY 7 보상으로 PLAYER PACK을 받을 수 있어요 · GOOD PACK은 감자의 제왕, LEGEND PACK은 홍 나와라 뚝딱에서!</p>}
       {err && (
         <p className="dev-msg bad" data-testid="pack-msg">
           {err}
@@ -75,6 +104,23 @@ export function PacksScreen({ wallet, token, onReply, onBack }: { wallet: Wallet
             );
           })}
         </ul>
+        {(['good', 'legend'] as const).map((k) => (
+          <div key={k} className="pack-odds-special">
+            <p>{SPECIAL_PACKS[k].name}</p>
+            <ul>
+              {SPECIAL_PACKS[k].bands.map((b) => (
+                <li key={b.min}>
+                  <span>
+                    {short(b.min)} ~ {short(b.max)}
+                    {b.inclusive ? '' : ' 미만'}
+                  </span>
+                  <b>{b.weight}%</b>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+        <p className="pack-odds-note">구간 안에서는 몸값이 낮은 선수가 더 자주 나와요</p>
       </details>
 
       {!!recent.length && (
@@ -86,7 +132,7 @@ export function PacksScreen({ wallet, token, onReply, onBack }: { wallet: Wallet
               return p ? (
                 <span key={c.id} className="pack-recent-item">
                   <PlayerAvatar player={p} size={40} />
-                  <em>{p.last}</em>
+                  <em>{p.koLast}</em>
                 </span>
               ) : null;
             })}
@@ -97,25 +143,28 @@ export function PacksScreen({ wallet, token, onReply, onBack }: { wallet: Wallet
       {opening && token && (
         <PackOpening
           token={token}
+          kind={opening}
           onReply={onReply}
           onError={(m) => {
             setErr(m);
-            setOpening(false);
+            setOpening(null);
           }}
-          onClose={() => setOpening(false)}
+          onClose={() => setOpening(null)}
         />
       )}
     </div>
   );
 }
 
+export type PackKindUi = 'player' | 'good' | 'legend' | 'top';
+const PACK_LABEL: Record<PackKindUi, string> = { player: 'PLAYER PACK', good: 'GOOD PACK', legend: 'LEGEND PACK', top: 'TOP LEGEND' };
 const TIER_LABEL: Record<PackTier, string> = { base: 'BASE', rare: 'RARE', epic: 'EPIC', elite: 'ELITE', icon: 'ICON / LEGEND' };
 const short = (v: number) => (v >= 1e9 ? `${(v / 1e9).toFixed(1).replace(/\.0$/, '')}B` : `${Math.round(v / 1e6)}M`);
 
 /** the PIPA pack: a dark card with a neon lime seam (our own design) */
-function PackArt({ glow }: { glow?: PackTier | null }) {
+function PackArt({ glow, kind = 'player' }: { glow?: PackTier | null; kind?: PackKindUi }) {
   return (
-    <div className={`pack-art ${glow ? `glow-${glow}` : ''}`} aria-hidden>
+    <div className={`pack-art pack-${kind} ${glow ? `glow-${glow}` : ''}`} aria-hidden>
       <svg viewBox="0 0 120 170">
         <defs>
           <linearGradient id="pk-body" x1="0" x2="0" y1="0" y2="1">
@@ -131,7 +180,7 @@ function PackArt({ glow }: { glow?: PackTier | null }) {
         <circle cx="60" cy="104" r="30" fill="none" stroke="rgba(255,255,255,0.18)" strokeWidth="2" />
         <path d="M60 80 l7 15 16 2 -12 11 3 16 -14 -8 -14 8 3 -16 -12 -11 16 -2z" fill="rgba(200,255,90,0.9)" />
         <text x="60" y="152" textAnchor="middle" fontFamily="var(--display)" fontWeight="800" fontSize="11" letterSpacing="2" fill="rgba(255,255,255,0.75)">
-          PLAYER PACK
+          {PACK_LABEL[kind]}
         </text>
       </svg>
     </div>
@@ -141,11 +190,29 @@ function PackArt({ glow }: { glow?: PackTier | null }) {
 type Phase = 'charge' | 'country' | 'position' | 'club' | 'flash' | 'card';
 const ORDER: Phase[] = ['charge', 'country', 'position', 'club', 'flash', 'card'];
 /** seconds each step stays on screen (charge: at least this long, and until the server answered) */
-const DUR: Record<Phase, number> = { charge: 1.0, country: 0.9, position: 0.9, club: 1.0, flash: 0.45, card: 0 };
+// UPDATE 9: COUNTRY 1.8 s · POSITION 1.5 s · CLUB / ICON 1.8 s, each fading in, holding, fading out
+export const DUR: Record<Phase, number> = { charge: 1.0, country: 1.8, position: 1.5, club: 1.8, flash: 0.45, card: 0 };
+const stepStyle = (ph: Phase, speed: number) => ({ ['--dur' as string]: `${DUR[ph] / speed}s` }) as CSSProperties;
 
 /** fullscreen pack opening (no sound — visual effects only) */
-function PackOpening({ token, onReply, onError, onClose }: { token: string; onReply: (r: AccountReply) => void; onError: (m: string) => void; onClose: () => void }) {
-  const [pull, setPull] = useState<PackPull | null>(null);
+export function PackOpening({
+  token,
+  kind = 'player',
+  preset,
+  onReply,
+  onError,
+  onClose,
+}: {
+  token: string;
+  /** UPDATE 9: which pack (the server keeps a count of each) */
+  kind?: 'player' | 'good' | 'legend';
+  /** UPDATE 9: an answer the server already gave (홍 → TOP LEGEND) — same reveal, no request */
+  preset?: PackPull;
+  onReply: (r: AccountReply) => void;
+  onError: (m: string) => void;
+  onClose: () => void;
+}) {
+  const [pull, setPull] = useState<PackPull | null>(preset ?? null);
   const [phase, setPhase] = useState<Phase>('charge');
   const [canSkip, setCanSkip] = useState(false);
   const [left, setLeft] = useState<number | null>(null);
@@ -162,12 +229,19 @@ function PackOpening({ token, onReply, onError, onClose }: { token: string; onRe
   useEffect(() => {
     started.current = performance.now();
     let live = true;
+    const t = window.setTimeout(() => setCanSkip(true), 500 / speed);
+    if (preset) {
+      return () => {
+        live = false;
+        window.clearTimeout(t);
+      };
+    }
     accountApi
-      .openPack(token)
+      .openPack(token, kind)
       .then((r) => {
         if (!live) return;
         onReply(r);
-        setLeft(r.unopenedPacks ?? 0);
+        setLeft((kind === 'good' ? r.goodPacks : kind === 'legend' ? r.legendPacks : r.unopenedPacks) ?? 0);
         setPull(r.pull ?? null);
         if (!r.pull) onError('팩을 열지 못했어요');
       })
@@ -176,7 +250,6 @@ function PackOpening({ token, onReply, onError, onClose }: { token: string; onRe
         if (e instanceof AccountError && e.reply && typeof e.reply.mp === 'number') onReply(e.reply);
         onError(e instanceof Error ? e.message : '팩을 열지 못했어요');
       });
-    const t = window.setTimeout(() => setCanSkip(true), 500 / speed);
     return () => {
       live = false;
       window.clearTimeout(t);
@@ -199,7 +272,7 @@ function PackOpening({ token, onReply, onError, onClose }: { token: string; onRe
   const skip = () => pull && canSkip && setPhase('card');
 
   return (
-    <div className={`pack-scene ${glow ? `tier-${glow}` : ''} phase-${phase}`} data-testid="pack-scene" data-phase={phase} data-tier={tier ?? ''} data-player={phase === 'card' ? pull?.playerId ?? '' : ''}>
+    <div className={`pack-scene ${glow ? `tier-${glow}` : ''} phase-${phase}`} data-testid="pack-scene" data-kind={preset ? 'top' : kind} data-phase={phase} data-tier={tier ?? ''} data-player={phase === 'card' ? pull?.playerId ?? '' : ''}>
       <Particles tier={glow} burst={phase === 'flash' || phase === 'card'} />
       {phase !== 'card' && (
         <button className="pack-skip" onClick={skip} disabled={!canSkip || !pull} data-testid="pack-skip">
@@ -209,25 +282,25 @@ function PackOpening({ token, onReply, onError, onClose }: { token: string; onRe
       <div className="pack-stage">
         {phase === 'charge' && (
           <div className="pack-charge">
-            <PackArt glow={tier && performance.now() - started.current > 600 ? tier : null} />
+            <PackArt kind={preset ? 'top' : kind} glow={tier && performance.now() - started.current > 600 ? tier : null} />
             <span className="pack-charge-text">OPENING…</span>
           </div>
         )}
         {p && phase === 'country' && (
-          <div className="reveal-step" key="country" data-testid="reveal-country" data-value={p.country}>
+          <div className="reveal-step" key="country" style={stepStyle('country', speed)} data-testid="reveal-country" data-value={p.country}>
             <Flag code={p.country} size={78} />
             <b>{COUNTRY_NAME[p.country]}</b>
           </div>
         )}
         {p && phase === 'position' && (
-          <div className="reveal-step" key="position" data-testid="reveal-position" data-value={p.primaryPosition}>
+          <div className="reveal-step" key="position" style={stepStyle('position', speed)} data-testid="reveal-position" data-value={p.primaryPosition}>
             <span className="reveal-pos">{p.primaryPosition}</span>
           </div>
         )}
         {p && phase === 'club' && (
-          <div className="reveal-step" key="club" data-testid="reveal-club" data-value={p.isIcon ? 'ICON' : p.club ?? ''}>
-            {p.isIcon ? <IconEmblem /> : <ClubShield name={p.club ?? 'CLUB'} />}
-            <b>{p.isIcon ? 'ICON' : p.club}</b>
+          <div className="reveal-step" key="club" style={stepStyle('club', speed)} data-testid="reveal-club" data-value={p.isIcon ? 'ICON' : p.club ?? 'CLUB TBA'}>
+            {p.isIcon ? <IconEmblem /> : <ClubShield name={p.club ?? 'TBA'} />}
+            <b>{p.isIcon ? 'ICON' : p.club ?? 'CLUB TBA'}</b>
           </div>
         )}
         {phase === 'flash' && <div className="reveal-flash" />}
@@ -238,9 +311,11 @@ function PackOpening({ token, onReply, onError, onClose }: { token: string; onRe
           <button className="btn-primary" onClick={onClose} data-testid="pack-add">
             ADD TO CLUB
           </button>
-          <span className="pack-left" data-testid="pack-left">
-            남은 팩 {left ?? 0}개
-          </span>
+          {!preset && (
+            <span className="pack-left" data-testid="pack-left">
+              남은 팩 {left ?? 0}개
+            </span>
+          )}
         </div>
       )}
     </div>
@@ -331,7 +406,7 @@ export function PlayerCardPackReveal({ player, tier }: { player: PlayerDef; tier
       <div className="pack-reveal-info">
         <div className="pack-reveal-top">
           <b className="pr-ovr">{ovr(player)}</b>
-          <span className="pr-name">{player.last}</span>
+          <span className="pr-name">{player.nameKo}</span>
         </div>
         <div className="pack-reveal-meta">
           <span>{player.primaryPosition}</span>
@@ -339,7 +414,7 @@ export function PlayerCardPackReveal({ player, tier }: { player: PlayerDef; tier
             <Flag code={player.country} size={12} /> {COUNTRY_NAME[player.country]}
           </span>
           <span className={player.isIcon ? 'pr-icon' : ''} data-testid="pack-card-club">
-            {player.isIcon ? 'ICON' : player.club}
+            {player.isIcon ? 'ICON' : player.club ?? 'CLUB TBA'}
           </span>
         </div>
         <div className="pack-reveal-stats">

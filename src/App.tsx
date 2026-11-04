@@ -28,6 +28,7 @@ import { MarketScreen } from './screens/MarketScreen';
 import { OnlineModeScreen } from './screens/OnlineModeScreen';
 import { DeveloperScreen } from './screens/DeveloperScreen';
 import { PacksScreen } from './screens/PacksScreen';
+import { EventCenterScreen } from './screens/EventCenterScreen';
 import type { DuelMode } from './online/LobbyClient';
 
 /** UPDATE 7: XP / LEVEL UP for a finished online match (pushed by the server) */
@@ -52,6 +53,7 @@ type Screen =
   | { name: 'online-modes' }
   | { name: 'market' }
   | { name: 'packs' }
+  | { name: 'events' }
   | { name: 'developer' }
   | { name: 'ranking' }
   | { name: 'levels' }
@@ -110,7 +112,7 @@ export default function App() {
     shownNotices.current.add(n.id);
     const pl = getPlayer(n.playerId);
     const id = n.id;
-    setToasts((t) => [...t, { id, text: `${(pl?.shirt ?? n.playerId).toUpperCase()} 판매 완료!`, sub: `+${formatMP(n.revenue)}` }]);
+    setToasts((t) => [...t, { id, text: `${pl?.nameKo ?? n.playerId} 판매 완료!`, sub: `+${formatMP(n.revenue)}` }]);
     window.setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4200);
     if (token) accountApi.ackNotices(token, [n.id]).catch(() => {});
   };
@@ -138,7 +140,7 @@ export default function App() {
     }
   }, [screen.name, wallet.progress?.daily?.canClaim, wallet.progress?.daily?.today]);
   useEffect(() => {
-    if (['playtype', 'market', 'squad', 'online-modes', 'levels', 'ranking', 'packs'].includes(screen.name)) refreshWallet();
+    if (['playtype', 'market', 'squad', 'online-modes', 'levels', 'ranking', 'packs', 'events'].includes(screen.name)) refreshWallet();
   }, [screen.name]); // eslint-disable-line react-hooks/exhaustive-deps
   // the server pushes the new balance right after paying a win
   useEffect(() => {
@@ -218,6 +220,7 @@ export default function App() {
       onSquad={() => setScreen({ name: 'squad' })}
       onMarket={() => setScreen({ name: 'market' })}
       onPacks={() => setScreen({ name: 'packs' })}
+      onEvents={() => setScreen({ name: 'events' })}
       onDeveloper={() => setScreen({ name: 'developer' })}
       onRanking={() => setScreen({ name: 'ranking' })}
       onLevels={() => setScreen({ name: 'levels' })}
@@ -238,6 +241,8 @@ export default function App() {
     body = <MarketScreen wallet={wallet} token={user?.token ?? null} squad={squad} onReply={(r) => applyReply(r)} onBack={() => setScreen({ name: 'playtype' })} />;
   } else if (screen.name === 'packs') {
     body = <PacksScreen wallet={wallet} token={user?.token ?? null} onReply={(r) => applyReply(r)} onBack={() => setScreen({ name: 'playtype' })} />;
+  } else if (screen.name === 'events') {
+    body = <EventCenterScreen wallet={wallet} token={user?.token ?? null} onReply={(r) => applyReply(r)} onBack={() => setScreen({ name: 'playtype' })} />;
   } else if (screen.name === 'ranking') {
     body = <RankingScreen token={user?.token ?? null} me={user?.nickname ?? ''} tick={rankTick} onBack={() => setScreen({ name: 'playtype' })} />;
   } else if (screen.name === 'levels') {

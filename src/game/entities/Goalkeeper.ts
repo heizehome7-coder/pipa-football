@@ -122,6 +122,14 @@ export const KEEPER_BUFF = { arm: 1.04, glove: 0.03, travel: 1.045 } as const;
  *   hang   — time held at full stretch before the body starts to drop
  *   noise  — the tiny execution error (±) on travel; never a random save
  */
+/**
+ * UPDATE 9 — BLACK SPIDER (Lev Yashin) for real: applied to the dive motion itself and to the
+ * glove colliders (not only to numbers). A quicker push-off and flight, longer horizontal and
+ * vertical reach, more airtime, a quicker AI reaction and a surer aerial catch. He still has to
+ * pick the right side in time: the wrong way or a late input is a goal, and a perfect power shot
+ * into the top corner still beats him.
+ */
+export const BLACK_SPIDER = { push: 0.88, dive: 0.97, travel: 1.035, high: 1.1, low: 1.04, stretch: 0.1, hang: 1.22, jumpCap: 0.7, react: 0.85, catchSpeed: 1.0 } as const;
 export const DIVE = { push: 0.1, travel: 1.015, high: 1.08, low: 1.0, stretch: 0.045, hang: 0.18, noise: 0.012 } as const;
 /** UPDATE 7 hotfix: a human dive started right at the strike (not long before) */
 /** how much of the dive depth comes from the keeper's read of the strike (0 = always full depth) */
@@ -329,17 +337,18 @@ export class Goalkeeper {
     const g = this.stats;
     if (!g) return k;
     const sp = this.special;
+    const bs = sp === 'BLACK_SPIDER';
     return {
       ...k,
       // DIVING: a quicker, more explosive dive · REACH: more hip travel
-      diveBase: k.diveBase * (1 - 0.07 * sd(g.diving)),
-      diveScale: k.diveScale * (1 - 0.07 * sd(g.diving)),
-      maxHipTravel: k.maxHipTravel * (1 + 0.03 * sd(g.reach)) * (sp === 'LONG_REACH' ? 1.015 : 1),
+      diveBase: k.diveBase * (1 - 0.07 * sd(g.diving)) * (bs ? BLACK_SPIDER.dive : 1),
+      diveScale: k.diveScale * (1 - 0.07 * sd(g.diving)) * (bs ? BLACK_SPIDER.dive : 1),
+      maxHipTravel: k.maxHipTravel * (1 + 0.03 * sd(g.reach)) * (sp === 'LONG_REACH' ? 1.03 : bs ? BLACK_SPIDER.travel : 1),
       // AI only: REFLEX (reaction), POSITIONING (read), PENALTY READ (guess)
-      reactionMin: k.reactionMin * (1 - 0.1 * sd(g.reflex)),
-      reactionMax: k.reactionMax * (1 - 0.1 * sd(g.reflex)),
-      readNoise: k.readNoise * (1 - 0.14 * sd(g.positioning)) * (sp === 'POSITION_MASTER' ? 0.88 : 1),
-      guessCorrect: Math.min(0.85, k.guessCorrect + 0.07 * sd(g.penaltyRead) + (sp === 'PENALTY_SPECIALIST' ? 0.04 : 0)),
+      reactionMin: k.reactionMin * (1 - 0.1 * sd(g.reflex)) * (bs ? BLACK_SPIDER.react : 1),
+      reactionMax: k.reactionMax * (1 - 0.1 * sd(g.reflex)) * (bs ? BLACK_SPIDER.react : 1),
+      readNoise: k.readNoise * (1 - 0.14 * sd(g.positioning)) * (sp === 'POSITION_MASTER' ? 0.82 : 1),
+      guessCorrect: Math.min(0.85, k.guessCorrect + 0.07 * sd(g.penaltyRead) + (sp === 'PENALTY_SPECIALIST' ? 0.06 : 0)),
     };
   }
 
@@ -350,7 +359,7 @@ export class Goalkeeper {
   private get stretchGain() {
     const g = this.stats;
     let s = DIVE.stretch * (g ? 1 + 0.2 * sd(g.reach) : 1);
-    if (this.special === 'BLACK_SPIDER') s += 0.08; // hand reach +8–10 % at full stretch
+    if (this.special === 'BLACK_SPIDER') s += BLACK_SPIDER.stretch; // UPDATE 9: much longer fingertip reach at full stretch
     return s;
   }
   private setArmStretch(e: number) {
@@ -367,8 +376,8 @@ export class Goalkeeper {
   private travelFor(py: number) {
     const g = this.stats;
     const sp = this.special;
-    if (py < 0.7) return DIVE.low * (g ? 1 + 0.025 * sd(g.lowSave, 94, 5) : 1) * (sp === 'LOW_SAVE' ? 1.035 : 1);
-    if (py > 1.6) return DIVE.high * (g ? 1 + 0.025 * sd(g.highSave, 94, 5) : 1) * (sp === 'HIGH_REACH' ? 1.04 : sp === 'BLACK_SPIDER' ? 1.07 : 1);
+    if (py < 0.7) return DIVE.low * (g ? 1 + 0.025 * sd(g.lowSave, 94, 5) : 1) * (sp === 'LOW_SAVE' ? 1.05 : sp === 'BLACK_SPIDER' ? BLACK_SPIDER.low : 1);
+    if (py > 1.6) return DIVE.high * (g ? 1 + 0.025 * sd(g.highSave, 94, 5) : 1) * (sp === 'HIGH_REACH' ? 1.06 : sp === 'BLACK_SPIDER' ? BLACK_SPIDER.high : 1);
     return 1;
   }
 
@@ -547,7 +556,7 @@ export class Goalkeeper {
     const base = new THREE.Vector3(0, HIPS_IDLE_Y, 0);
     let travel = 0;
     const dvAll = this.stats ? sd(this.stats.diving) : 0;
-    this.hangT = DIVE.hang * (1 + 0.3 * dvAll) * (this.special === 'BLACK_SPIDER' ? 1.08 : 1);
+    this.hangT = DIVE.hang * (1 + 0.3 * dvAll) * (this.special === 'BLACK_SPIDER' ? BLACK_SPIDER.hang : 1);
     if (Math.abs(vx) < 0.55 && py < 1.8) {
       if (py < 0.5) {
         this.action = 'scoop';
@@ -563,7 +572,7 @@ export class Goalkeeper {
     } else if (Math.abs(vx) < 1.0 && py >= 1.8) {
       this.action = 'jump';
       this.actionPose = K_JUMP;
-      this.hipsTarget.set(lx * 0.8, clamp(py - this.reachFor(py) - HIPS_IDLE_Y + 0.05, 0, this.special === 'BLACK_SPIDER' ? 0.62 : 0.56), 0).add(base);
+      this.hipsTarget.set(lx * 0.8, clamp(py - this.reachFor(py) - HIPS_IDLE_Y + 0.05, 0, this.special === 'BLACK_SPIDER' ? BLACK_SPIDER.jumpCap : 0.56), 0).add(base);
       this.roll = Math.atan2(-lx, Math.max(0.5, vy)) * 0.5;
       travel = 0.6;
     } else {
@@ -592,11 +601,11 @@ export class Goalkeeper {
       const rf = g ? sd(g.reflex) : 0;
       this.pushT =
         DIVE.push * (1 - 0.14 * dv) * (1 - 0.03 * rf) * (this.perfect ? 0.8 : 1) *
-        (sp === 'BLACK_SPIDER' ? 0.9 : sp === 'POSITION_MASTER' ? 0.95 : 1) *
+        (sp === 'BLACK_SPIDER' ? BLACK_SPIDER.push : sp === 'POSITION_MASTER' ? 0.92 : 1) *
         (sp === 'LOW_SAVE' && py < 0.7 ? 0.9 : 1) * (py < 0.7 ? 0.85 : py > 1.6 ? 1.1 : 1);
       const total = this.actionDuration(travel);
       this.flightT = Math.max(0.16, total - this.pushT);
-      this.hangT = DIVE.hang * (1 + 0.3 * dv) * (sp === 'BLACK_SPIDER' ? 1.08 : 1) * (py > 1.6 ? 1.2 : py < 0.7 ? 0.7 : 1);
+      this.hangT = DIVE.hang * (1 + 0.3 * dv) * (sp === 'BLACK_SPIDER' ? BLACK_SPIDER.hang : 1) * (py > 1.6 ? 1.2 : py < 0.7 ? 0.7 : 1);
       // a short step/weight shift before take-off, the rest in the air
       this.hipsLaunch.set(this.hipsStart.x + (lx / len) * 0.14, HIPS_SET_Y - 0.03, 0);
       this.arc = py < 0.7 ? 0.1 : py > 1.6 ? 0.12 : 0.22;

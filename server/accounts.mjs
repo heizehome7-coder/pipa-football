@@ -32,6 +32,14 @@
  *   POST /api/dev/squad {devToken, nickname}       ← {ok, user:{nickname, squad, owned, …}} | {ok, matches:[…]}
  *   POST /api/packs/open {token}                    ← {ok, pull:{cardId, playerId, tier}, …me}   (UPDATE 8, server draw)
  *   POST /api/dev/grant-packs {devToken, nickname, count} ← {ok, granted, unopenedPacks}  (UPDATE 8)
+ *   UPDATE 9 — EVENT CENTER (results decided here with crypto random, one write per action):
+ *   POST /api/packs/open {token, kind?: player|good|legend}   (goodPacks / legendPacks counts)
+ *   POST /api/events/state {token}                  ← {ok, hong, potato, …me}  (settles a finished 감자 game)
+ *   POST /api/events/hong/draw {token, count:1|10, nonce} ← {ok, results:[grade], …me}  −50 / −500 FV
+ *   POST /api/events/hong/exchange {token, grade, nonce}  ← {ok, reward:{mp|pack|pull}, …me}  one token
+ *   POST /api/events/potato/start {token, nonce}    ← {ok, potato:{sessionId, startAt, rounds…}, serverNow}  −50 FV
+ *   POST /api/events/potato/tap {token, sessionId, round, holeId} ← {ok, hit, score}
+ *   POST /api/events/potato/finish {token, sessionId} ← {ok, potato:{status:'done', reward}}  paid once
  *                                                     (UPDATE 7 hotfix: read-only, server data only)
  *   Every grant is written to the developer action log (file devlog.json / table pipa_dev_log).
  *   Accounts also keep lastLoginAt / lastSeenAt (server time) and online records per mode:
@@ -431,8 +439,25 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
       fv: d.fv ?? 0,
       claimedLevelRewards: d.claimedLevelRewards ?? [],
       unopenedPacks: d.unopenedPacks ?? 0,
+      // UPDATE 9: GOOD PLAYER PACK / LEGEND PACK (kept apart from the PLAYER PACK count)
+      goodPacks: d.goodPacks ?? 0,
+      legendPacks: d.legendPacks ?? 0,
     };
   };
+  // ── UPDATE 9: EVENT CENTER state shown to the client ──
+  const hongOf = (d) => ({ bronze: d?.hong?.bronze ?? 0, silver: d?.hong?.silver ?? 0, gold: d?.hong?.gold ?? 0, red: d?.hong?.red ?? 0 });
+  const potatoView = (sess) =>
+    sess && {
+      sessionId: sess.id,
+      status: sess.status,
+      startAt: sess.startAt,
+      endAt: sess.endAt,
+      round: sess.round,
+      score: sess.score,
+      rounds: sess.rounds,
+      clicked: sess.clicked,
+      reward: sess.reward ?? null,
+    };
   const view = (rec) => ({
     nickname: rec.nickname,
     squad: rec.data?.squad ?? null,
@@ -445,6 +470,8 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
     ...progressOf(rec),
     daily: dailyStatus(rec),
     notices: rec.data?.notices ?? [],
+    // UPDATE 9
+    hong: hongOf(rec.data),
   });
 
   async function auth({ nickname, password }, ip) {
@@ -788,13 +815,17 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
    * tradeable market players → add the card → save, all in one write under the account
    * lock. A reload can't re-roll: the card is already saved before the reply goes out.
    */
-  function openPack({ token }) {
+  // UPDATE 9: three kinds of pack — each has its own saved count
+  const PACK_FIELD = { player: 'unopenedPacks', good: 'goodPacks', legend: 'legendPacks' };
+  function openPack({ token, kind = 'player' }) {
     return withAccount(token, async (rec) => {
       if (!catalog?.drawPackPlayer) return { status: 503, body: { ok: false, error: 'packs', message: '팩을 열 수 없어요' } };
-      const left = rec.data?.unopenedPacks ?? 0;
+      const field = PACK_FIELD[kind];
+      if (!field || (kind !== 'player' && !catalog.drawAnyPack)) return { status: 400, body: { ok: false, error: 'kind', message: '알 수 없는 팩이에요' } };
+      const left = rec.data?.[field] ?? 0;
       if (!(left > 0)) return { status: 409, body: { ok: false, error: 'no_pack', message: '열 수 있는 팩이 없어요', ...view(rec) } };
       const r = crypto.randomInt(0, 2 ** 47) / 2 ** 47;
-      let { player, tier } = catalog.drawPackPlayer(r);
+      let { player, tier } = kind === 'player' ? catalog.drawPackPlayer(r) : catalog.drawAnyPack(kind, r);
       // automated browser tests only (env on the TEST server, never set on Render): a fixed queue
       const forced = TEST_PACKS.shift();
       if (forced && catalog.getPlayer(forced) && catalog.marketPrice(forced)) {
@@ -802,16 +833,214 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
         tier = catalog.packTier(catalog.marketPrice(forced));
       }
       const cardId = newCardId();
-      const pull = { id: crypto.randomBytes(6).toString('hex'), cardId, playerId: player.id, tier, at: new Date().toISOString() };
+      const pull = { id: crypto.randomBytes(6).toString('hex'), cardId, playerId: player.id, tier, kind, at: new Date().toISOString() };
       rec.data = {
-        ...addCard(rec.data, player.id, 'pack', cardId),
-        unopenedPacks: left - 1,
+        ...addCard(rec.data, player.id, kind === 'player' ? 'pack' : `${kind}-pack`, cardId),
+        [field]: left - 1,
         packsOpened: (rec.data?.packsOpened ?? 0) + 1,
         packLog: [...(rec.data?.packLog ?? []), pull].slice(-30),
       };
       await store.put(rec);
-      log(`packs: "${rec.nickname}" opened a pack → ${player.id} (${tier}), ${left - 1} left`);
+      log(`packs: "${rec.nickname}" opened a ${kind} pack → ${player.id} (${tier}), ${left - 1} left`);
       return { status: 200, body: { ok: true, pull, ...view(rec) } };
+    });
+  }
+
+  // ── UPDATE 9: EVENT CENTER ───────────────────────────────────────────
+  // Every result below is decided HERE with crypto random numbers, under the account lock,
+  // and saved in ONE write together with the FV / MP / token / card change — a refresh, a
+  // second tab or a repeated request can never re-roll or pay twice.
+  const rnd = () => crypto.randomInt(0, 2 ** 47) / 2 ** 47;
+  const H = () => catalog?.HONG;
+  const PT = () => catalog?.POTATO;
+  /** a repeated request (same nonce, e.g. a network retry) gets the SAME answer, never a second payout */
+  const NONCE_RE = /^[A-Za-z0-9_-]{8,64}$/;
+  function seenNonce(rec, nonce) {
+    if (typeof nonce !== 'string' || !NONCE_RE.test(nonce)) return null;
+    return (rec.data?.eventNonces ?? []).find((n) => n.nonce === nonce) ?? null;
+  }
+  const rememberNonce = (data, nonce, body) =>
+    typeof nonce === 'string' && NONCE_RE.test(nonce) ? [...(data?.eventNonces ?? []), { nonce, body }].slice(-20) : data?.eventNonces ?? [];
+
+  /** 홍 나와라 뚝딱 — draw ×1 (50 FV) or ×10 (500 FV, ten independent draws) */
+  function hongDraw({ token, count, nonce }) {
+    return withAccount(token, async (rec) => {
+      if (!H()) return { status: 503, body: { ok: false, error: 'events', message: '이벤트를 사용할 수 없어요' } };
+      const again = seenNonce(rec, nonce);
+      if (again) return { status: 200, body: { ...again.body, repeated: true, ...view(rec) } };
+      const n = count === 10 ? 10 : count === 1 ? 1 : 0;
+      if (!n) return { status: 400, body: { ok: false, error: 'count', message: '1회 또는 10회만 뽑을 수 있어요' } };
+      const cost = n === 10 ? H().costTen : H().costOne;
+      const fv = rec.data?.fv ?? 0;
+      if (fv < cost) return { status: 402, body: { ok: false, error: 'fv', message: `FV가 부족해요 (필요 ${cost} FV)`, ...view(rec) } };
+      const results = Array.from({ length: n }, () => catalog.drawHongGrade(rnd()));
+      const hong = hongOf(rec.data);
+      for (const g of results) hong[g]++;
+      const id = crypto.randomBytes(6).toString('hex');
+      const entry = { id, count: n, cost, results, at: new Date().toISOString() };
+      const body = { ok: true, drawId: id, results, cost };
+      rec.data = { ...rec.data, fv: fv - cost, hong, hongLog: [...(rec.data?.hongLog ?? []), entry].slice(-50), eventNonces: rememberNonce(rec.data, nonce, body) };
+      await store.put(rec);
+      log(`events: "${rec.nickname}" 홍 나와라 뚝딱 ×${n} (−${cost} FV) → ${results.join(',')}`);
+      return { status: 200, body: { ...body, ...view(rec) } };
+    });
+  }
+
+  /** EXCHANGE SHOP — exactly ONE token of that grade → its reward */
+  function hongExchange({ token, grade, nonce }) {
+    return withAccount(token, async (rec) => {
+      if (!H()) return { status: 503, body: { ok: false, error: 'events', message: '이벤트를 사용할 수 없어요' } };
+      const again = seenNonce(rec, nonce);
+      if (again) return { status: 200, body: { ...again.body, repeated: true, ...view(rec) } };
+      const ex = H().exchange?.[grade];
+      if (!ex) return { status: 400, body: { ok: false, error: 'grade', message: '알 수 없는 등급이에요' } };
+      const hong = hongOf(rec.data);
+      if (!(hong[grade] > 0)) return { status: 409, body: { ok: false, error: 'no_token', message: `${H().label[grade]} 토큰이 없어요`, ...view(rec) } };
+      hong[grade] -= 1;
+      const id = crypto.randomBytes(6).toString('hex');
+      let data = { ...rec.data, hong };
+      const reward = { grade };
+      if (ex.mp) {
+        data.mp = (data.mp ?? 0) + ex.mp;
+        reward.mp = ex.mp;
+      }
+      if (ex.pack === 'legend') {
+        data.legendPacks = (data.legendPacks ?? 0) + 1;
+        reward.pack = 'legend';
+      }
+      if (ex.topLegend) {
+        const { player, tier } = catalog.drawTopLegend(rnd());
+        const cardId = newCardId();
+        data = addCard(data, player.id, 'hong', cardId);
+        reward.pull = { id, cardId, playerId: player.id, tier, kind: 'top', at: new Date().toISOString() };
+        data.packLog = [...(data.packLog ?? []), reward.pull].slice(-30);
+      }
+      const body = { ok: true, exchangeId: id, reward };
+      data.hongExchanges = [...(data.hongExchanges ?? []), { id, grade, reward: { mp: reward.mp ?? 0, pack: reward.pack ?? null, playerId: reward.pull?.playerId ?? null }, at: new Date().toISOString() }].slice(-50);
+      data.eventNonces = rememberNonce(data, nonce, body);
+      rec.data = data;
+      await store.put(rec);
+      log(`events: "${rec.nickname}" exchanged 1 ${grade} → ${reward.mp ? reward.mp + ' MP' : reward.pack ? 'LEGEND PACK' : reward.pull?.playerId}`);
+      if (reward.mp) {
+        rankingChanged();
+        try {
+          onWallet(rec.nickname, rec.data.mp);
+        } catch {
+          /* offline */
+        }
+      }
+      return { status: 200, body: { ...body, ...view(rec) } };
+    });
+  }
+
+  // ── 감자의 제왕: the server owns the session, the potatoes and the score ──
+  function finishPotatoIfDue(rec, at = Date.now()) {
+    const sess = rec.data?.potato ?? null;
+    if (!sess || sess.status !== 'playing' || at < sess.endAt + PT().graceMs) return { sess, paid: false };
+    // round over: pay exactly once (status 'done' is saved in the same write as the reward)
+    const reward = catalog.potatoReward(sess.score);
+    const done = { ...sess, status: 'done', finishedAt: new Date(at).toISOString(), reward };
+    let data = { ...rec.data, potato: done };
+    if (reward.mp) data.mp = (data.mp ?? 0) + reward.mp;
+    if (reward.pack === 'good') data.goodPacks = (data.goodPacks ?? 0) + 1;
+    data.potatoLog = [...(data.potatoLog ?? []), { id: sess.id, score: sess.score, reward, startedAt: new Date(sess.startAt).toISOString(), finishedAt: done.finishedAt }].slice(-30);
+    rec.data = data;
+    return { sess: done, paid: true };
+  }
+  async function settlePotato(rec) {
+    const r = finishPotatoIfDue(rec);
+    if (r.paid) {
+      await store.put(rec);
+      log(`events: "${rec.nickname}" 감자의 제왕 score ${r.sess.score} → ${r.sess.reward.mp ? r.sess.reward.mp + ' MP' : 'GOOD PLAYER PACK'}`);
+      if (r.sess.reward.mp) {
+        rankingChanged();
+        try {
+          onWallet(rec.nickname, rec.data.mp);
+        } catch {
+          /* offline */
+        }
+      }
+    }
+    return r;
+  }
+
+  function potatoStart({ token, nonce }) {
+    return withAccount(token, async (rec) => {
+      if (!PT()) return { status: 503, body: { ok: false, error: 'events', message: '이벤트를 사용할 수 없어요' } };
+      const again = seenNonce(rec, nonce);
+      if (again) return { status: 200, body: { ...again.body, repeated: true, ...view(rec), potato: potatoView(rec.data?.potato), serverNow: Date.now() } };
+      await settlePotato(rec);
+      const cur = rec.data?.potato;
+      if (cur && cur.status === 'playing') return { status: 409, body: { ok: false, error: 'playing', message: '이미 진행 중인 게임이 있어요', ...view(rec), potato: potatoView(cur), serverNow: Date.now() } };
+      const fv = rec.data?.fv ?? 0;
+      if (fv < PT().cost) return { status: 402, body: { ok: false, error: 'fv', message: `FV가 부족해요 (필요 ${PT().cost} FV)`, ...view(rec) } };
+      const now = Date.now();
+      const startAt = now + PT().leadMs;
+      const rounds = Array.from({ length: PT().rounds }, (_, i) => catalog.potatoRound(i + 1, rnd));
+      const sess = {
+        id: crypto.randomBytes(9).toString('base64url'),
+        userId: rec.key,
+        status: 'playing',
+        round: 0,
+        score: 0,
+        startAt,
+        endAt: startAt + PT().rounds * PT().roundMs,
+        rounds,
+        clicked: [],
+        createdAt: new Date(now).toISOString(),
+      };
+      const body = { ok: true, sessionId: sess.id };
+      rec.data = { ...rec.data, fv: fv - PT().cost, potato: sess, eventNonces: rememberNonce(rec.data, nonce, body) };
+      await store.put(rec);
+      log(`events: "${rec.nickname}" 감자의 제왕 start (−${PT().cost} FV) ${sess.id}`);
+      return { status: 200, body: { ...body, ...view(rec), potato: potatoView(sess), serverNow: Date.now() } };
+    });
+  }
+
+  /** one tap: {sessionId, round, holeId} — the server checks the round's time window and the hole */
+  function potatoTap({ token, sessionId, round, holeId }) {
+    const at = Date.now();
+    return withAccount(token, async (rec) => {
+      if (!PT()) return { status: 503, body: { ok: false, error: 'events' } };
+      const sess = rec.data?.potato;
+      if (!sess || sess.id !== sessionId) return { status: 404, body: { ok: false, error: 'session', message: '게임을 찾을 수 없어요' } };
+      const reply = (hit, extra = {}) => ({ status: 200, body: { ok: true, hit, score: sess.score, round, ...extra, serverNow: Date.now() } });
+      if (sess.status !== 'playing') return reply(null, { ended: true });
+      const r = Number(round);
+      const h = Number(holeId);
+      if (!Number.isInteger(r) || r < 1 || r > PT().rounds || !Number.isInteger(h) || h < 0 || h >= PT().holes) return { status: 400, body: { ok: false, error: 'tap' } };
+      // the round's window on the server clock, with room for mobile latency
+      const from = sess.startAt + (r - 1) * PT().roundMs - PT().earlyMs;
+      const to = sess.startAt + r * PT().roundMs + PT().graceMs;
+      if (at < from || at > to) return reply(null, { late: at > to });
+      const spawn = sess.rounds[r - 1].find((x) => x.hole === h);
+      if (!spawn) return reply(null);
+      const key = `${r}:${h}`;
+      if (sess.clicked.includes(key)) return reply(null, { again: true });
+      const score = catalog.potatoScore(sess.score, spawn.kind);
+      rec.data = { ...rec.data, potato: { ...sess, score, round: Math.max(sess.round, r), clicked: [...sess.clicked, key] } };
+      await store.put(rec);
+      return { status: 200, body: { ok: true, hit: spawn.kind, score, round: r, serverNow: Date.now() } };
+    });
+  }
+
+  /** the game is over on the server clock → settle (idempotent: the reward is paid once) */
+  function potatoFinish({ token, sessionId }) {
+    return withAccount(token, async (rec) => {
+      if (!PT()) return { status: 503, body: { ok: false, error: 'events' } };
+      const sess = rec.data?.potato;
+      if (!sess || (sessionId && sess.id !== sessionId)) return { status: 404, body: { ok: false, error: 'session', message: '게임을 찾을 수 없어요', ...view(rec) } };
+      const r = await settlePotato(rec);
+      if (r.sess.status === 'playing') return { status: 425, body: { ok: false, error: 'not_over', message: '아직 게임 중이에요', potato: potatoView(r.sess), serverNow: Date.now(), ...view(rec) } };
+      return { status: 200, body: { ok: true, potato: potatoView(r.sess), paidNow: r.paid, ...view(rec), serverNow: Date.now() } };
+    });
+  }
+
+  /** EVENT CENTER: tokens, packs and the current 감자 game (settles a finished game first) */
+  function eventsState({ token }) {
+    return withAccount(token, async (rec) => {
+      if (PT()) await settlePotato(rec);
+      return { status: 200, body: { ok: true, ...view(rec), potato: potatoView(rec.data?.potato ?? null), serverNow: Date.now(), hongLog: (rec.data?.hongLog ?? []).slice(-10), potatoLog: (rec.data?.potatoLog ?? []).slice(-10) } };
     });
   }
 
@@ -1140,6 +1369,13 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
     '/api/dev/squad': devSquad,
     '/api/dev/grant-packs': devGrantPacks,
     '/api/packs/open': openPack,
+    // UPDATE 9 — EVENT CENTER
+    '/api/events/state': eventsState,
+    '/api/events/hong/draw': hongDraw,
+    '/api/events/hong/exchange': hongExchange,
+    '/api/events/potato/start': potatoStart,
+    '/api/events/potato/tap': potatoTap,
+    '/api/events/potato/finish': potatoFinish,
   };
 
   /** returns true when it handled the request */

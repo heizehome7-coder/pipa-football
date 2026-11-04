@@ -74,7 +74,7 @@ export function GameScreen({ mode, user, player = null, onExit }: { mode: GameMo
         player={player}
         show={player ? `solo:${mode}:${player.id}` : ''}
         label={mode === 'freekick' ? 'FREE KICK TAKER' : 'PENALTY TAKER'}
-        sub={`GK · ${keeper.name.toUpperCase()}`}
+        sub={`GK · ${keeper.nameKo}`}
       />
       {special.el}
       {goalCard.el}

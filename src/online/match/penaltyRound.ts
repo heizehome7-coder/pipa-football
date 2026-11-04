@@ -6,7 +6,9 @@ import { DefensiveWall } from '../../game/entities/DefensiveWall';
 import { freeKickSpot } from '../../game/FreeKickGame';
 import type { DiveDir, MatchMode, RoundOutcome, WireDive } from './protocol';
 import { clampKeeperX, DIVE_DIRS, roundSeed } from './protocol';
-import { BALL } from '../../game/physics/BallPhysics';
+import { BALL, KNUCKLE_MAX, curveLimits } from '../../game/physics/BallPhysics';
+import { shotEnvelope } from '../../players/abilities';
+import { sanitizeSquad } from '../../players/squad';
 import { getPlayer } from '../../players/players';
 
 export type OnlineLooks = Pick<KickGameOptions, 'kickerLook' | 'keeperLook' | 'keeperStats' | 'keeperSpecial'>;
@@ -114,12 +116,44 @@ export function validShot(v: unknown): v is ShotInput {
   const num = (n: unknown) => typeof n === 'number' && Number.isFinite(n);
   if (!num(s.power) || !(s.power >= 0 && s.power <= 1)) return false;
   if (!num(s.spin) || Math.abs(s.spin) > BALL.spinLimit + 1e-6) return false;
-  if (s.knuckle !== undefined && (!num(s.knuckle) || s.knuckle < 0 || s.knuckle > 1)) return false;
+  if (s.knuckle !== undefined && (!num(s.knuckle) || s.knuckle < 0 || s.knuckle > KNUCKLE_MAX)) return false;
   if (s.kseed !== undefined && (!Number.isInteger(s.kseed) || s.kseed < 0 || s.kseed > 0xffffffff)) return false;
   if (!Array.isArray(s.v) || s.v.length !== 3 || !s.v.every(num)) return false;
   const sp = Math.hypot(s.v[0], s.v[1], s.v[2]);
   // a real strike: towards the goal, no faster than the game allows
   return sp > 2 && sp <= BALL.maxSpeed && s.v[2] < 0;
+}
+
+/**
+ * UPDATE 9 — server check against the player who REALLY takes this kick (from the kicker's
+ * saved squad): top speed, side spin and knuckle may not exceed what his abilities and his
+ * special can produce. A doctored client (stats 999, a forced special) is rejected.
+ */
+/**
+ * UPDATE 9 — who takes the kicker's n-th kick (0-based) in this match: exactly what both phones
+ * show (an unknown / empty squad falls back to the default starters, like the clients do).
+ */
+export function roundTaker(squad: unknown, mode: MatchMode, n: number): string {
+  const q = squad && typeof squad === 'object' ? (squad as { penaltyOrder?: string[]; freeKickTakerId?: string }) : null;
+  const withFk = q ? { ...q, freeKickTakerId: q.freeKickTakerId && q.penaltyOrder?.includes(q.freeKickTakerId) ? q.freeKickTakerId : q.penaltyOrder?.[0] } : null;
+  const ks = sanitizeSquad(withFk);
+  return mode === 'freekick' ? ks.freeKickTakerId : ks.penaltyOrder[n % ks.penaltyOrder.length];
+}
+
+export function validShotFor(v: unknown, playerId: string | null | undefined, mode: MatchMode = 'penalty'): v is ShotInput {
+  if (!validShot(v)) return false;
+  const cfg = MODES[mode];
+  const p = getPlayer(playerId ?? null);
+  const env = shotEnvelope(p, mode);
+  const sp = Math.hypot(v.v[0], v.v[1], v.v[2]);
+  if (sp > cfg.maxSpeed * env.speedMul + 0.05) return false;
+  const lim = curveLimits(cfg);
+  if (Math.abs(v.spin) > Math.min(lim.spinMax * 1.4, lim.spinMax * 0.9 * env.spinMul) + 1e-3) return false;
+  if ((v.knuckle ?? 0) > 0) {
+    if (v.spin !== 0) return false;
+    if ((v.knuckle ?? 0) > env.knuckle + 1e-3) return false;
+  }
+  return true;
 }
 
 export interface RoundSimulation {

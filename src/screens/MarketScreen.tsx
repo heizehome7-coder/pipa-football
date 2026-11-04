@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Flag, PlayerAvatar, PlayerCard, StatSheet } from '../components/PlayerArt';
 import { VersionBadge } from '../components/VersionBadge';
 import { AccountError, accountApi, type AccountReply, type Listing } from '../online/account';
-import { COUNTRY_NAME, MARKET_PLAYERS, ovr, PLAYERS, type PlayerDef } from '../players/players';
+import { COUNTRY_NAME, MARKET_PLAYERS, matchesSearch, ovr, PLAYERS, type PlayerDef } from '../players/players';
 import { formatMP, formatMPKo, type Wallet } from '../players/ownership';
 import type { Squad } from '../players/squad';
 import { PROGRESSION, saleFee, saleRange, sellerRevenue } from '../progress/progression';
@@ -46,6 +46,8 @@ export function MarketScreen({
   const [tab, setTab] = useState<'buy' | 'mine'>('buy');
   const [filter, setFilter] = useState<Filter>('ALL');
   const [sort, setSort] = useState<Sort>('PRICE LOW');
+  // UPDATE 9: search by Korean or English name (works with the filters and sorting)
+  const [query, setQuery] = useState('');
   const [detail, setDetail] = useState<PlayerDef | null>(null);
   const [confirm, setConfirm] = useState<{ p: PlayerDef; price: number; user: boolean } | null>(null);
   const [selling, setSelling] = useState<{ p: PlayerDef; cardId?: string } | null>(null);
@@ -78,11 +80,11 @@ export function MarketScreen({
   const priceOf = (p: PlayerDef) => offers[p.id]?.min ?? p.price!;
 
   const list = useMemo(() => {
-    const l = MARKET_PLAYERS.filter((p) => inFilter(p, filter));
+    const l = MARKET_PLAYERS.filter((p) => inFilter(p, filter) && matchesSearch(p, query));
     const pr = (p: PlayerDef) => offers[p.id]?.min ?? p.price!;
-    if (sort === 'NAME') return [...l].sort((a, b) => a.name.localeCompare(b.name));
-    return [...l].sort((a, b) => (sort === 'PRICE LOW' ? pr(a) - pr(b) : pr(b) - pr(a)) || a.name.localeCompare(b.name));
-  }, [filter, sort, offers]);
+    if (sort === 'NAME') return [...l].sort((a, b) => a.nameKo.localeCompare(b.nameKo, 'ko'));
+    return [...l].sort((a, b) => (sort === 'PRICE LOW' ? pr(a) - pr(b) : pr(b) - pr(a)) || a.nameKo.localeCompare(b.nameKo, 'ko'));
+  }, [filter, sort, offers, query]);
 
   const isListed = (id: string) => (wallet.listed ?? []).includes(id);
   const askBuy = (p: PlayerDef) => {
@@ -99,7 +101,7 @@ export function MarketScreen({
     try {
       const r = await accountApi.buy(token, p.id, price);
       onReply(r);
-      setToast({ text: `${p.name} 영입 완료!`, tone: 'good' });
+      setToast({ text: `${p.nameKo} 영입 완료!`, tone: 'good' });
     } catch (e) {
       if (e instanceof AccountError && e.reply && typeof e.reply.mp === 'number') onReply(e.reply);
       setToast({ text: e instanceof Error ? e.message : '잠시 후 다시 시도해주세요', tone: 'warn' });
@@ -143,6 +145,23 @@ export function MarketScreen({
 
       {tab === 'buy' && (
         <>
+          <div className="market-search">
+            <input
+              type="text"
+              inputMode="search"
+              placeholder="선수 검색 (예: 메시, 손흥민, yashin)"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              enterKeyHint="search"
+              autoComplete="off"
+              data-testid="market-search"
+            />
+            {query && (
+              <button className="btn-ghost small" onClick={() => setQuery('')} aria-label="검색 지우기" data-testid="market-search-clear">
+                ✕
+              </button>
+            )}
+          </div>
           <div className="squad-filters" role="tablist">
             {FILTERS.map((f) => (
               <button key={f} className={`chip ${filter === f ? 'on' : ''}`} onClick={() => setFilter(f)} role="tab" aria-selected={filter === f} data-testid={`mfilter-${f}`}>
@@ -157,6 +176,13 @@ export function MarketScreen({
               </button>
             ))}
           </div>
+          {!list.length && (
+            <p className="dev-empty" data-testid="market-empty">
+              {PLAYERS.some((p) => p.starter && matchesSearch(p, query))
+                ? `"${query}" — 무료 스타터 선수예요 (SQUAD에서 바로 사용, 이적시장 판매 없음)`
+                : `"${query}" 선수를 찾지 못했어요`}
+            </p>
+          )}
           <div className="card-grid" data-testid="market-grid">
             {list.map((p) => (
               <PlayerCard
@@ -193,9 +219,9 @@ export function MarketScreen({
                 <PlayerAvatar player={detail} size={72} />
               </span>
               <div className="detail-text">
-                <b>{detail.name}</b>
-                <span>
-                  {detail.nameKo}
+                <b>{detail.nameKo}</b>
+                <span className="detail-shirt">
+                  {detail.shirt}
                   {detail.legend ? ' · LEGEND' : ''}
                 </span>
                 <span>
@@ -235,7 +261,7 @@ export function MarketScreen({
         <div className="detail-backdrop confirm" data-testid="buy-confirm">
           <div className="detail-card confirm-card" onClick={(e) => e.stopPropagation()}>
             <p className="confirm-q">이 선수를 구매하시겠습니까?</p>
-            <b className="confirm-name">{confirm.p.name}</b>
+            <b className="confirm-name">{confirm.p.nameKo}</b>
             {confirm.user && (
               <p className="confirm-src" data-testid="confirm-source">
                 유저 매물 (가장 싼 매물부터 판매돼요)
@@ -320,7 +346,7 @@ function MyPlayers({
     if (locked) seenSquad.add(p.id);
     bought.push({ card, p, locked });
   }
-  bought.sort((a, b) => a.p.name.localeCompare(b.p.name) || Number(b.locked) - Number(a.locked));
+  bought.sort((a, b) => a.p.nameKo.localeCompare(b.p.nameKo, 'ko') || Number(b.locked) - Number(a.locked));
   const starters = PLAYERS.filter((p) => p.starter);
   const cancelListing = async (l: Listing) => {
     if (!token || busy) return;
@@ -344,7 +370,7 @@ function MyPlayers({
       </span>
       <span className="mine-name">
         <b>
-          {p.name}
+          {p.nameKo}
           {card?.source === 'pack' && <i className="mine-pack">PACK</i>}
         </b>
         <em>
@@ -414,7 +440,7 @@ function SellDialog({ player, cardId, token, onDone, onCancel }: { player: Playe
     setBusy(true);
     try {
       const r = await accountApi.sell(token, player.id, price, cardId);
-      onDone(r, { text: `${player.name} 판매 등록 완료 (LISTED)`, tone: 'good' });
+      onDone(r, { text: `${player.nameKo} 판매 등록 완료 (LISTED)`, tone: 'good' });
     } catch (e) {
       onDone(e instanceof AccountError && e.reply && typeof e.reply.mp === 'number' ? e.reply : null, { text: e instanceof Error ? e.message : '등록하지 못했어요', tone: 'warn' });
     }
@@ -423,7 +449,7 @@ function SellDialog({ player, cardId, token, onDone, onCancel }: { player: Playe
     <div className="detail-backdrop confirm" data-testid="sell-dialog">
       <div className="detail-card confirm-card" onClick={(e) => e.stopPropagation()}>
         <p className="confirm-q">SELL PLAYER</p>
-        <b className="confirm-name">{player.name}</b>
+        <b className="confirm-name">{player.nameKo}</b>
         <label className="field">
           <span>판매 희망 가격 (MARKET VALUE {formatMP(value)})</span>
           <input inputMode="numeric" value={raw} onChange={(e) => setRaw(e.target.value)} data-testid="sell-price" />

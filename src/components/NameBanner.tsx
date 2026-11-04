@@ -18,7 +18,7 @@ export function NameBanner({ player, label, show, sub }: { player: PlayerDef | n
     <div className="name-banner" key={show} data-testid="name-banner" data-player={player.id}>
       {label && <span className="nb-label">{label}</span>}
       <b>
-        <em>{player.number}</em> {player.name.toUpperCase()}
+        <em>{player.number}</em> {player.nameKo}
       </b>
       {sub && <span className="nb-sub">{sub}</span>}
     </div>

@@ -72,6 +72,7 @@ export function PlayTypeScreen({
   onSquad,
   onMarket,
   onPacks,
+  onEvents,
   onDeveloper,
   onRanking,
   onLevels,
@@ -87,6 +88,8 @@ export function PlayTypeScreen({
   onMarket: () => void;
   /** UPDATE 8: PLAYER PACKS */
   onPacks: () => void;
+  /** UPDATE 9: EVENT CENTER */
+  onEvents: () => void;
   /** UPDATE 6 patch: DEVELOPER MODE (server-checked code) */
   onDeveloper: () => void;
   /** UPDATE 7 */
@@ -152,7 +155,7 @@ export function PlayTypeScreen({
           <div className="mode-text">
             <strong>SQUAD</strong>
             <span className="mode-ko">MY SQUAD</span>
-            <span className="mode-desc">{squad ? `키커 5명 · GK ${getPlayer(squad.goalkeeperId)?.last ?? ''}` : '선수 구성하기'}</span>
+            <span className="mode-desc">{squad ? `키커 5명 · GK ${getPlayer(squad.goalkeeperId)?.koLast ?? ''}` : '선수 구성하기'}</span>
           </div>
           <span className="mode-arrow" aria-hidden>
             ›
@@ -184,6 +187,25 @@ export function PlayTypeScreen({
             <strong>PACKS</strong>
             <span className="mode-ko">플레이어 팩</span>
             <span className="mode-desc">{progress?.packs ? `열 수 있는 팩 ${progress.packs}개` : '팩을 열어 새 선수 획득'}</span>
+          </div>
+          <span className="mode-arrow" aria-hidden>
+            ›
+          </span>
+        </button>
+        <button className="mode-card play-card events-card" onClick={onEvents} data-testid="play-events">
+          <div className="play-icon">
+            <svg viewBox="0 0 64 64" aria-hidden>
+              <ellipse cx="32" cy="38" rx="20" ry="17" fill="none" stroke="currentColor" strokeWidth="3" />
+              <path d="M32 21 V55" stroke="currentColor" strokeWidth="2" strokeDasharray="3 3" />
+              <path d="M32 21 C 31 14 34 10 39 8" fill="none" stroke="var(--lime)" strokeWidth="3" strokeLinecap="round" />
+              <path d="M38 12 C 46 6 54 9 56 16 C 49 18 42 17 38 12 Z" fill="var(--lime)" />
+            </svg>
+            {!!(progress?.hong && progress.hong.bronze + progress.hong.silver + progress.hong.gold + progress.hong.red) && <span className="pack-count">!</span>}
+          </div>
+          <div className="mode-text">
+            <strong>EVENT CENTER</strong>
+            <span className="mode-ko">이벤트 센터</span>
+            <span className="mode-desc">홍 나와라 뚝딱 · 감자의 제왕</span>
           </div>
           <span className="mode-arrow" aria-hidden>
             ›

@@ -33,6 +33,16 @@ export interface ShotMods {
   special: SpecialId | null;
 }
 
+/** UPDATE 9: the strongest knuckle a shot may carry (only KNUCKLE DRIVE goes above 1) */
+export const KNUCKLE_LIMIT = 1.35;
+/** UPDATE 9: KNUCKLE DRIVE — the lowest power that still makes a knuckle */
+export const KNUCKLE_DRIVE_POWER = 0.64;
+
+/** UPDATE 9: Ronaldo's nearly-straight, fast stroke (a LIGHT curve) is read as straight → knuckle */
+export function knuckleStroke(p: PlayerDef | null | undefined, level: number, power: number, lofted: boolean) {
+  return !!p && p.special === 'KNUCKLE_DRIVE' && level === 1 && !lofted && power >= KNUCKLE_DRIVE_POWER + 0.04;
+}
+
 const n = (v: number, lo: number, hi: number) => Math.max(0, Math.min(1, (v - lo) / (hi - lo)));
 
 /** instep (natural curl) for this player's strong foot; Son (two-footed) both ways */
@@ -68,62 +78,76 @@ export function shotModifiers(p: PlayerDef | null | undefined, c: ShotContext): 
   }
 
   let knuckle = 0;
-  const knuckleOk = straight && c.power >= 0.72;
+  // UPDATE 9: KNUCKLE DRIVE fires a little more easily (slightly slower stroke is enough)
+  const knuckleOk = straight && c.power >= (p.special === 'KNUCKLE_DRIVE' ? KNUCKLE_DRIVE_POWER : 0.72);
   if (knuckleOk) knuckle = n(s.knuckle, 75, 99) * 0.55;
 
+  // UPDATE 9 — every special a clearly noticeable strength (each one ONE strength, not all)
   switch (p.special) {
     case 'POWER_BURST':
-      if (straight && c.power > 0.7) (speedMul *= 1.04), (special = p.special);
+      if (straight && c.power > 0.7) (speedMul *= 1.06), (special = p.special);
       break;
     case 'POWER_FINISH':
-      if (c.power > 0.7) (speedMul *= straight ? 1.05 : 1.02), (special = straight ? p.special : null);
+      if (c.power > 0.7) (speedMul *= straight ? 1.07 : 1.03), (special = straight ? p.special : null);
       break;
     case 'FINESSE_MASTER':
       knuckle = 0; // his curl never wobbles
-      if (instep && c.level >= 2) (spinMul *= 1.12), (errMul *= 0.85), (special = p.special);
+      if (instep) (spinMul *= c.level >= 2 ? 1.2 : 1.12), (errMul *= 0.75), (special = p.special);
       break;
     case 'KNUCKLE_DRIVE':
-      if (knuckleOk) (knuckle = Math.min(1, knuckle + 0.45)), (special = p.special);
+      // a much clearer, stronger knuckle than any other player (still a wandering ball, no zig-zag)
+      if (knuckleOk) (knuckle = Math.min(KNUCKLE_LIMIT, knuckle + 0.75)), (speedMul *= 1.03), (special = p.special);
       break;
     case 'LOW_DISGUISE':
-      if (c.low && !c.lofted) (errMul *= 0.6), (speedMul *= 1.02), (special = p.special);
+      if (c.low && !c.lofted) (errMul *= 0.5), (speedMul *= 1.04), (special = p.special);
+      if (instep) spinMul *= 1.08;
       break;
     case 'LEFT_CURL':
     case 'LEFT_FINESSE':
-      if (instep) (spinMul *= 1.08), (errMul *= 0.8), (special = p.special);
+      if (instep) (spinMul *= 1.15), (errMul *= 0.72), (special = p.special);
       break;
     case 'TWO_FOOT_FINESSE':
-      if (curl) (spinMul *= 1.04), (special = p.special);
+      if (curl) (spinMul *= 1.1), (errMul *= 0.85), (special = p.special);
       break;
     case 'QUICK_LOW_CURL':
-      if (curl && c.low) (spinMul *= 1.1), (speedMul *= 1.03), (special = p.special);
+      if (curl && c.low) (spinMul *= 1.15), (speedMul *= 1.05), (special = p.special);
       break;
     case 'DRIVEN_CURVE':
-      if (curl && c.power > 0.6) (errMul *= 0.6), (spinMul *= c.mode === 'freekick' ? 1.06 : 1), (special = p.special);
+      if (curl && c.power > 0.6) (errMul *= 0.55), (spinMul *= c.mode === 'freekick' ? 1.12 : 1.06), (special = p.special);
       break;
     case 'PENALTY_PRECISION':
-      if (c.mode === 'penalty') (comp = 1), (errMul *= 0.7), (special = c.power > 0.7 ? p.special : null);
+      if (c.mode === 'penalty') (comp = 1), (errMul *= 0.55), (special = c.power > 0.7 ? p.special : null);
       break;
     case 'CLINICAL_FINISH':
-      if (c.mode === 'penalty' || c.low) (errMul *= 0.7), (special = c.low ? p.special : null);
+      if (c.mode === 'penalty' || c.low) (errMul *= 0.6), (special = c.low ? p.special : null);
       break;
     case 'SET_PIECE_CONTROL':
-      errMul *= 0.75;
+      errMul *= 0.65;
       if (c.mode === 'freekick') special = p.special;
       break;
     case 'CONTROLLED_DRIVE':
-      if (straight) (errMul *= 0.75), (special = c.power > 0.6 ? p.special : null);
+      if (straight) (errMul *= 0.65), (special = c.power > 0.6 ? p.special : null);
       break;
     // UPDATE 8
     case 'KOREAN_LEGEND':
-      if (c.power > 0.7 && !curl) (speedMul *= 1.04), (errMul *= 0.85), (special = p.special);
-      else if (c.low) (errMul *= 0.8), (special = p.special);
+      if (c.power > 0.7 && !curl) (speedMul *= 1.05), (errMul *= 0.78), (special = p.special);
+      else if (c.low) (errMul *= 0.75), (special = p.special);
       break;
     case 'RED_FINISHER':
-      if (c.power > 0.65 && !c.lofted) (speedMul *= 1.03), (errMul *= 0.85), (special = straight ? p.special : null);
+      if (c.power > 0.65 && !c.lofted) (speedMul *= 1.04), (errMul *= 0.78), (special = straight ? p.special : null);
       break;
     case 'BALANCED_FINISH':
-      errMul *= 0.95;
+      errMul *= 0.9;
+      break;
+    // UPDATE 9 — Pelé: accurate even at full power, a fine curl, a controlled low shot.
+    // Only the error around HIS aim shrinks: never an auto-aim towards the goal.
+    case 'KING_OF_FOOTBALL':
+      comp = 1;
+      errMul *= 0.5;
+      if (curl && instep) spinMul *= 1.1;
+      if (c.low && !c.lofted) speedMul *= 1.03;
+      if (straight && c.power > 0.7) speedMul *= 1.04;
+      if (c.power > 0.6 || curl || c.low) special = p.special;
       break;
   }
   const err = 0.6 * (1 - 0.8 * acc) * (0.35 + 0.65 * c.power * c.power * (1 - 0.8 * comp)) * errMul;
@@ -142,4 +166,26 @@ export function strokeHash(points: { x: number; y: number; t: number }[]) {
     h = Math.imul(h, 16777619) >>> 0;
   }
   return h >>> 0;
+}
+
+/**
+ * UPDATE 9 — the most this player's shot can ever be (online anti-cheat): the server
+ * compares a submitted shot with the envelope of the player who really takes the kick, so a
+ * client cannot inflate its stats or force a special it does not have.
+ */
+export function shotEnvelope(p: PlayerDef | null | undefined, mode: GameMode) {
+  let speedMul = 1;
+  let spinMul = 1;
+  let knuckle = 0;
+  for (const level of [0, 1, 2, 3])
+    for (const spinSign of [1, -1])
+      for (const lofted of [false, true])
+        for (const low of [false, true])
+          for (const power of [0.65, 0.7, 0.75, 1]) {
+            const m = shotModifiers(p, { mode, power, level, spinSign, lofted, low });
+            speedMul = Math.max(speedMul, m.speedMul);
+            if (level > 0) spinMul = Math.max(spinMul, m.spinMul);
+            if (level === 0) knuckle = Math.max(knuckle, m.knuckle);
+          }
+  return { speedMul: Math.min(1.15, speedMul), spinMul, knuckle };
 }

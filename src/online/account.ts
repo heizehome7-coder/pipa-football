@@ -91,7 +91,24 @@ export interface PackPull {
   cardId: string;
   playerId: string;
   tier: 'base' | 'rare' | 'epic' | 'elite' | 'icon';
+  /** UPDATE 9: which pack gave it (top = 홍 TOP LEGEND) */
+  kind?: 'player' | 'good' | 'legend' | 'top';
   at: string;
+}
+
+/** UPDATE 9 — EVENT CENTER */
+export type HongGradeId = 'bronze' | 'silver' | 'gold' | 'red';
+export type HongTokens = Record<HongGradeId, number>;
+export interface PotatoSessionView {
+  sessionId: string;
+  status: 'playing' | 'done';
+  startAt: number;
+  endAt: number;
+  round: number;
+  score: number;
+  rounds: { hole: number; kind: 'normal' | 'red' | 'rotten' }[][];
+  clicked: string[];
+  reward: { mp?: number; pack?: 'good' } | null;
 }
 
 export interface AccountReply {
@@ -116,6 +133,19 @@ export interface AccountReply {
   fv?: number;
   claimedLevelRewards?: number[];
   unopenedPacks?: number;
+  /** UPDATE 9 */
+  goodPacks?: number;
+  legendPacks?: number;
+  hong?: HongTokens;
+  potato?: PotatoSessionView | null;
+  serverNow?: number;
+  results?: HongGradeId[];
+  reward?: { grade: HongGradeId; mp?: number; pack?: 'legend'; pull?: PackPull };
+  hit?: 'normal' | 'red' | 'rotten' | null;
+  score?: number;
+  ended?: boolean;
+  paidNow?: boolean;
+  repeated?: boolean;
   daily?: DailyStatus;
   notices?: SaleNotice[];
   price?: number;
@@ -183,7 +213,14 @@ export const accountApi = {
   // ── UPDATE 7 ──
   sell: (token: string, playerId: string, price: number, cardId?: string) => post('/api/market/sell', { token, playerId, price, cardId }, 30_000),
   /** UPDATE 8: open one PLAYER PACK — the SERVER draws the player */
-  openPack: (token: string) => post('/api/packs/open', { token }, 30_000),
+  openPack: (token: string, kind: 'player' | 'good' | 'legend' = 'player') => post('/api/packs/open', { token, kind }, 30_000),
+  // ── UPDATE 9: EVENT CENTER (every result decided by the server) ──
+  eventsState: (token: string) => post('/api/events/state', { token }, 30_000),
+  hongDraw: (token: string, count: 1 | 10, nonce: string) => post('/api/events/hong/draw', { token, count, nonce }, 30_000),
+  hongExchange: (token: string, grade: HongGradeId, nonce: string) => post('/api/events/hong/exchange', { token, grade, nonce }, 30_000),
+  potatoStart: (token: string, nonce: string) => post('/api/events/potato/start', { token, nonce }, 30_000),
+  potatoTap: (token: string, sessionId: string, round: number, holeId: number) => post('/api/events/potato/tap', { token, sessionId, round, holeId }, 15_000),
+  potatoFinish: (token: string, sessionId: string) => post('/api/events/potato/finish', { token, sessionId }, 30_000),
   cancel: (token: string, listingId: string) => post('/api/market/cancel', { token, listingId }, 30_000),
   marketState: (token: string | null) =>
     post('/api/market/state', { token }, 30_000) as Promise<AccountReply & { listings?: Record<string, { count: number; min: number }>; mine?: Listing[] }>,
@@ -247,3 +284,14 @@ export const devApi = {
   grantPacks: (devToken: string, nickname: string, count: number) =>
     devPost('/api/dev/grant-packs', { devToken, nickname, count }) as Promise<DevReply & { unopenedPacks?: number }>,
 };
+
+/** UPDATE 9: a fresh id per button press (a network retry of the same press is answered once) */
+export function newNonce() {
+  const a = new Uint8Array(12);
+  try {
+    crypto.getRandomValues(a);
+  } catch {
+    for (let i = 0; i < a.length; i++) a[i] = (Date.now() * (i + 7)) & 0xff;
+  }
+  return Array.from(a, (b) => b.toString(16).padStart(2, '0')).join('');
+}

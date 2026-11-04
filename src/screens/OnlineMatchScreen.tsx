@@ -4,7 +4,7 @@ import type { Channel } from '../online/channel/Channel';
 import type { LobbyClient, MatchInfo } from '../online/LobbyClient';
 import { OnlineMatchClient, type MatchView } from '../online/match/OnlineMatchClient';
 import type { DiveDir, MatchMode, MatchState, WireResult } from '../online/match/protocol';
-import { freeKickSpotIndex } from '../online/match/penaltyRound';
+import { freeKickSpotIndex, roundTaker } from '../online/match/penaltyRound';
 import { formatMP } from '../players/ownership';
 import type { ProgressEvent } from '../App';
 import { MatchFoundScreen } from './MatchFoundScreen';
@@ -295,7 +295,7 @@ function MatchPlay({ v, s, client, mode, onLeave }: { v: MatchView; s: MatchStat
           player={kickerPlayer}
           show={kickerPlayer ? `${roundKey}:${kickerPlayer.id}` : ''}
           label={s.kicker === v.myPeer ? 'YOUR KICKER' : 'KICKER'}
-          sub={keeperPlayer ? `GK · ${keeperPlayer.name.toUpperCase()}` : null}
+          sub={keeperPlayer ? `GK · ${keeperPlayer.nameKo}` : null}
         />
       )}
 
@@ -331,12 +331,10 @@ function roundPlayers(s: MatchState, mode: MatchMode) {
   const keeper = s.players.find((p) => p.peer === s.keeper);
   // kicker's n-th kick in this match → n-th taker in his order (wraps after 5)
   const n = s.history.filter((h) => h.kicker === s.kicker && h.round < s.round).length;
-  const withFk = (q: typeof kicker) =>
-    q?.squad ? { ...q.squad, freeKickTakerId: q.squad.freeKickTakerId && q.squad.penaltyOrder?.includes(q.squad.freeKickTakerId) ? q.squad.freeKickTakerId : q.squad.penaltyOrder?.[0] } : null;
-  const ks = sanitizeSquad(withFk(kicker));
-  const gs = sanitizeSquad(withFk(keeper));
+  const gs = sanitizeSquad(keeper?.squad ?? null);
   // UPDATE 6: FREE KICK DUEL — every kick is taken by his FREE KICK TAKER
-  const taker = mode === 'freekick' ? ks.freeKickTakerId : ks.penaltyOrder[n % ks.penaltyOrder.length];
+  // UPDATE 9: the same function the server uses to check the shot against this player
+  const taker = roundTaker(kicker?.squad ?? null, mode, n);
   return { kickerPlayer: getPlayer(taker), keeperPlayer: getPlayer(gs.goalkeeperId) };
 }
 

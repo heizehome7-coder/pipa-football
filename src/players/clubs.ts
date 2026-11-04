@@ -31,6 +31,16 @@ export const CLUB: Record<string, string> = {
   guirassy: 'BORUSSIA DORTMUND', frimpong: 'LIVERPOOL', balde: 'BARCELONA', bastoni: 'INTER', araujo: 'BARCELONA',
   gvardiol: 'MANCHESTER CITY', gabriel: 'ARSENAL', diogocosta: 'PORTO', szczesny: 'BARCELONA', mamardashvili: 'LIVERPOOL',
   heoshin: 'LIVERPOOL',
+  // UPDATE 9 — players whose current club we are not sure about are left out on purpose
+  // (no club → the pack shows "CLUB TBA"); add them here when known.
+  chogueseong: 'FC MIDTJYLLAND', ohhyeongyu: 'KRC GENK', leejaesung: 'MAINZ 05', hwanginbeom: 'FEYENOORD',
+  seolyoungwoo: 'CRVENA ZVEZDA', baejunho: 'STOKE CITY', yanghyunjun: 'CELTIC', eomjisung: 'SWANSEA CITY',
+  jungwooyeong: 'UNION BERLIN', nasangho: 'MACHIDA ZELVIA', kimyounggwon: 'ULSAN HD', johyeonwoo: 'ULSAN HD',
+  songbumkeun: 'JEONBUK HYUNDAI', kimseunggyu: 'FC TOKYO', leeseungwoo: 'JEONBUK HYUNDAI', baekseungho: 'BIRMINGHAM CITY',
+  pulisic: 'AC MILAN', santigimenez: 'AC MILAN', calhanoglu: 'INTER', barella: 'INTER', tonali: 'NEWCASTLE',
+  dimarco: 'INTER', benwhite: 'ARSENAL', timber: 'ARSENAL', vandeven: 'TOTTENHAM', huijsen: 'REAL MADRID',
+  endo: 'LIVERPOOL', minamino: 'MONACO', kamada: 'CRYSTAL PALACE', itohiroki: 'BAYERN MUNICH', suzukizion: 'PARMA',
+  goncaloramos: 'PARIS SAINT-GERMAIN', fabianruiz: 'PARIS SAINT-GERMAIN', manukone: 'ROMA',
 };
 
 /**

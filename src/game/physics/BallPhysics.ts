@@ -46,6 +46,9 @@ export const BALL = {
   maxSpeed: 40,
 } as const;
 
+/** UPDATE 9: highest knuckle strength (= abilities KNUCKLE_LIMIT; only KNUCKLE DRIVE reaches it) */
+export const KNUCKLE_MAX = 1.35;
+
 export type ShotProfile = 'STRAIGHT' | 'CURLED' | 'OUTSIDE_FOOT' | 'KNUCKLE';
 
 /** What the player meant, read from the drawn stroke (curve and loft are separate). */
@@ -351,7 +354,7 @@ export function calculateShotParameters(ball: THREE.Vector3, intent: ShotIntent,
   const psi0 = Math.atan2(dx, -dz);
   const g = BALL.g;
   const spin = clamp(intent.spin, -lim.spinMax * 1.4, lim.spinMax * 1.4);
-  const knuckle = spin === 0 ? clamp(intent.knuckle ?? 0, 0, 1) : 0;
+  const knuckle = spin === 0 ? clamp(intent.knuckle ?? 0, 0, KNUCKLE_MAX) : 0;
   const kseed = (intent.kseed ?? 0) >>> 0;
   probeKnuckle = knuckle;
   probeSeed = kseed;

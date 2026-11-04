@@ -15,7 +15,9 @@ export type MarketCountry =
   | 'CRO' | 'URU' | 'NGA' | 'SWE' | 'GEO' | 'COL' | 'NED' | 'DEN' | 'ECU' | 'HUN' | 'MAR' | 'CAN' | 'SVN'
   | 'SUI' | 'CZE' | 'URS' | 'NIR' | 'CIV' | 'CMR'
   // UPDATE 8
-  | 'SRB' | 'TUR' | 'JPN' | 'GUI' | 'BUL' | 'UKR';
+  | 'SRB' | 'TUR' | 'JPN' | 'GUI' | 'BUL' | 'UKR'
+  // UPDATE 9
+  | 'USA' | 'MEX';
 
 export interface MarketRow {
   id: string;
@@ -119,7 +121,7 @@ const CURRENT: Def[] = [
 ];
 
 const LEGENDS: Def[] = [
-  ['pele', 'Pelé', '펠레', 'EDSON', 'PELÉ', 'PELE', '10', ['ST', 'CAM'], 'BRA', [S7, BLK, 'buzz', 'none', 0.96, 1.0], F(94, 96, 92, 86, 94, 90, 97), 'BALANCED_FINISH', 'R', 2000],
+  ['pele', 'Pelé', '펠레', 'EDSON', 'PELÉ', 'PELE', '10', ['ST', 'CAM'], 'BRA', [S7, BLK, 'buzz', 'none', 0.96, 1.0], F(97, 99, 96, 92, 98, 95, 99), 'KING_OF_FOOTBALL', 'R', 2000],
   ['maradona', 'Diego Maradona', '디에고 마라도나', 'DIEGO', 'MARADONA', 'MARADONA', '10', ['CAM'], 'ARG', [S4, BLK, 'curly', 'none', 0.9, 1.02], F(86, 95, 98, 72, 96, 96, 94), 'LEFT_FINESSE', 'L', 2000],
   ['zidane', 'Zinedine Zidane', '지네딘 지단', 'ZINEDINE', 'ZIDANE', 'ZIDANE', '10', ['CAM'], 'FRA', [S3, BRN, 'bald', 'none', 1.04, 1.0], F(85, 94, 90, 74, 88, 88, 99), 'PENALTY_PRECISION', 'B', 1800],
   ['nazario', 'Ronaldo Nazário', '호나우두 나자리우', 'RONALDO', 'NAZÁRIO', 'R. NAZARIO', '9', ['ST'], 'BRA', [S5, BLK, 'buzz', 'none', 1.01, 1.06], F(96, 95, 84, 80, 98, 74, 95), 'CLINICAL_FINISH', 'R', 1900],
@@ -142,7 +144,7 @@ const LEGENDS: Def[] = [
   ['buffon', 'Gianluigi Buffon', '잔루이지 부폰', 'GIANLUIGI', 'BUFFON', 'BUFFON', '1', ['GK'], 'ITA', [S2, BRN, 'swept', 'stubble', 1, 1], G(95, 90, 92, 99, 92, 93, 94), 'POSITION_MASTER', 'R', 1450],
   ['cech', 'Petr Čech', '페트르 체흐', 'PETR', 'ČECH', 'CECH', '1', ['GK'], 'CZE', [S1, BRN, 'short', 'none', 1, 1], G(92, 88, 96, 95, 88, 95, 88), 'LONG_REACH', 'L', 1100],
   ['vandersar', 'Edwin van der Sar', '에드윈 판데르사르', 'EDWIN', 'VAN DER SAR', 'VAN DER SAR', '1', ['GK'], 'NED', [S1, BLD, 'bald', 'none', 1, 1], G(88, 86, 98, 94, 86, 96, 90), 'HIGH_REACH', 'R', 1050],
-  ['yashin', 'Lev Yashin', '레프 야신', 'LEV', 'YASHIN', 'YASHIN', '1', ['GK'], 'URS', [S1, DRK, 'short', 'none', 1, 1], G(99, 99, 99, 99, 97, 99, 98), 'BLACK_SPIDER', 'R', 1700],
+  ['yashin', 'Lev Yashin', '레프 야신', 'LEV', 'YASHIN', 'YASHIN', '1', ['GK'], 'URS', [S1, DRK, 'short', 'none', 1, 1], G(99, 99, 99, 99, 98, 99, 99), 'BLACK_SPIDER', 'R', 1700],
   ['best', 'George Best', '조지 베스트', 'GEORGE', 'BEST', 'BEST', '7', ['RW'], 'NIR', [S1, BLK, 'swept', 'full', 0.95, 0.9], F(84, 90, 90, 70, 92, 80, 92), 'QUICK_LOW_CURL', 'B', 1300],
   ['eusebio', 'Eusébio', '에우제비우', 'EUSÉBIO', 'DA SILVA', 'EUSEBIO', '10', ['ST'], 'POR', [S7, BLK, 'buzz', 'none', 0.99, 1.04], F(97, 90, 82, 88, 88, 86, 90), 'POWER_FINISH', 'R', 1450],
   ['vanbasten', 'Marco van Basten', '마르코 판바스턴', 'MARCO', 'VAN BASTEN', 'VAN BASTEN', '9', ['ST'], 'NED', [S1, BLD, 'sidepart', 'none', 1.05, 1.0], F(92, 96, 86, 80, 92, 80, 95), 'CLINICAL_FINISH', 'R', 1400],
@@ -216,13 +218,72 @@ const ICONS8: Def[] = [
   ['kiminjik', 'Kim Injik', '김인직', 'KIM', 'INJIK', 'KIM INJIK', '9', ['ST'], 'KOR', [S1, BLK, 'short', 'none', 1.02, 1.02], F(96, 95, 89, 94, 95, 88, 97), 'KOREAN_LEGEND', 'R', 1600],
 ];
 
+
+// ── UPDATE 9 — 50 new players (Korea & low-price 20 · overseas 20 · ICONS 10) ────────
+const CURRENT9: Def[] = [
+  ['chogueseong', 'Cho Gue-sung', '조규성', 'CHO', 'GUE-SUNG', 'CHO', '9', ['ST'], 'KOR', [S1, BLK, 'swept', 'none', 1.06, 1.02], F(84, 76, 66, 72, 78, 60, 76), 'POWER_FINISH', 'R', 10],
+  ['ohhyeongyu', 'Oh Hyeon-gyu', '오현규', 'OH', 'HYEON-GYU', 'OH', '18', ['ST'], 'KOR', [S2, BLK, 'buzz', 'none', 1.0, 1.04], F(85, 75, 64, 74, 79, 58, 74), 'POWER_BURST', 'R', 12],
+  ['leejaesung', 'Lee Jae-sung', '이재성', 'LEE', 'JAE-SUNG', 'LEE JS', '10', ['CAM'], 'KOR', [S1, BLK, 'short', 'none', 0.98, 0.94], F(74, 82, 80, 64, 78, 74, 84), 'BALANCED_FINISH', 'R', 25],
+  ['hwanginbeom', 'Hwang In-beom', '황인범', 'HWANG', 'IN-BEOM', 'HWANG IB', '6', ['CM'], 'KOR', [S1, BLK, 'sidepart', 'none', 0.96, 0.94], F(76, 83, 82, 70, 76, 80, 85), 'CONTROLLED_DRIVE', 'R', 35],
+  ['seolyoungwoo', 'Seol Young-woo', '설영우', 'SEOL', 'YOUNG-WOO', 'SEOL', '22', ['RB'], 'KOR', [S1, BLK, 'short', 'none', 0.98, 0.94], F(72, 74, 72, 60, 74, 62, 76), 'BALANCED_FINISH', 'R', 15],
+  ['baejunho', 'Bae Jun-ho', '배준호', 'BAE', 'JUN-HO', 'BAE', '10', ['CAM'], 'KOR', [S1, BLK, 'fringe', 'none', 0.98, 0.9], F(72, 79, 82, 60, 80, 72, 76), 'LOW_DISGUISE', 'R', 20],
+  ['yanghyunjun', 'Yang Hyun-jun', '양현준', 'YANG', 'HYUN-JUN', 'YANG', '13', ['RW'], 'KOR', [S1, BLK, 'fringe', 'none', 0.97, 0.9], F(74, 74, 78, 58, 80, 64, 72), 'QUICK_LOW_CURL', 'R', 12],
+  ['eomjisung', 'Eom Ji-sung', '엄지성', 'EOM', 'JI-SUNG', 'EOM', '10', ['LW'], 'KOR', [S1, BLK, 'short', 'none', 0.95, 0.9], F(72, 74, 76, 58, 78, 62, 72), 'QUICK_LOW_CURL', 'R', 10],
+  ['honghyunseok', 'Hong Hyun-seok', '홍현석', 'HONG', 'HYUN-SEOK', 'HONG HS', '8', ['CM'], 'KOR', [S1, BLK, 'short', 'none', 0.96, 0.94], F(74, 78, 82, 66, 74, 80, 76), 'LEFT_CURL', 'L', 18],
+  ['jungwooyeong', 'Jeong Woo-yeong', '정우영', 'JEONG', 'WOO-YEONG', 'JEONG', '11', ['RW'], 'KOR', [S1, BLK, 'fringe', 'none', 0.96, 0.92], F(74, 76, 76, 60, 80, 62, 74), 'LOW_DISGUISE', 'R', 15],
+  ['kwonchanghoon', 'Kwon Chang-hoon', '권창훈', 'KWON', 'CHANG-HOON', 'KWON', '22', ['CAM'], 'KOR', [S1, BLK, 'short', 'none', 0.93, 0.92], F(74, 78, 80, 64, 76, 76, 76), 'LEFT_FINESSE', 'L', 10],
+  ['nasangho', 'Na Sang-ho', '나상호', 'NA', 'SANG-HO', 'NA', '7', ['RW'], 'KOR', [S1, BLK, 'short', 'none', 0.94, 0.94], F(74, 76, 74, 62, 78, 62, 74), 'QUICK_LOW_CURL', 'R', 10],
+  ['kimyounggwon', 'Kim Young-gwon', '김영권', 'KIM', 'YOUNG-GWON', 'KIM YG', '19', ['CB'], 'KOR', [S1, BLK, 'short', 'none', 1.02, 1.04], F(76, 70, 62, 66, 64, 58, 84), 'CONTROLLED_DRIVE', 'L', 15],
+  ['johyeonwoo', 'Jo Hyeon-woo', '조현우', 'JO', 'HYEON-WOO', 'JO', '21', ['GK'], 'KOR', [S1, BLK, 'curly', 'none', 1.03, 1.0], G(86, 84, 82, 84, 82, 82, 84), 'PENALTY_SPECIALIST', 'R', 30],
+  ['songbumkeun', 'Song Bum-keun', '송범근', 'SONG', 'BUM-KEUN', 'SONG', '1', ['GK'], 'KOR', [S1, BLK, 'short', 'none', 1.07, 1.02], G(80, 78, 84, 80, 78, 82, 76), 'HIGH_REACH', 'R', 10],
+  ['kimseunggyu', 'Kim Seung-gyu', '김승규', 'KIM', 'SEUNG-GYU', 'KIM SG', '1', ['GK'], 'KOR', [S1, BLK, 'short', 'none', 1.05, 1.0], G(83, 80, 84, 84, 80, 82, 80), 'POSITION_MASTER', 'R', 14],
+  ['leeseungwoo', 'Lee Seung-woo', '이승우', 'LEE', 'SEUNG-WOO', 'LEE SW', '10', ['LW'], 'KOR', [S1, BLK, 'spiky', 'none', 0.9, 0.9], F(72, 76, 78, 60, 80, 66, 78), 'LOW_DISGUISE', 'R', 12],
+  ['baekseungho', 'Paik Seung-ho', '백승호', 'PAIK', 'SEUNG-HO', 'PAIK', '8', ['CM'], 'KOR', [S1, BLK, 'short', 'none', 0.97, 0.96], F(78, 78, 76, 74, 72, 74, 80), 'CONTROLLED_DRIVE', 'R', 15],
+  ['leedongkyeong', 'Lee Dong-gyeong', '이동경', 'LEE', 'DONG-GYEONG', 'LEE DG', '14', ['CAM'], 'KOR', [S1, BLK, 'fringe', 'none', 0.95, 0.92], F(76, 78, 82, 70, 76, 80, 76), 'LEFT_FINESSE', 'L', 20],
+  ['leedongjun', 'Lee Dong-jun', '이동준', 'LEE', 'DONG-JUN', 'LEE DJ', '11', ['RW'], 'KOR', [S1, BLK, 'short', 'none', 0.94, 0.92], F(74, 72, 72, 60, 78, 58, 70), 'POWER_BURST', 'R', 10],
+  // overseas
+  ['pulisic', 'Christian Pulisic', '크리스천 풀리식', 'CHRISTIAN', 'PULISIC', 'PULISIC', '11', ['RW'], 'USA', [S1, BRN, 'short', 'none', 0.96, 0.92], F(84, 85, 85, 72, 86, 78, 84), 'TWO_FOOT_FINESSE', 'R', 220],
+  ['santigimenez', 'Santiago Giménez', '산티아고 히메네스', 'SANTIAGO', 'GIMÉNEZ', 'S. GIMENEZ', '7', ['ST'], 'MEX', [S3, DRK, 'short', 'stubble', 1.02, 1.02], F(86, 82, 70, 76, 82, 64, 80), 'CLINICAL_FINISH', 'R', 160],
+  ['calhanoglu', 'Hakan Çalhanoğlu', '하칸 찰하놀루', 'HAKAN', 'ÇALHANOĞLU', 'CALHANOGLU', '20', ['CM'], 'TUR', [S2, DRK, 'short', 'full', 0.98, 0.98], F(86, 86, 90, 88, 76, 92, 88), 'SET_PIECE_CONTROL', 'R', 220],
+  ['barella', 'Nicolò Barella', '니콜로 바렐라', 'NICOLÒ', 'BARELLA', 'BARELLA', '23', ['CM'], 'ITA', [S2, DRK, 'swept', 'stubble', 0.94, 0.94], F(84, 84, 82, 78, 80, 76, 88), 'BALANCED_FINISH', 'R', 290],
+  ['tonali', 'Sandro Tonali', '산드로 토날리', 'SANDRO', 'TONALI', 'TONALI', '8', ['CM'], 'ITA', [S2, BRN, 'swept', 'full', 0.98, 0.98], F(84, 82, 80, 82, 76, 78, 86), 'CONTROLLED_DRIVE', 'R', 270],
+  ['dimarco', 'Federico Dimarco', '페데리코 디마르코', 'FEDERICO', 'DIMARCO', 'DIMARCO', '32', ['LB'], 'ITA', [S2, DRK, 'short', 'stubble', 0.94, 0.94], F(84, 82, 88, 78, 74, 86, 80), 'LEFT_CURL', 'L', 200],
+  ['benwhite', 'Ben White', '벤 화이트', 'BEN', 'WHITE', 'WHITE', '4', ['RB'], 'ENG', [S1, BRN, 'short', 'full', 1.0, 0.98], F(76, 74, 70, 64, 70, 60, 80), 'BALANCED_FINISH', 'R', 110],
+  ['timber', 'Jurriën Timber', '위리엔 팀버', 'JURRIËN', 'TIMBER', 'TIMBER', '12', ['RB'], 'NED', [S6, BLK, 'twists', 'none', 0.98, 0.96], F(76, 76, 72, 64, 74, 60, 82), 'BALANCED_FINISH', 'R', 170],
+  ['vandeven', 'Micky van de Ven', '미키 판더펜', 'MICKY', 'VAN DE VEN', 'VAN DE VEN', '37', ['CB'], 'NED', [S1, BLD, 'short', 'none', 1.06, 1.02], F(80, 70, 62, 70, 72, 56, 80), 'POWER_BURST', 'L', 210],
+  ['huijsen', 'Dean Huijsen', '딘 하위센', 'DEAN', 'HUIJSEN', 'HUIJSEN', '24', ['CB'], 'ESP', [S2, BRN, 'swept', 'none', 1.08, 1.02], F(80, 76, 70, 74, 70, 64, 82), 'CONTROLLED_DRIVE', 'R', 220],
+  ['endo', 'Wataru Endo', '엔도 와타루', 'WATARU', 'ENDO', 'ENDO', '3', ['CDM'], 'JPN', [S1, BLK, 'short', 'none', 0.96, 1.0], F(76, 74, 70, 72, 70, 62, 84), 'CONTROLLED_DRIVE', 'R', 60],
+  ['minamino', 'Takumi Minamino', '미나미노 다쿠미', 'TAKUMI', 'MINAMINO', 'MINAMINO', '18', ['CAM'], 'JPN', [S1, BLK, 'fringe', 'none', 0.94, 0.9], F(76, 80, 78, 64, 82, 70, 80), 'LOW_DISGUISE', 'R', 75],
+  ['kamada', 'Daichi Kamada', '가마다 다이치', 'DAICHI', 'KAMADA', 'KAMADA', '18', ['CAM'], 'JPN', [S1, BLK, 'swept', 'none', 0.98, 0.92], F(76, 80, 78, 66, 78, 72, 82), 'BALANCED_FINISH', 'R', 60],
+  ['itohiroki', 'Hiroki Ito', '이토 히로키', 'HIROKI', 'ITO', 'ITO', '21', ['CB'], 'JPN', [S1, BLK, 'short', 'none', 1.04, 1.02], F(80, 72, 70, 72, 68, 66, 80), 'CONTROLLED_DRIVE', 'L', 85],
+  ['sugawara', 'Yukinari Sugawara', '스가와라 유키나리', 'YUKINARI', 'SUGAWARA', 'SUGAWARA', '16', ['RB'], 'JPN', [S1, BLK, 'fringe', 'none', 0.96, 0.92], F(74, 74, 78, 62, 72, 70, 74), 'BALANCED_FINISH', 'R', 45],
+  ['suzukizion', 'Zion Suzuki', '스즈키 자이온', 'ZION', 'SUZUKI', 'SUZUKI', '31', ['GK'], 'JPN', [S5, BLK, 'buzz', 'none', 1.08, 1.04], G(85, 84, 88, 82, 82, 86, 80), 'LONG_REACH', 'R', 110],
+  ['goncaloramos', 'Gonçalo Ramos', '곤살루 하무스', 'GONÇALO', 'RAMOS', 'G. RAMOS', '9', ['ST'], 'POR', [S2, BLK, 'short', 'stubble', 1.0, 1.0], F(86, 86, 74, 76, 84, 66, 84), 'CLINICAL_FINISH', 'R', 230],
+  ['fabianruiz', 'Fabián Ruiz', '파비안 루이스', 'FABIÁN', 'RUIZ', 'FABIAN', '8', ['CM'], 'ESP', [S2, DRK, 'bun', 'full', 1.0, 0.94], F(82, 84, 86, 76, 76, 80, 86), 'LEFT_FINESSE', 'L', 170],
+  ['manukone', 'Manu Koné', '마누 코네', 'MANU', 'KONÉ', 'KONE', '17', ['CM'], 'FRA', [S7, BLK, 'buzz', 'none', 1.0, 1.02], F(80, 74, 70, 72, 72, 60, 78), 'POWER_BURST', 'R', 95],
+  ['moukoko', 'Youssoufa Moukoko', '유수파 무코코', 'YOUSSOUFA', 'MOUKOKO', 'MOUKOKO', '18', ['ST'], 'GER', [S7, BLK, 'buzz', 'none', 0.94, 0.96], F(80, 76, 68, 66, 80, 58, 70), 'LOW_DISGUISE', 'L', 35],
+];
+
+const ICONS9: Def[] = [
+  ['parkjisung', 'Park Ji-sung', '박지성', 'PARK', 'JI-SUNG', 'PARK', '13', ['CM'], 'KOR', [S1, BLK, 'short', 'none', 0.96, 0.98], F(82, 86, 80, 78, 84, 72, 92), 'BALANCED_FINISH', 'R', 800],
+  ['chabumkun', 'Cha Bum-kun', '차범근', 'CHA', 'BUM-KUN', 'CHA', '11', ['ST'], 'KOR', [S1, BLK, 'short', 'none', 1.0, 1.04], F(95, 90, 78, 88, 90, 74, 90), 'POWER_FINISH', 'R', 1400],
+  ['ahnjunghwan', 'Ahn Jung-hwan', '안정환', 'AHN', 'JUNG-HWAN', 'AHN', '19', ['CF'], 'KOR', [S1, DRK, 'swept', 'none', 0.98, 0.94], F(80, 86, 84, 70, 82, 80, 84), 'CLINICAL_FINISH', 'R', 430],
+  ['hongmyungbo', 'Hong Myung-bo', '홍명보', 'HONG', 'MYUNG-BO', 'HONG', '20', ['CB'], 'KOR', [S1, BLK, 'short', 'none', 1.0, 1.0], F(84, 84, 76, 80, 72, 80, 94), 'PENALTY_PRECISION', 'R', 550],
+  ['kimnamil', 'Kim Nam-il', '김남일', 'KIM', 'NAM-IL', 'KIM NI', '5', ['CDM'], 'KOR', [S1, BLK, 'short', 'none', 0.98, 1.02], F(82, 76, 70, 76, 70, 64, 84), 'CONTROLLED_DRIVE', 'R', 260],
+  ['parkchuyoung', 'Park Chu-young', '박주영', 'PARK', 'CHU-YOUNG', 'PARK CY', '10', ['ST'], 'KOR', [S1, BLK, 'short', 'none', 1.0, 0.96], F(82, 84, 80, 74, 80, 84, 82), 'SET_PIECE_CONTROL', 'R', 300],
+  ['leedongguk', 'Lee Dong-gook', '이동국', 'LEE', 'DONG-GOOK', 'LEE DG', '20', ['ST'], 'KOR', [S1, BLK, 'short', 'none', 1.05, 1.06], F(88, 86, 74, 82, 82, 70, 86), 'POWER_FINISH', 'R', 550],
+  ['leeyoungpyo', 'Lee Young-pyo', '이영표', 'LEE', 'YOUNG-PYO', 'LEE YP', '12', ['LB'], 'KOR', [S1, BLK, 'short', 'none', 0.94, 0.94], F(74, 82, 80, 64, 80, 70, 90), 'TWO_FOOT_FINESSE', 'B', 450],
+  ['berbatov', 'Dimitar Berbatov', '디미타르 베르바토프', 'DIMITAR', 'BERBATOV', 'BERBATOV', '9', ['ST'], 'BUL', [S2, DRK, 'swept', 'stubble', 1.06, 0.98], F(84, 90, 86, 76, 86, 78, 96), 'CLINICAL_FINISH', 'R', 820],
+  ['klose', 'Miroslav Klose', '미로슬라프 클로제', 'MIROSLAV', 'KLOSE', 'KLOSE', '11', ['ST'], 'GER', [S1, BRN, 'short', 'none', 1.03, 1.0], F(88, 93, 74, 76, 88, 66, 92), 'CLINICAL_FINISH', 'R', 1050],
+];
+
 const row = (d: Def, legend: boolean): MarketRow => {
   const [id, name, nameKo, first, last, shirt, number, positions, country, look, ab, special, foot, priceM] = d;
   return { id, name, nameKo, first, last, shirt, number, positions, country, look, special, foot, price: priceM * M, legend, ...(isGk(ab) ? { gk: ab } : { stats: ab }) };
 };
 
 /** the 95 new market players (current + legends) */
-export const MARKET_NEW: MarketRow[] = [...CURRENT.map((d) => row(d, false)), ...CURRENT8.map((d) => row(d, false)), ...ICONS8.map((d) => row(d, true)), ...LEGENDS.map((d) => row(d, true))];
+export const MARKET_NEW: MarketRow[] = [...CURRENT.map((d) => row(d, false)), ...CURRENT8.map((d) => row(d, false)), ...ICONS8.map((d) => row(d, true)), ...CURRENT9.map((d) => row(d, false)), ...ICONS9.map((d) => row(d, true)), ...LEGENDS.map((d) => row(d, true))];
 
 /** UPDATE 4 players that move to the market (record already exists) — price only */
 export const MARKET_EXISTING_PRICES: Record<string, number> = {
@@ -247,4 +308,7 @@ export const MARKET_ORDER: string[] = [
   // UPDATE 8: 101–150
   ...CURRENT8.map((d) => d[0]),
   ...ICONS8.map((d) => d[0]),
+  // UPDATE 9: 151–200
+  ...CURRENT9.map((d) => d[0]),
+  ...ICONS9.map((d) => d[0]),
 ];

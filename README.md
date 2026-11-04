@@ -1,4 +1,4 @@
-# PIPA · FOOTBALL GAME  — UPDATE 4
+# PIPA · FOOTBALL GAME  — UPDATE 9
 
 > 버전 표시는 `src/version.ts`의 `GAME_VERSION` 하나로 관리 (다음 큰 업데이트 때 숫자만 올리기)
 
@@ -50,6 +50,23 @@ npm run build:single   # dist-single/ — index.html 한 파일 (어디서나 �
 - GK: 6방향 블렌딩 다이브, 능력 반영(팔 길이/이동 거리), 선방·실점 리액션 — `Goalkeeper.ts`
 - 골 세리머니: 모든 선수 공통 "두 손 들고 환호" + 실패(SAVE/MISS/POST/CROSSBAR) 리액션 — `reactions.ts`; 리액션 중 입력 잠금(~2초)
 - 카드 앞면 OVR + POWER/ACCURACY/CURVE, 상세에 전체 능력 + SPECIAL ABILITY. 등 이름 크기 확대
+
+## UPDATE 9 — EVENT CENTER & PLAYER BALANCE
+- **HOME**: 혼자서 · 온라인 · SQUAD · TRANSFER MARKET · PACKS · **EVENT CENTER** · RANKING · 개발자 모드. `GAME_VERSION = 9`
+- **EVENT CENTER** (`src/screens/EventCenterScreen.tsx`, 숫자·확률은 `src/progress/events.ts` 한 곳). 모든 결과는 서버(`server/accounts.mjs`)가 crypto 난수로 정하고 FV 차감·결과·토큰/MP/카드를 **한 번의 저장**으로 처리(계정 잠금). 같은 요청의 재전송(nonce)은 같은 답만 돌려줌 → 새로고침·여러 탭·연타로 중복 수령 불가
+  - **홍 나와라 뚝딱**: 1회 50 FV · 10회 500 FV(독립 추첨 10번). 동 50 % · 은 30 % · 금 15 % · 홍 5 %(보정·확정 없음). 박이 흔들림 → 열림 → 등급 색 빛(홍 = 붉은빛+금색), SKIP, 무음. 토큰 `hong{bronze,silver,gold,red}` 서버 저장. 교환소(1개씩): 동 20,000,000 MP · 은 50,000,000 MP · 금 LEGEND PACK ×1 · 홍 TOP LEGEND(펠레·마라도나·호나우두 나자리우·호나우지뉴·지단 20 %씩)
+  - **감자의 제왕**: 50 FV(START 때 서버 차감) · 8구멍(4×2) · 12라운드 × 1초. 1~4R 일반(+1), 5R~ 빨간(−1), 8R~ 썩은(−2), 같은 구멍 중복 없음, 점수 = max(0, 점수 + 점) · 10~12점 GOOD PLAYER PACK · 6~9점 30,000,000 MP · 0~5점 10,000,000 MP(정확히 1번). 서버 세션(sessionId·라운드별 감자·점수·클릭 기록·시작 시각·상태)이 감자를 정하고, 터치 `{sessionId, round, holeId}`를 서버 시계(+450 ms 지연 허용)로 검사. 같은 감자 2번·지난/미래 라운드·종료 후 터치는 무효. 게임 도중 새로고침하면 서버 시계대로 이어지고, 끝까지 안 보고 나가도 다음 접속 때 보상이 1번 정산됨
+  - API: `/api/events/state`, `/api/events/hong/draw {count, nonce}`, `/api/events/hong/exchange {grade, nonce}`, `/api/events/potato/start|tap|finish`
+- **팩 3종** (`src/progress/packs.ts`, 개봉 연출 공유): PLAYER PACK(기존) · GOOD PLAYER PACK(1억~4억 50 % · 4억~8억 30 % · 8억~14억 15 % · 14억~20억 5 %, 1억 미만 없음) · LEGEND PACK(12억~14억 55 % · 14억~17억 30 % · 17억~20억 15 %). 구간은 [이상, 미만)(마지막만 이하), 구간 안에서는 몸값이 낮을수록 확률↑(1/가격), 빈 구간은 비율대로 재분배. `/api/packs/open {kind: player|good|legend}`
+- **팩 연출 시간**: COUNTRY 1.8 s · POSITION 1.5 s · CLUB/ICON 1.8 s, 각 단계 페이드 인 → 정지 → 페이드 아웃, SKIP 유지. 클럽 정보가 확실하지 않은 선수는 "CLUB TBA"
+- **이름 한국어화**: 모든 화면(카드·스쿼드·이적시장·팩·골 카드·키커 배너)에 한국어 이름(`nameKo`), 유니폼 등 이름만 영어. playerId 변경 없음
+- **이적시장 검색**: 한글/영어/대소문자/악센트 무시(`matchesSearch`), 필터·정렬과 함께 동작, 결과 없음 안내, 무료 스타터 안내
+- **신규 선수 50명**: 한국/저가 20 · 해외 20 · ICON 10 → 이적시장 200명
+- **레프 야신**(99/99/99/99/98/99/99, BLACK SPIDER): `BLACK_SPIDER` 설정(`Goalkeeper.ts`)이 실제 다이빙에 적용 — 빠른 도약·비행, 수평·수직 리치(손끝 콜라이더), 체공 +22 %, AI 반응, 공중 캐치. 방향·타이밍이 맞으면 상단 구석까지 닿고, 반대 방향/늦은 입력/완벽한 구석 강슛은 실점
+- **무료 스타터 GK 너프**(쿠르투아·노이어·알리송): 표시 능력치를 낮춤(능력치가 곧 실제 다이빙 속도·리치·AI 반응 → 표시 = 실제 성능)
+- **SPECIAL 강화**: 특수능력마다 한 가지 강점을 더 분명하게(전 능력 동시 강화 없음). 호날두 KNUCKLE DRIVE — 발동 파워 0.64(이전 0.72) + 거의 직선인 빠른 스트로크(약한 커브)도 너클로 인식, 너클 강도 최대 1.35(다른 선수 ≤ 1), 90°꺾임·U턴 없음. 메시·호나우지뉴·살라·야말·손흥민·네이마르·더 브라위너 감아차기 회전 효율↑·오차↓(한 방향으로만 부드럽게). 펠레 97/99/96/92/98/95/99 KING OF FOOTBALL(강하게 차도 오차 최소, 자동 조준 없음)
+- **온라인 검증**: 서버가 그 라운드의 실제 키커(`roundTaker` — 양쪽 화면과 같은 규칙)를 정하고 `validShotFor`로 그 선수의 능력·특수능력이 낼 수 있는 최고 속도·회전·너클을 넘는 슛을 거부 → 능력치 999·특수능력 강제 발동 불가
+- 테스트: `npx tsx scripts/update9-test.ts`, `node scripts/update9-server-test.mjs`, `python3 scripts/update9-e2e.py`
 
 ## UPDATE 8 — PLAYER PACK & ONLINE GAMEPLAY
 - **선수 DB 하나**: `src/players/players.ts`(+ `market.ts` 데이터, `clubs.ts` 클럽) — `primaryPosition`, `club`, `isIcon`, `tradeable`, 가격·능력치·특수능력. 팩과 이적시장이 같은 레코드를 씀. 신규 50명(현역 30 · ICON 18 · 김인직 ICON ST · 허신 LIVERPOOL ST) → 이적시장 150명
