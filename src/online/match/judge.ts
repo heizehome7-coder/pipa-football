@@ -8,3 +8,9 @@ export { drawPackPlayer, packPool, packTier, PACK_CONFIG } from '../../progress/
 // UPDATE 9
 export { drawAnyPack, drawTopLegend, SPECIAL_PACKS, TOP_LEGENDS, bandOdds } from '../../progress/packs';
 export { HONG, HONG_GRADES, drawHongGrade, POTATO, potatoRound, potatoScore, potatoReward } from '../../progress/events';
+// UPDATE 10
+export { isBuyable } from '../../players/players';
+export { SEASON } from '../../progress/season';
+export { MISSIONS, weekKey, msToReset } from '../../progress/missions';
+export { MATERIALS, materialOf, evoOvr, evoSuccessRate, EVO_MAX } from '../../progress/evolution';
+export { EMOTES } from './protocol';

@@ -1,4 +1,4 @@
-import { VersionBadge } from '../components/VersionBadge';
+import { SeasonBadge, VersionBadge } from '../components/VersionBadge';
 import type { PlayerProfile } from '../game/core/types';
 import { PlayerAvatar } from '../components/PlayerArt';
 import { getPlayer, type PlayerDef } from '../players/players';
@@ -73,6 +73,10 @@ export function PlayTypeScreen({
   onMarket,
   onPacks,
   onEvents,
+  onEvolution,
+  onShop,
+  onMissions,
+  onStats,
   onDeveloper,
   onRanking,
   onLevels,
@@ -90,6 +94,11 @@ export function PlayTypeScreen({
   onPacks: () => void;
   /** UPDATE 9: EVENT CENTER */
   onEvents: () => void;
+  /** UPDATE 10 */
+  onEvolution: () => void;
+  onShop: () => void;
+  onMissions: () => void;
+  onStats: () => void;
   /** UPDATE 6 patch: DEVELOPER MODE (server-checked code) */
   onDeveloper: () => void;
   /** UPDATE 7 */
@@ -108,6 +117,7 @@ export function PlayTypeScreen({
         <div className="mini-logo">PIPA</div>
         <div className="top-right">
           <VersionBadge />
+          <SeasonBadge />
           <button className="btn-ghost" onClick={onLogout}>
           로그아웃
           </button>
@@ -176,6 +186,32 @@ export function PlayTypeScreen({
             ›
           </span>
         </button>
+        <button className="mode-card play-card" onClick={onEvolution} data-testid="play-evolution">
+          <div className="play-icon">
+            <svg viewBox="0 0 64 64" aria-hidden><path d="M32 6 L40 22 L32 18 L24 22 Z" fill="var(--lime)" /><rect x="18" y="24" width="28" height="34" rx="5" fill="none" stroke="currentColor" strokeWidth="3" /><text x="32" y="48" textAnchor="middle" fontFamily="Barlow Condensed, Arial" fontWeight="900" fontSize="16" fill="var(--lime)">+12</text></svg>
+          </div>
+          <div className="mode-text">
+            <strong>EVOLUTION</strong>
+            <span className="mode-ko">진화</span>
+            <span className="mode-desc">진화 재료로 선수를 +12까지 강화</span>
+          </div>
+          <span className="mode-arrow" aria-hidden>
+            ›
+          </span>
+        </button>
+        <button className="mode-card play-card" onClick={onShop} data-testid="play-shop">
+          <div className="play-icon">
+            <svg viewBox="0 0 64 64" aria-hidden><path d="M10 24 H54 L50 54 H14 Z" fill="none" stroke="currentColor" strokeWidth="3" strokeLinejoin="round" /><path d="M22 24 V18 a10 10 0 0 1 20 0 V24" fill="none" stroke="var(--lime)" strokeWidth="3" /><text x="32" y="46" textAnchor="middle" fontFamily="Barlow Condensed, Arial" fontWeight="900" fontSize="12" fill="var(--lime)">OVR</text></svg>
+          </div>
+          <div className="mode-text">
+            <strong>진화 재료 상점</strong>
+            <span className="mode-ko">EVOLUTION MATERIAL</span>
+            <span className="mode-desc">OVR 130 ~ 150 재료 · MP 또는 FV</span>
+          </div>
+          <span className="mode-arrow" aria-hidden>
+            ›
+          </span>
+        </button>
         <button className="mode-card play-card packs-card" onClick={onPacks} data-testid="play-packs">
           <div className="play-icon">
             <svg viewBox="0 0 64 64" aria-hidden>
@@ -213,6 +249,19 @@ export function PlayTypeScreen({
             ›
           </span>
         </button>
+        <button className="mode-card play-card" onClick={onMissions} data-testid="play-missions">
+          <div className="play-icon">
+            <svg viewBox="0 0 64 64" aria-hidden><rect x="12" y="10" width="40" height="46" rx="5" fill="none" stroke="currentColor" strokeWidth="3" /><path d="M20 26 l5 5 9 -10 M20 42 l5 5 9 -10" fill="none" stroke="var(--lime)" strokeWidth="3" strokeLinecap="round" /></svg>
+          </div>
+          <div className="mode-text">
+            <strong>WEEKLY MISSIONS</strong>
+            <span className="mode-ko">주간 미션</span>
+            <span className="mode-desc">매주 월요일 초기화 · FV · MP 보상</span>
+          </div>
+          <span className="mode-arrow" aria-hidden>
+            ›
+          </span>
+        </button>
         <button className="mode-card play-card" onClick={onRanking} data-testid="play-ranking">
           <div className="play-icon">
             <svg viewBox="0 0 64 64" aria-hidden>
@@ -225,6 +274,19 @@ export function PlayTypeScreen({
             <strong>RANKING</strong>
             <span className="mode-ko">랭킹</span>
             <span className="mode-desc">MP · 승부차기 · 프리킥 승리 순위</span>
+          </div>
+          <span className="mode-arrow" aria-hidden>
+            ›
+          </span>
+        </button>
+        <button className="mode-card play-card" onClick={onStats} data-testid="play-stats">
+          <div className="play-icon">
+            <svg viewBox="0 0 64 64" aria-hidden><path d="M10 54 H54" stroke="currentColor" strokeWidth="3" /><path d="M14 44 L26 30 L36 38 L50 16" fill="none" stroke="var(--lime)" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" /><circle cx="50" cy="16" r="3.5" fill="var(--lime)" /></svg>
+          </div>
+          <div className="mode-text">
+            <strong>MATCH STATISTICS</strong>
+            <span className="mode-ko">경기 통계</span>
+            <span className="mode-desc">모든 유저의 시즌 전적 · 닉네임 검색</span>
           </div>
           <span className="mode-arrow" aria-hidden>
             ›

@@ -52,7 +52,7 @@ export function EventCenterScreen({ wallet, token, onReply, onBack }: { wallet: 
         </div>
         <div className="event-text">
           <strong>감자의 제왕</strong>
-          <span>12라운드 감자 잡기 · 10점 이상 GOOD PACK</span>
+          <span>{POTATO.rounds}라운드 감자 잡기 · 10점 이상 GOOD PACK</span>
           <em>1회 {POTATO.cost} FV</em>
         </div>
         <span className="mode-arrow" aria-hidden>

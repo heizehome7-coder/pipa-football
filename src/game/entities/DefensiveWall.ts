@@ -41,6 +41,24 @@ const WALL_KIT = {
 };
 const SKINS = [0xb27a55, 0xe2b48f, 0x8a5a3c, 0xd29a74, 0x6e4630];
 
+/** UPDATE 10: the standard wall body is about 180 cm tall (head top ≈ the highest collider) */
+export const WALL_BASE_CM = 180;
+/**
+ * UPDATE 10: five wall heights, 165–200 cm (whole cm), from a seed — the online game uses the
+ * round's seed, so the kicker's phone, the keeper's phone and the server build the same wall.
+ */
+export function wallHeights(seed: number, attempt = 0): number[] {
+  let a = (seed ^ Math.imul(attempt + 1, 0x9e3779b1) ^ 0x5a11) >>> 0;
+  const rnd = () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  return Array.from({ length: 5 }, () => 165 + Math.floor(rnd() * 36));
+}
+
 /** 4–5 defenders, 9.15 m from the ball, lined up to cover the near post. They jump on the strike. */
 export class DefensiveWall {
   readonly group = new THREE.Group();
@@ -50,6 +68,9 @@ export class DefensiveWall {
   private jumpT = -1;
   private delays: number[] = [];
   private pose: Pose = {};
+  /** UPDATE 10: each wall player's height (cm) and body scale (height / 180 cm, same in every direction) */
+  heights: number[] = [180, 180, 180, 180, 180];
+  private sizes: number[] = [1, 1, 1, 1, 1];
 
   constructor(max = 5) {
     for (let i = 0; i < max; i++) {
@@ -60,8 +81,12 @@ export class DefensiveWall {
     }
   }
 
-  setup(ball: THREE.Vector3, count: number) {
+  setup(ball: THREE.Vector3, count: number, heights?: number[]) {
     this.count = Math.min(count, this.players.length);
+    this.heights = this.players.map((_, i) => Math.max(165, Math.min(200, Math.round(heights?.[i] ?? WALL_BASE_CM))));
+    this.sizes = this.heights.map((h) => h / WALL_BASE_CM);
+    // natural proportions: the whole body scales (never just the legs or the head)
+    this.players.forEach((p, i) => p.root.scale.set(WALL_SCALE * this.sizes[i], WALL_HEIGHT_SCALE * this.sizes[i], WALL_SCALE * this.sizes[i]));
     const central = Math.abs(ball.x) < 1.5;
     const postX = central ? 0 : Math.sign(ball.x) * FIELD.goalHalfWidth;
     const toPost = new THREE.Vector3(postX - ball.x, 0, -ball.z).normalize();
@@ -83,10 +108,10 @@ export class DefensiveWall {
       p.root.rotation.set(0, Math.atan2(-d.x, -d.z), 0);
       p.applyPose(WALL_POSE);
       this.delays.push(0.12 + ((i * 0.023) % 0.06));
-      for (const [, r] of BODY) this.colliders.push({ pos: new THREE.Vector3(), r });
+      for (const [, r] of BODY) this.colliders.push({ pos: new THREE.Vector3(), r: r * this.sizes[i] });
     }
     // shoulders/arms/legs of neighbours touch: fill the seams between players
-    for (let i = 0; i < this.count - 1; i++) for (const [, r] of GAP) this.colliders.push({ pos: new THREE.Vector3(), r });
+    for (let i = 0; i < this.count - 1; i++) for (const [, r] of GAP) this.colliders.push({ pos: new THREE.Vector3(), r: r * (this.sizes[i] + this.sizes[i + 1]) / 2 });
     this.jumpT = -1;
     this.updateColliders();
   }
@@ -101,7 +126,7 @@ export class DefensiveWall {
     for (let i = 0; i < this.count; i++) {
       const u = (this.jumpT - this.delays[i]) / 0.56;
       const k = u > 0 && u < 1 ? Math.sin(Math.PI * u) : 0;
-      this.players[i].root.position.y = 0.36 * k;
+      this.players[i].root.position.y = 0.36 * k * this.sizes[i];
       blendPose(WALL_POSE, WALL_JUMP, k, this.pose);
       this.players[i].applyPose(this.pose);
     }
@@ -112,12 +137,13 @@ export class DefensiveWall {
     let c = 0;
     for (let i = 0; i < this.count; i++) {
       const p = this.players[i].root.position;
-      for (const [h] of BODY) this.colliders[c++].pos.set(p.x, p.y + h, p.z);
+      for (const [h] of BODY) this.colliders[c++].pos.set(p.x, p.y + h * this.sizes[i], p.z);
     }
     for (let i = 0; i < this.count - 1; i++) {
       const a = this.players[i].root.position;
       const b = this.players[i + 1].root.position;
-      for (const [h] of GAP) this.colliders[c++].pos.set((a.x + b.x) / 2, (a.y + b.y) / 2 + h, (a.z + b.z) / 2);
+      const sz = (this.sizes[i] + this.sizes[i + 1]) / 2;
+      for (const [h] of GAP) this.colliders[c++].pos.set((a.x + b.x) / 2, (a.y + b.y) / 2 + h * sz, (a.z + b.z) / 2);
     }
   }
 }

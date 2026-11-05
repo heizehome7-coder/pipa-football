@@ -170,6 +170,19 @@ export class OnlineMatchClient {
     if (!s || this.view.role !== 'keeper' || (s.phase !== 'aim' && s.phase !== 'shot')) return;
     this.send({ t: 'keeper:move', round: s.round, x: Math.round(x * 1000) / 1000 });
   }
+  /** UPDATE 10: send an emote (the server relays it to both phones, at most one every 3 s) */
+  emote(e: string) {
+    const s = this.view.state;
+    if (!s) return;
+    this.send({ t: 'emote', e });
+  }
+  onEmote(fn: (e: string, from: string) => void) {
+    this.emoteFns.add(fn);
+    return () => {
+      this.emoteFns.delete(fn);
+    };
+  }
+  private emoteFns = new Set<(e: string, from: string) => void>();
   /** UPDATE 9.5: the server fixed the keeper's spot for this shot (just before contact) */
   onKeeperLock(fn: (x: number, round: number) => void) {
     this.lockFns.add(fn);
@@ -208,6 +221,11 @@ export class OnlineMatchClient {
         this.bestRtt = rtt;
         this.offset = m.s - (m.c + rtt / 2);
       }
+      return;
+    }
+    if ((m.t as string) === 'emote') {
+      const mm = m as unknown as { e?: string; from?: string; matchId?: string };
+      if (mm.matchId === this.info.matchId && typeof mm.e === 'string') for (const f of this.emoteFns) f(mm.e, mm.from ?? '');
       return;
     }
     if ((m.t as string) === 'keeper:lock') {

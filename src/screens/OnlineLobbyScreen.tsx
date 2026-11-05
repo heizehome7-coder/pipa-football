@@ -1,4 +1,4 @@
-import { VersionBadge } from '../components/VersionBadge';
+import { SeasonBadge, VersionBadge } from '../components/VersionBadge';
 import { useEffect } from 'react';
 import type { DuelMode, LobbyClient, LobbySnapshot, PlayerView } from '../online/LobbyClient';
 
@@ -47,6 +47,7 @@ export function OnlineLobbyScreen({ lobby, snap, mode = 'penalty', onBack }: { l
         </div>
         <span className="lobby-spacer">
           <VersionBadge />
+          <SeasonBadge />
         </span>
       </header>
 

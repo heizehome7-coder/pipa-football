@@ -62,6 +62,11 @@ export function clampRunUpX(x: unknown, x0: number) {
   return Math.max(lo, Math.min(hi, v));
 }
 
+/** UPDATE 10: online emotes (no sound) — "동" and "EZ" are styled text emotes */
+export const EMOTES = ['🔥', '💀', '🤫', '🤯', '😃', '⚽️', '💔', '동', 'EZ'] as const;
+export type Emote = (typeof EMOTES)[number];
+export const EMOTE_COOLDOWN_MS = 3000;
+
 /** UPDATE 6: which online duel this match is */
 export type MatchMode = 'penalty' | 'freekick';
 export const MATCH_MODES: MatchMode[] = ['penalty', 'freekick'];

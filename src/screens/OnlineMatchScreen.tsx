@@ -4,7 +4,8 @@ import type { Channel } from '../online/channel/Channel';
 import type { LobbyClient, MatchInfo } from '../online/LobbyClient';
 import { OnlineMatchClient, type MatchView } from '../online/match/OnlineMatchClient';
 import type { DiveDir, MatchMode, MatchState, WireResult } from '../online/match/protocol';
-import { freeKickSpotIndex, roundTaker } from '../online/match/penaltyRound';
+import { freeKickSpotIndex, keeperScaleOf, roundTaker } from '../online/match/penaltyRound';
+import { EMOTE_COOLDOWN_MS, EMOTES, roundSeed } from '../online/match/protocol';
 import { formatMP } from '../players/ownership';
 import type { ProgressEvent } from '../App';
 import { MatchFoundScreen } from './MatchFoundScreen';
@@ -148,7 +149,7 @@ function MatchPlay({ v, s, client, mode, onLeave }: { v: MatchView; s: MatchStat
   const kickerNick = s.players.find((p) => p.peer === s.kicker)?.nickname ?? '';
   const role = v.role;
   // UPDATE 4: each side uses its own squad — the kicker's next taker in order, the keeper's GK
-  const { kickerPlayer, keeperPlayer } = roundPlayers(s, mode);
+  const { kickerPlayer, keeperPlayer, kickerEvo, keeperEvo } = roundPlayers(s, mode);
 
   // the 3D view lives for the whole match
   useEffect(() => {
@@ -197,7 +198,9 @@ function MatchPlay({ v, s, client, mode, onLeave }: { v: MatchView; s: MatchStat
       role,
       kickerNick,
       canShoot: false,
-      looks: { kickerLook: kickerLookOf(kickerPlayer), keeperLook: keeperLookOf(keeperPlayer), keeperStats: keeperPlayer?.gk, keeperSpecial: keeperPlayer?.special ?? null, kickerPlayer },
+      looks: { kickerLook: kickerLookOf(kickerPlayer), keeperLook: keeperLookOf(keeperPlayer), keeperStats: keeperPlayer?.gk, keeperSpecial: keeperPlayer?.special ?? null, keeperScale: keeperScaleOf(keeperPlayer), keeperEvo, kickerPlayer, kickerEvo },
+      // UPDATE 10: the round's own seed (wall heights are the same while aiming and in the shot)
+      seed: roundSeed(s.id, s.round),
       spot: mode === 'freekick' ? freeKickSpotIndex(s.id, s.round) : 0,
     });
     if (s.round > 1) setIntro({ round: s.round, until: Date.now() + 1500 });
@@ -247,7 +250,9 @@ function MatchPlay({ v, s, client, mode, onLeave }: { v: MatchView; s: MatchStat
   const goalKey = res && res.outcome === 'GOAL' ? `${s.id}:${s.startAt}:${res.round}` : '';
   useEffect(() => {
     if (!goalKey || !res) return;
-    goalCard.show(goalKey, getPlayer(res.playerId) ?? kickerPlayer);
+    const gp = getPlayer(res.playerId) ?? kickerPlayer;
+    const scorer = s.players.find((pp) => pp.peer === res.kicker);
+    goalCard.show(goalKey, gp, (gp && (scorer?.squad as { evo?: Record<string, number> } | null)?.evo?.[gp.id]) || 0);
   }, [goalKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
@@ -298,7 +303,8 @@ function MatchPlay({ v, s, client, mode, onLeave }: { v: MatchView; s: MatchStat
           player={kickerPlayer}
           show={kickerPlayer ? `${roundKey}:${kickerPlayer.id}` : ''}
           label={s.kicker === v.myPeer ? 'YOUR KICKER' : 'KICKER'}
-          sub={keeperPlayer ? `GK · ${keeperPlayer.nameKo}` : null}
+          sub={keeperPlayer ? `GK · ${keeperPlayer.nameKo}${keeperEvo ? ` +${keeperEvo}` : ''}` : null}
+          evo={kickerEvo}
         />
       )}
 
@@ -314,6 +320,8 @@ function MatchPlay({ v, s, client, mode, onLeave }: { v: MatchView; s: MatchStat
         <Coach role={role} v={v} s={s} mode={mode} shotClock={shotClock} opponentNick={opp?.nickname ?? ''} />
       )}
       {hint && <div className="coach coach-hint">{hint}</div>}
+      {/* UPDATE 10: emotes (no sound) */}
+      <EmoteLayer client={client} myPeer={v.myPeer ?? ''} />
       {special.el}
       {goalCard.el}
       {fatal && (
@@ -338,7 +346,10 @@ function roundPlayers(s: MatchState, mode: MatchMode) {
   // UPDATE 6: FREE KICK DUEL — every kick is taken by his FREE KICK TAKER
   // UPDATE 9: the same function the server uses to check the shot against this player
   const taker = roundTaker(kicker?.squad ?? null, mode, n);
-  return { kickerPlayer: getPlayer(taker), keeperPlayer: getPlayer(gs.goalkeeperId) };
+  // UPDATE 10: evolution levels come from the server's copy of each squad (never from the phone)
+  const evoK = (kicker?.squad as { evo?: Record<string, number> } | null | undefined)?.evo ?? {};
+  const evoG = (keeper?.squad as { evo?: Record<string, number> } | null | undefined)?.evo ?? {};
+  return { kickerPlayer: getPlayer(taker), keeperPlayer: getPlayer(gs.goalkeeperId), kickerEvo: evoK[taker] ?? 0, keeperEvo: evoG[gs.goalkeeperId] ?? 0 };
 }
 
 function PlayerScore({ name, score, history, peer, you, testid }: { name: string; score: number; history: WireResult[]; peer: string; you?: boolean; testid: string }) {
@@ -565,5 +576,90 @@ function KeeperJoystick({ view, locked }: { view: React.MutableRefObject<OnlineG
       <span className="gk-joy-knob" style={{ transform: `translateX(${dx}px)` }} aria-hidden />
       <em>{locked ? 'LOCKED' : 'MOVE'}</em>
     </div>
+  );
+}
+
+/**
+ * UPDATE 10 — EMOTE button + picker + the emotes flying in (mine bottom right, the opponent's
+ * top right). ~2 s on screen, 3 s cooldown (also enforced by the server). No sound.
+ */
+function EmoteLayer({ client, myPeer }: { client: OnlineMatchClient; myPeer: string }) {
+  const [open, setOpen] = useState(false);
+  const [shown, setShown] = useState<{ id: number; e: string; mine: boolean }[]>([]);
+  const [mute, setMute] = useState(() => {
+    try {
+      return localStorage.getItem('pipa.emote.mute') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [cool, setCool] = useState(0);
+  const muteRef = useRef(mute);
+  muteRef.current = mute;
+  const seq = useRef(0);
+  useEffect(
+    () =>
+      client.onEmote((e, from) => {
+        const mine = from === myPeer;
+        if (!mine && muteRef.current) return;
+        const id = ++seq.current;
+        setShown((x) => [...x.slice(-4), { id, e, mine }]);
+        window.setTimeout(() => setShown((x) => x.filter((y) => y.id !== id)), 2000);
+      }),
+    [client, myPeer],
+  );
+  useEffect(() => {
+    if (!cool) return;
+    const t = window.setTimeout(() => setCool(0), Math.max(0, cool - Date.now()));
+    return () => window.clearTimeout(t);
+  }, [cool]);
+  const send = (e: string) => {
+    if (cool && Date.now() < cool) return;
+    client.emote(e);
+    setCool(Date.now() + EMOTE_COOLDOWN_MS);
+    setOpen(false);
+  };
+  const toggleMute = () => {
+    const m = !mute;
+    setMute(m);
+    try {
+      localStorage.setItem('pipa.emote.mute', m ? '1' : '0');
+    } catch {
+      /* private mode */
+    }
+  };
+  return (
+    <>
+      <button
+        className={`emote-btn ${cool ? 'cool' : ''}`}
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={() => setOpen((o) => !o)}
+        data-testid="emote-btn"
+        aria-label="이모티콘"
+      >
+        😃
+      </button>
+      {open && (
+        <div className="emote-picker" data-testid="emote-picker" onPointerDown={(e) => e.stopPropagation()}>
+          <div className="emote-grid">
+            {EMOTES.map((e) => (
+              <button key={e} className={`emote-pick ${e === '동' || e === 'EZ' ? 'txt' : ''}`} onClick={() => send(e)} disabled={!!cool} data-testid="emote-pick" data-e={e}>
+                {e}
+              </button>
+            ))}
+          </div>
+          <label className="emote-mute">
+            <input type="checkbox" checked={mute} onChange={toggleMute} data-testid="emote-mute" /> 상대 이모티콘 숨기기
+          </label>
+        </div>
+      )}
+      <div className="emote-fly" aria-live="polite">
+        {shown.map((x) => (
+          <span key={x.id} className={`emote-pop ${x.mine ? 'mine' : 'opp'} ${x.e === '동' || x.e === 'EZ' ? 'txt' : ''}`} data-testid={x.mine ? 'emote-mine' : 'emote-opp'} data-e={x.e}>
+            {x.e}
+          </span>
+        ))}
+      </div>
+    </>
   );
 }

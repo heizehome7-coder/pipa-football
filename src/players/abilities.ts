@@ -1,5 +1,6 @@
 import type { GameMode } from '../game/core/types';
 import type { PlayerDef, SpecialId } from './players';
+import { evoShotBoost } from '../progress/evolution';
 
 /**
  * UPDATE 5 — how a player's abilities shape a drawn shot. Small modifiers on top of
@@ -22,6 +23,8 @@ export interface ShotContext {
   lofted: boolean;
   /** arrives low (y < 0.75 m) */
   low: boolean;
+  /** UPDATE 10: the kicker's evolution level (+0 … +12, checked by the server online) */
+  evo?: number;
 }
 
 export interface ShotMods {
@@ -42,6 +45,9 @@ export const KNUCKLE_DRIVE_POWER = 0.64;
 export function knuckleStroke(p: PlayerDef | null | undefined, level: number, power: number, lofted: boolean) {
   return !!p && p.special === 'KNUCKLE_DRIVE' && level === 1 && !lofted && power >= KNUCKLE_DRIVE_POWER + 0.04;
 }
+
+/** UPDATE 10: CHIP SHOT ONLY — every stroke is played as a chip over the keeper */
+export const isChipOnly = (p: PlayerDef | null | undefined) => !!p && p.special === 'CHIP_SHOT_ONLY';
 
 const n = (v: number, lo: number, hi: number) => Math.max(0, Math.min(1, (v - lo) / (hi - lo)));
 
@@ -149,6 +155,51 @@ export function shotModifiers(p: PlayerDef | null | undefined, c: ShotContext): 
       if (straight && c.power > 0.7) speedMul *= 1.04;
       if (c.power > 0.6 || curl || c.low) special = p.special;
       break;
+    // UPDATE 10 — PIPA ORIGINALS
+    case 'TWO_FOOT_CURL_MASTER':
+      knuckle = 0; // never wobbles: one smooth bend, either foot
+      if (curl) (spinMul *= 1.18), (errMul *= 0.75), (special = p.special);
+      else if (straight && c.power > 0.7) speedMul *= 0.97;
+      break;
+    case 'THUNDER_STRIKE':
+      if (straight && c.power > 0.7) (speedMul *= 1.07), (errMul *= 0.9), (special = p.special);
+      break;
+    case 'UNSTABLE_CANNON':
+      // huge pace — and the harder he hits it, the further it can fly off
+      if (c.power > 0.65) speedMul *= straight ? 1.07 : 1.03;
+      if (c.power > 0.6) errMul *= 1 + 1.5 * ((c.power - 0.6) / 0.4);
+      if (straight && c.power > 0.8) special = p.special;
+      break;
+    case 'ICON_POWER_DRIVE':
+      if (straight && c.power > 0.7) (speedMul *= 1.05), (errMul *= 0.85), (special = p.special);
+      if (c.mode === 'freekick') (errMul *= 1.35), (spinMul *= 0.9);
+      break;
+    case 'SILK_FINESSE':
+      knuckle = 0;
+      if (curl) (spinMul *= 1.15), (errMul *= 0.65), (special = p.special);
+      else if (straight && c.power > 0.75) speedMul *= 0.97;
+      break;
+    case 'CHIP_SHOT_ONLY':
+      knuckle = 0; // every shot becomes a chip (strokeReader) — a soft, accurate lob
+      errMul *= 0.85;
+      special = p.special;
+      break;
+    case 'WILD_POWER':
+      if (c.power > 0.65) speedMul *= 1.05;
+      if (c.power > 0.6) errMul *= 1 + 1.0 * ((c.power - 0.6) / 0.4);
+      if (straight && c.power > 0.8) special = p.special;
+      break;
+    case 'WILD_LEFT_CURL':
+      if (instep) (spinMul *= 1.18), (errMul *= 1 + 0.25 * c.level), (special = p.special);
+      break;
+  }
+  // UPDATE 10: EVOLUTION — the higher the level, the faster, truer and bendier (physics caps stay)
+  if (c.evo) {
+    const b = evoShotBoost(c.evo);
+    speedMul *= b.speedMul;
+    errMul *= b.errMul * (c.low && !c.lofted ? b.lowMul : 1) * (c.mode === 'freekick' ? b.fkMul : 1);
+    if (curl) spinMul *= b.spinMul;
+    if (knuckle > 0) knuckle = Math.min(p.special === 'KNUCKLE_DRIVE' ? KNUCKLE_LIMIT : 1, knuckle + b.knuckleAdd);
   }
   const err = 0.6 * (1 - 0.8 * acc) * (0.35 + 0.65 * c.power * c.power * (1 - 0.8 * comp)) * errMul;
   return { speedMul, spinMul, err, knuckle: Math.round(knuckle * 1000) / 1000, special };
@@ -173,7 +224,7 @@ export function strokeHash(points: { x: number; y: number; t: number }[]) {
  * compares a submitted shot with the envelope of the player who really takes the kick, so a
  * client cannot inflate its stats or force a special it does not have.
  */
-export function shotEnvelope(p: PlayerDef | null | undefined, mode: GameMode) {
+export function shotEnvelope(p: PlayerDef | null | undefined, mode: GameMode, evo = 0) {
   let speedMul = 1;
   let spinMul = 1;
   let knuckle = 0;
@@ -182,7 +233,7 @@ export function shotEnvelope(p: PlayerDef | null | undefined, mode: GameMode) {
       for (const lofted of [false, true])
         for (const low of [false, true])
           for (const power of [0.65, 0.7, 0.75, 1]) {
-            const m = shotModifiers(p, { mode, power, level, spinSign, lofted, low });
+            const m = shotModifiers(p, { mode, power, level, spinSign, lofted, low, evo });
             speedMul = Math.max(speedMul, m.speedMul);
             if (level > 0) spinMul = Math.max(spinMul, m.spinMul);
             if (level === 0) knuckle = Math.max(knuckle, m.knuckle);

@@ -57,6 +57,8 @@ export class GameView {
   fps = 0;
   /** test hook: slow motion for frame captures (1 = real time) */
   timeScale = 1;
+  /** UPDATE 10: my kicker's evolution level */
+  private kickerEvo = 0;
   private fpsAcc = 0;
   private fpsN = 0;
 
@@ -65,9 +67,10 @@ export class GameView {
     mode: GameMode,
     private session: MatchSession,
     private cb: GameViewCallbacks,
-    looks: { kicker?: KickerLook; kickerPlayer?: PlayerDef | null; keeperLook?: KickGameOptions['keeperLook']; keeperStats?: KickGameOptions['keeperStats']; keeperSpecial?: KickGameOptions['keeperSpecial'] } = {},
+    looks: { kicker?: KickerLook; kickerPlayer?: PlayerDef | null; kickerEvo?: number; keeperLook?: KickGameOptions['keeperLook']; keeperStats?: KickGameOptions['keeperStats']; keeperSpecial?: KickGameOptions['keeperSpecial']; keeperScale?: number } = {},
   ) {
     this.kickerPlayer = looks.kickerPlayer ?? null;
+    this.kickerEvo = looks.kickerEvo ?? 0;
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -90,6 +93,7 @@ export class GameView {
       keeperLook: looks.keeperLook,
       keeperStats: looks.keeperStats,
       keeperSpecial: looks.keeperSpecial,
+      keeperScale: looks.keeperScale ?? 1,
     };
     this.game = mode === 'penalty' ? new PenaltyGame(opts) : new FreeKickGame(opts);
     this.scene.add(this.game.group);
@@ -219,7 +223,7 @@ export class GameView {
 
   private onSwipeEnd(samples: SwipeSample[]) {
     this.stroke = null;
-    const r = readStroke(samples, this.strokeContext(), this.game.cfg, this.kickerPlayer);
+    const r = readStroke(samples, this.strokeContext(), this.game.cfg, this.kickerPlayer, this.kickerEvo);
     if (!r) {
       this.cb.onHint('골대 쪽으로 슛 경로를 조금 더 길게 그려주세요');
       return;

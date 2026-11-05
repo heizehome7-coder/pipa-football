@@ -11,8 +11,9 @@ import { useGoalCard } from '../components/GoalCard';
 import { GOALKEEPERS } from '../players/players';
 import { useSpecialPop } from '../components/SpecialPop';
 import type { PlayerDef } from '../players/players';
+import { keeperScaleOf } from '../online/match/penaltyRound';
 
-export function GameScreen({ mode, user, player = null, onExit }: { mode: GameMode; user: PlayerProfile; player?: PlayerDef | null; onExit: () => void }) {
+export function GameScreen({ mode, user, player = null, evo = 0, onExit }: { mode: GameMode; user: PlayerProfile; player?: PlayerDef | null; /** UPDATE 10 */ evo?: number; onExit: () => void }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [phase, setPhase] = useState<Phase>('aim');
   const [result, setResult] = useState<{ outcome: ShotOutcome; detail: string } | null>(null);
@@ -43,11 +44,11 @@ export function GameScreen({ mode, user, player = null, onExit }: { mode: GameMo
         onOutcome: (o, detail) => {
           setResult({ outcome: o, detail });
           shotNo.current++;
-          if (o === 'GOAL') goalCard.show(`solo:${mode}:${shotNo.current}`, player);
+          if (o === 'GOAL') goalCard.show(`solo:${mode}:${shotNo.current}`, player, evo);
         },
         onHint: setHint,
         onSpecial: special.show,
-      }, { kicker: kickerLookOf(player), kickerPlayer: player, keeperLook: keeperLookOf(keeper), keeperStats: keeper.gk, keeperSpecial: keeper.special });
+      }, { kicker: kickerLookOf(player), kickerPlayer: player, kickerEvo: evo, keeperLook: keeperLookOf(keeper), keeperStats: keeper.gk, keeperSpecial: keeper.special, keeperScale: keeperScaleOf(keeper) });
     } catch (e) {
       console.error(e);
       setError('이 기기에서 3D(WebGL)를 시작할 수 없습니다.');
@@ -56,7 +57,7 @@ export function GameScreen({ mode, user, player = null, onExit }: { mode: GameMo
       unsub();
       view?.dispose();
     };
-  }, [mode, user, player]);
+  }, [mode, user, player, evo]);
 
   useEffect(() => {
     if (!hint) return;

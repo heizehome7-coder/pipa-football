@@ -2,13 +2,14 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Flag, PlayerAvatar, PlayerCard, StatSheet } from '../components/PlayerArt';
 import { VersionBadge } from '../components/VersionBadge';
 import { AccountError, accountApi, type AccountReply, type Listing } from '../online/account';
-import { COUNTRY_NAME, MARKET_PLAYERS, matchesSearch, ovr, PLAYERS, type PlayerDef } from '../players/players';
+import { BUYABLE_PLAYERS, COUNTRY_NAME, matchesSearch, ovr, PLAYERS, type PlayerDef } from '../players/players';
 import { formatMP, formatMPKo, type Wallet } from '../players/ownership';
 import type { Squad } from '../players/squad';
 import { PROGRESSION, saleFee, saleRange, sellerRevenue } from '../progress/progression';
 
+// UPDATE 10: no DEFENDER filter — defenders are no longer sold
 type Filter = 'ALL' | 'FORWARD' | 'MIDFIELDER' | 'DEFENDER' | 'GOALKEEPER' | 'LEGEND' | 'FAVORITE';
-const FILTERS: Filter[] = ['ALL', 'FAVORITE', 'FORWARD', 'MIDFIELDER', 'DEFENDER', 'GOALKEEPER', 'LEGEND'];
+const FILTERS: Filter[] = ['ALL', 'FAVORITE', 'FORWARD', 'MIDFIELDER', 'GOALKEEPER', 'LEGEND'];
 const FILTER_LABEL: Partial<Record<Filter, string>> = { FAVORITE: '★ 관심' };
 type Sort = 'PRICE LOW' | 'PRICE HIGH' | 'NAME';
 const SORTS: Sort[] = ['PRICE LOW', 'PRICE HIGH', 'NAME'];
@@ -103,7 +104,7 @@ export function MarketScreen({
   const priceOf = (p: PlayerDef) => offers[p.id]?.min ?? p.price!;
 
   const list = useMemo(() => {
-    const l = MARKET_PLAYERS.filter((p) => inFilter(p, filter, favs) && matchesSearch(p, query));
+    const l = BUYABLE_PLAYERS.filter((p) => inFilter(p, filter, favs) && matchesSearch(p, query));
     const pr = (p: PlayerDef) => offers[p.id]?.min ?? p.price!;
     if (sort === 'NAME') return [...l].sort((a, b) => a.nameKo.localeCompare(b.nameKo, 'ko'));
     return [...l].sort((a, b) => (sort === 'PRICE LOW' ? pr(a) - pr(b) : pr(b) - pr(a)) || a.nameKo.localeCompare(b.nameKo, 'ko'));
@@ -136,7 +137,7 @@ export function MarketScreen({
     }
   };
 
-  const ownedMarket = MARKET_PLAYERS.filter((p) => wallet.owned.has(p.id)).length;
+  const ownedMarket = BUYABLE_PLAYERS.filter((p) => wallet.owned.has(p.id)).length;
 
   return (
     <div className="screen squad market" data-testid="market">
@@ -153,7 +154,7 @@ export function MarketScreen({
         <h2 className="squad-title">PIPA TRANSFER MARKET</h2>
         <p className="squad-sub" data-testid="market-sub">
           {available
-            ? `보유 ${formatMP(mp)} · 영입 ${ownedMarket}/${MARKET_PLAYERS.length} · 유저 매물 우선 판매`
+            ? `보유 ${formatMP(mp)} · 영입 ${ownedMarket}/${BUYABLE_PLAYERS.length} · 유저 매물 우선 판매`
             : '이 버전은 서버가 없어 구매할 수 없어요 (Render 버전에서 이용 가능)'}
         </p>
       </div>
@@ -380,7 +381,7 @@ function MyPlayers({
   const used = new Set(squad ? [...squad.penaltyOrder, squad.goalkeeperId, squad.freeKickTakerId] : []);
   // UPDATE 8: one row per CARD (two cards of a player = two rows); the squad keeps one
   const byId = new Map(PLAYERS.map((p) => [p.id, p]));
-  const bought: { card: { id: string; playerId: string; source: string | null }; p: PlayerDef; locked: boolean }[] = [];
+  const bought: { card: { id: string; playerId: string; source: string | null; evo?: number }; p: PlayerDef; locked: boolean }[] = [];
   const seenSquad = new Set<string>();
   for (const card of wallet.cards ?? []) {
     const p = byId.get(card.playerId);
@@ -448,6 +449,14 @@ function MyPlayers({
             {locked ? (
               <button className="btn-ghost small" onClick={() => toast('현재 스쿼드에서 사용 중인 선수입니다.', 'warn')} data-testid="sell-blocked">
                 IN SQUAD
+              </button>
+            ) : p.defender ? (
+              <button className="btn-ghost small" onClick={() => toast('수비수는 이적시장에 등록할 수 없어요 (UPDATE 10)', 'warn')} data-testid="sell-defender">
+                판매 불가 · 수비수
+              </button>
+            ) : card.evo ? (
+              <button className="btn-ghost small" onClick={() => toast('진화한 카드는 판매할 수 없어요', 'warn')} data-testid="sell-evolved">
+                +{card.evo} 진화 · 판매 불가
               </button>
             ) : (
               <button className="btn-primary small" onClick={() => onSell(p, card.id)} data-testid="sell-player">

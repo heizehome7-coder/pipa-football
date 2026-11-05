@@ -198,7 +198,10 @@ export function createMatchManager(o) {
   }
 
   function roundOpts(m) {
-    return { mode: m.mode, spot: m.mode === 'freekick' ? judge.freeKickSpotIndex(m.id, m.round) : 0, keeperX: m.shot?.keeperX ?? judge.clampKeeperX(m.keeperX ?? 0) };
+    const kp = keeperOf(m);
+    // UPDATE 10: the keeper's evolution level comes from the server's own copy of his squad
+    const keeperEvo = kp?.squad?.goalkeeperId ? kp.squad.evo?.[kp.squad.goalkeeperId] ?? 0 : 0;
+    return { mode: m.mode, spot: m.mode === 'freekick' ? judge.freeKickSpotIndex(m.id, m.round) : 0, keeperX: m.shot?.keeperX ?? judge.clampKeeperX(m.keeperX ?? 0), keeperEvo };
   }
 
   function finishMatch(m) {
@@ -213,7 +216,8 @@ export function createMatchManager(o) {
       for (const p of m.players) {
         const result = m.final.draw ? 'draw' : m.final.winner === p.peer ? 'win' : 'loss';
         try {
-          o.record({ id: m.id, game: m.game, mode: m.mode }, p.peer, result);
+          // UPDATE 10: goals / kicks for the weekly missions
+          o.record({ id: m.id, game: m.game, mode: m.mode }, p.peer, result, { goals: p.score, shots: p.shots });
         } catch (e) {
           log(`[${m.id}] record failed: ${e.message}`);
         }
@@ -334,7 +338,7 @@ export function createMatchManager(o) {
       join(peer, msg);
       return true;
     }
-    if (!t.startsWith('match:') && !t.startsWith('shot:') && !t.startsWith('keeper:')) return false;
+    if (!t.startsWith('match:') && !t.startsWith('shot:') && !t.startsWith('keeper:') && t !== 'emote') return false;
     if (t === 'match:leave') {
       const id = byPeer.get(peer);
       const m = id && matches.get(id);
@@ -373,7 +377,8 @@ export function createMatchManager(o) {
       // UPDATE 9: checked against the player who really takes this kick (his abilities + special)
       const kk = kickerOf(m);
       const takerId = judge.roundTaker(kk.squad ?? null, m.mode, kk.shots);
-      if (!judge.validShotFor(msg.shot, takerId, m.mode)) {
+      const takerEvo = kk.squad?.evo?.[takerId] ?? 0; // UPDATE 10: evolution (server data)
+      if (!judge.validShotFor(msg.shot, takerId, m.mode, takerEvo)) {
         log(`[${m.id}] shot rejected for ${takerId} (outside his shot profile)`);
         return send(peer, { t: 'match:error', code: 'bad_shot' }), true;
       }
@@ -435,6 +440,16 @@ export function createMatchManager(o) {
       m.keeperX = judge.clampKeeperX(msg.x);
       const k = kickerOf(m);
       if (k.connected) send(k.peer, { t: 'keeper:move', matchId: m.id, round: m.round, x: m.keeperX });
+      return true;
+    }
+
+    // UPDATE 10: emotes — one of the 9, at most one every 3 s per player, shown on both phones
+    if (t === 'emote') {
+      if (!judge.EMOTES?.includes(msg.e) || !me) return true;
+      const t0 = now();
+      if (me.lastEmoteAt && t0 - me.lastEmoteAt < 3000) return true;
+      me.lastEmoteAt = t0;
+      for (const p of m.players) if (p.connected) send(p.peer, { t: 'emote', matchId: m.id, from: peer, e: msg.e, at: t0 });
       return true;
     }
 

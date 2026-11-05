@@ -95,10 +95,10 @@ const matches = createMatchManager({
     return accounts.allowedSquad(clients.get(peer)?.nick ?? null, squad);
   },
   // UPDATE 6 patch: online records per mode (logged-in accounts only, once per game)
-  record(m, peer, result) {
+  record(m, peer, result, details) {
     const c = clients.get(peer);
     if (!c?.nick) return;
-    accounts.recordResult(c.nick, `${m.id}#${m.game}`, m.mode, result).catch((e) => console.error('record failed', e.message));
+    accounts.recordResult(c.nick, `${m.id}#${m.game}`, m.mode, result, details).catch((e) => console.error('record failed', e.message));
   },
   // UPDATE 6: MP for the winner of a finished online match (logged-in accounts only)
   reward(m, winnerPeer) {

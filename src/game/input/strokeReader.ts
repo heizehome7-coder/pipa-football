@@ -3,7 +3,7 @@ import { FIELD, type ModeConfig } from '../core/config';
 import { clamp, lerp } from '../core/math';
 import type { ShotInput } from '../core/types';
 import { calculateShotParameters, shotProfile, type ShotIntent } from '../physics/BallPhysics';
-import { isInstep, knuckleStroke, shotModifiers, strokeHash } from '../../players/abilities';
+import { isChipOnly, isInstep, knuckleStroke, shotModifiers, strokeHash } from '../../players/abilities';
 import type { PlayerDef } from '../../players/players';
 
 export interface SwipeSample {
@@ -93,7 +93,7 @@ export function smoothStroke(samples: Pt[]): Pt[] {
  * calculateShotParameters() turns that into a real launch; the ball then flies by
  * physics (gravity, drag, Magnus) and arrives where the stroke ended.
  */
-export function readStroke(samples: SwipeSample[], ctx: StrokeContext, cfg: ModeConfig, kicker?: PlayerDef | null): StrokeReading | null {
+export function readStroke(samples: SwipeSample[], ctx: StrokeContext, cfg: ModeConfig, kicker?: PlayerDef | null, evo = 0): StrokeReading | null {
   if (samples.length < 3) return null;
   const H = ctx.viewportH;
   const S = samples[0];
@@ -118,7 +118,7 @@ export function readStroke(samples: SwipeSample[], ctx: StrokeContext, cfg: Mode
   // speed → power (independent of shape)
   const dur = Math.max(30, E.t - t0);
   const speed = len / H / (dur / 1000);
-  const power = Math.pow(clamp((speed - cfg.swipeSpeedMin) / (cfg.swipeSpeedMax - cfg.swipeSpeedMin), 0, 1), 0.8);
+  let power = Math.pow(clamp((speed - cfg.swipeSpeedMin) / (cfg.swipeSpeedMax - cfg.swipeSpeedMin), 0, 1), 0.8);
 
   // 1) smooth (resample by arc length + gentle filter)
   let pts = smooth(resample(samples, RESAMPLE), 2);
@@ -182,7 +182,14 @@ export function readStroke(samples: SwipeSample[], ctx: StrokeContext, cfg: Mode
   let topY = Infinity;
   for (const q of shape) topY = Math.min(topY, q.y);
   const rise = Math.max(0, (A1.y - topY) / H);
-  const lofted = rise > 0.035;
+  let lofted = rise > 0.035;
+  let loftRise = rise;
+  // UPDATE 10: CHIP SHOT ONLY (이윤호) — the drawn path stays his, but every shot is a real chip
+  if (isChipOnly(kicker)) {
+    lofted = true;
+    loftRise = Math.max(rise, 0.14);
+    power = Math.min(power, 0.6);
+  }
   // seen in perspective, an arched path drifts a little sideways on screen just from
   // being arched: discount that part so an arch over the wall stays a straight shot
   const arch = archPx / chord;
@@ -192,7 +199,7 @@ export function readStroke(samples: SwipeSample[], ctx: StrokeContext, cfg: Mode
   // 6) UPDATE 5: the kicker's abilities — small modifiers, never overriding the stroke
   const seed = strokeHash(samples);
   const low = !lofted && T.y < 0.75;
-  const mods = shotModifiers(kicker, { mode: cfg.id, power, level: shot.level, spinSign: Math.sign(shot.spin), lofted, low });
+  const mods = shotModifiers(kicker, { mode: cfg.id, power, level: shot.level, spinSign: Math.sign(shot.spin), lofted, low, evo });
   const aim = T.clone();
   if (mods.err > 0) {
     // aim error (deterministic from the stroke, so the dashed preview is still the real flight)
@@ -210,7 +217,7 @@ export function readStroke(samples: SwipeSample[], ctx: StrokeContext, cfg: Mode
     spin: shot.spin * mods.spinMul,
     profile,
     curveLevel: shot.level,
-    apex: lofted ? Math.min(cfg.maxApex, Math.max(B.y, T.y) + rise * cfg.loftPerScreen) : null,
+    apex: lofted ? Math.min(cfg.maxApex, Math.max(B.y, T.y) + loftRise * cfg.loftPerScreen) : null,
     power,
     speedMul: mods.speedMul,
     knuckle,

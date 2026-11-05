@@ -5,6 +5,7 @@ import type { Phase, ShotInput, ShotOutcome } from './core/types';
 import { Ball } from './entities/Ball';
 import { DefensiveWall } from './entities/DefensiveWall';
 import { Goalkeeper, PERFECT_WINDOW, BLACK_SPIDER, type Collider } from './entities/Goalkeeper';
+import { wallHeights } from './entities/DefensiveWall';
 
 /** UPDATE 8: extra weight-shift time before an online free-kick dive (s) — reach unchanged */
 export const FK_DIVE_DELAY = 0.14;
@@ -33,6 +34,9 @@ export interface KickGameOptions {
   keeperStats?: GkStats;
   /** UPDATE 7 hotfix: the keeper's special (BLACK SPIDER, LONG REACH …) */
   keeperSpecial?: SpecialId | null;
+  /** UPDATE 10: keeper body size (height / standard) and evolution level */
+  keeperScale?: number;
+  keeperEvo?: number;
 }
 
 /** A person's dive: world target (x, y on the keeper's line) and when (s since the run-up started). */
@@ -108,7 +112,7 @@ export abstract class KickGame {
     this.goal = new GoalFrame(opts.visuals);
     this.ball = new Ball(opts.visuals);
     this.kicker = new Kicker(opts.nickname, opts.kickerLook);
-    this.keeper = new Goalkeeper(opts.keeperLook, opts.keeperStats, opts.keeperSpecial);
+    this.keeper = new Goalkeeper(opts.keeperLook, opts.keeperStats, opts.keeperSpecial, opts.keeperScale ?? 1, opts.keeperEvo ?? 0);
     this.wall = this.createWall();
     this.group.add(this.goal.group, this.ball.group, this.kicker.body.root, this.keeper.body.root);
     if (this.wall) this.group.add(this.wall.group);
@@ -136,7 +140,8 @@ export abstract class KickGame {
     this.ball.setPosition(this.ballPos);
     this.kicker.setup(this.spot.ball, this.spot.aim, this.style);
     this.keeper.reset();
-    this.wall?.setup(this.spot.ball, this.spot.wallCount ?? 4);
+    // UPDATE 10: wall players 165–200 cm, from the game's seed (online: the same on both phones and the server)
+    this.wall?.setup(this.spot.ball, this.spot.wallCount ?? 4, wallHeights(this.opts.seed, this.attempt));
     this.goal.reset();
     this.plan = null;
     this.lastInput = null;
@@ -474,7 +479,8 @@ export abstract class KickGame {
       this.setOutcome('MISS', bar ? '크로스바 강타' : '골대 강타');
       return;
     }
-    this.setOutcome('MISS', y > H ? '크로스바 위로' : '골대 밖');
+    // UPDATE 10 fix: wide of the post is "골대 밖" even when it is also high (was "크로스바 위로")
+    this.setOutcome('MISS', ax <= W && y > H ? '크로스바 위로' : '골대 밖');
   }
 
   private integrateFree(h: number) {

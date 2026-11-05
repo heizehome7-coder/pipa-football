@@ -29,6 +29,10 @@ import { OnlineModeScreen } from './screens/OnlineModeScreen';
 import { DeveloperScreen } from './screens/DeveloperScreen';
 import { PacksScreen } from './screens/PacksScreen';
 import { EventCenterScreen } from './screens/EventCenterScreen';
+import { EvolutionScreen, MaterialShopScreen } from './screens/EvolutionScreen';
+import { MissionsScreen } from './screens/MissionsScreen';
+import { StatsScreen } from './screens/StatsScreen';
+import { EvoContext } from './components/PlayerArt';
 import type { DuelMode } from './online/LobbyClient';
 
 /** UPDATE 7: XP / LEVEL UP for a finished online match (pushed by the server) */
@@ -54,6 +58,10 @@ type Screen =
   | { name: 'market' }
   | { name: 'packs' }
   | { name: 'events' }
+  | { name: 'evolution' }
+  | { name: 'evo-shop' }
+  | { name: 'missions' }
+  | { name: 'stats' }
   | { name: 'developer' }
   | { name: 'ranking' }
   | { name: 'levels' }
@@ -131,6 +139,21 @@ export default function App() {
       .then((r) => applyReply(r, u))
       .catch(() => {});
   };
+  // UPDATE 10: WEEKLY MISSION "PLAY FOR 5 MINUTES" — real match time only (single game / online match)
+  useEffect(() => {
+    if (!user?.token || (screen.name !== 'game' && screen.name !== 'match')) return;
+    const tok = user.token;
+    let last = Date.now();
+    const t = window.setInterval(() => {
+      const now = Date.now();
+      const sec = Math.round((now - last) / 1000);
+      last = now;
+      if (document.visibilityState !== 'visible' || sec <= 0) return;
+      accountApi.missionPlay(tok, Math.min(sec, 60)).catch(() => {});
+    }, 20_000);
+    return () => window.clearInterval(t);
+  }, [screen.name, user?.token]);
+
   // UPDATE 7: DAILY LOGIN — once per server day, on the home screen
   useEffect(() => {
     const d = wallet.progress?.daily;
@@ -140,7 +163,7 @@ export default function App() {
     }
   }, [screen.name, wallet.progress?.daily?.canClaim, wallet.progress?.daily?.today]);
   useEffect(() => {
-    if (['playtype', 'market', 'squad', 'online-modes', 'levels', 'ranking', 'packs', 'events'].includes(screen.name)) refreshWallet();
+    if (['playtype', 'market', 'squad', 'online-modes', 'levels', 'ranking', 'packs', 'events', 'evolution', 'evo-shop', 'missions'].includes(screen.name)) refreshWallet();
   }, [screen.name]); // eslint-disable-line react-hooks/exhaustive-deps
   // the server pushes the new balance right after paying a win
   useEffect(() => {
@@ -221,6 +244,10 @@ export default function App() {
       onMarket={() => setScreen({ name: 'market' })}
       onPacks={() => setScreen({ name: 'packs' })}
       onEvents={() => setScreen({ name: 'events' })}
+      onEvolution={() => setScreen({ name: 'evolution' })}
+      onShop={() => setScreen({ name: 'evo-shop' })}
+      onMissions={() => setScreen({ name: 'missions' })}
+      onStats={() => setScreen({ name: 'stats' })}
       onDeveloper={() => setScreen({ name: 'developer' })}
       onRanking={() => setScreen({ name: 'ranking' })}
       onLevels={() => setScreen({ name: 'levels' })}
@@ -243,12 +270,25 @@ export default function App() {
     body = <PacksScreen wallet={wallet} token={user?.token ?? null} onReply={(r) => applyReply(r)} onBack={() => setScreen({ name: 'playtype' })} />;
   } else if (screen.name === 'events') {
     body = <EventCenterScreen wallet={wallet} token={user?.token ?? null} onReply={(r) => applyReply(r)} onBack={() => setScreen({ name: 'playtype' })} />;
+  } else if (screen.name === 'evolution') {
+    body = <EvolutionScreen wallet={wallet} token={user?.token ?? null} onReply={(r) => applyReply(r)} onBack={() => setScreen({ name: 'playtype' })} onShop={() => setScreen({ name: 'evo-shop' })} />;
+  } else if (screen.name === 'evo-shop') {
+    body = <MaterialShopScreen wallet={wallet} token={user?.token ?? null} onReply={(r) => applyReply(r)} onBack={() => setScreen({ name: 'playtype' })} onEvolve={() => setScreen({ name: 'evolution' })} />;
+  } else if (screen.name === 'missions') {
+    body = <MissionsScreen token={user?.token ?? null} onReply={(r) => applyReply(r)} onBack={() => setScreen({ name: 'playtype' })} />;
+  } else if (screen.name === 'stats') {
+    body = <StatsScreen me={user?.nickname ?? ''} onBack={() => setScreen({ name: 'playtype' })} />;
   } else if (screen.name === 'ranking') {
     body = <RankingScreen token={user?.token ?? null} me={user?.nickname ?? ''} tick={rankTick} onBack={() => setScreen({ name: 'playtype' })} />;
   } else if (screen.name === 'levels') {
     body = <LevelRewardsScreen token={user?.token ?? null} progress={wallet.progress ?? null} onReply={(r) => applyReply(r)} onBack={() => setScreen({ name: 'playtype' })} />;
   } else if (screen.name === 'developer') {
-    body = <DeveloperScreen onBack={() => setScreen({ name: 'playtype' })} />;
+    // other people's cards: never my own evolution levels
+    body = (
+      <EvoContext.Provider value={null}>
+        <DeveloperScreen onBack={() => setScreen({ name: 'playtype' })} />
+      </EvoContext.Provider>
+    );
   } else if (screen.name === 'online-modes') {
     body = (
       <OnlineModeScreen
@@ -277,7 +317,7 @@ export default function App() {
   } else if (screen.name === 'select-kicker') {
     body = <SelectKickerScreen squad={mySquad} onPick={(p) => setScreen({ name: 'game', mode: 'penalty', player: p })} onBack={() => setScreen({ name: 'modes' })} />;
   } else if (screen.name === 'game') {
-    body = <GameScreen key={`${screen.mode}:${screen.player?.id ?? ''}`} mode={screen.mode} user={user} player={screen.player} onExit={() => setScreen({ name: 'modes' })} />;
+    body = <GameScreen key={`${screen.mode}:${screen.player?.id ?? ''}`} mode={screen.mode} user={user} player={screen.player} evo={(screen.player && wallet.evo?.[screen.player.id]) || 0} onExit={() => setScreen({ name: 'modes' })} />;
   } else if (screen.name === 'lobby' && lobby && snap) {
     body = <OnlineLobbyScreen lobby={lobby} snap={snap} mode={duel} onBack={() => setScreen({ name: 'online-modes' })} />;
   } else if (screen.name === 'match' && lobby && channel && snap?.match) {
@@ -288,7 +328,9 @@ export default function App() {
 
   return (
     <>
-      <div className="app-frame">{body}</div>
+      <div className="app-frame">
+        <EvoContext.Provider value={wallet.evo ?? null}>{body}</EvoContext.Provider>
+      </div>
       {lobby && snap && user && screen.name !== 'match' && <ChallengePanel lobby={lobby} snap={snap} />}
       {lobby && snap && user && <NoticeStack lobby={lobby} snap={snap} />}
       {dailyOpen && user?.token && wallet.progress && screen.name === 'playtype' && (

@@ -96,6 +96,27 @@ export interface PackPull {
   at: string;
 }
 
+/** UPDATE 10 — weekly missions as the server reports them */
+export interface MissionView {
+  id: string;
+  title: string;
+  desc: string;
+  goal: number;
+  unit: string;
+  reward: { fv?: number; mp?: number };
+  progress: number;
+  done: boolean;
+  claimed: boolean;
+}
+export interface StatRow {
+  nickname: string;
+  games: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  rate: number;
+}
+
 /** UPDATE 9.5 — 감자의 제왕 best score + recent games */
 export interface PotatoStats {
   best: number;
@@ -131,7 +152,7 @@ export interface AccountReply {
   owned?: string[];
   playerId?: string;
   /** UPDATE 8 */
-  cards?: { id: string; playerId: string; source: string | null }[];
+  cards?: { id: string; playerId: string; source: string | null; evo?: number }[];
   pull?: PackPull;
   packsOpened?: number;
   /** UPDATE 7 */
@@ -157,6 +178,20 @@ export interface AccountReply {
   repeated?: boolean;
   /** UPDATE 9.5 */
   favorites?: string[];
+  /** UPDATE 10 */
+  season?: number;
+  evo?: Record<string, number>;
+  starterEvo?: Record<string, number>;
+  materials?: { id: string; ovr: number }[];
+  success?: boolean;
+  rate?: number;
+  from?: number;
+  evoLevel?: number;
+  ovr?: number;
+  missions?: MissionView[];
+  week?: string;
+  resetInMs?: number;
+  claimed?: string;
   potatoStats?: PotatoStats;
   daily?: DailyStatus;
   notices?: SaleNotice[];
@@ -235,6 +270,13 @@ export const accountApi = {
   potatoFinish: (token: string, sessionId: string) => post('/api/events/potato/finish', { token, sessionId }, 30_000),
   /** UPDATE 9.5: 관심 선수 on/off (saved on the account) */
   setFavorite: (token: string, playerId: string, on: boolean) => post('/api/favorites', { token, playerId, on }, 15_000),
+  // ── UPDATE 10 ──
+  missions: (token: string) => post('/api/missions/state', { token }, 30_000),
+  missionPlay: (token: string, seconds: number) => post('/api/missions/play', { token, seconds }, 15_000),
+  missionClaim: (token: string, id: string) => post('/api/missions/claim', { token, id }, 30_000),
+  stats: (q: string, board: 'total' | 'penalty' | 'freekick') => post('/api/stats', { q, board }, 30_000) as Promise<AccountReply & { rows?: StatRow[]; total?: number }>,
+  evoBuy: (token: string, ovr: number, currency: 'mp' | 'fv', nonce: string) => post('/api/evo/buy', { token, ovr, currency, nonce }, 30_000),
+  evolve: (token: string, cardKey: string, materialId: string, nonce: string) => post('/api/evo/evolve', { token, cardKey, materialId, nonce }, 30_000),
   cancel: (token: string, listingId: string) => post('/api/market/cancel', { token, listingId }, 30_000),
   marketState: (token: string | null) =>
     post('/api/market/state', { token }, 30_000) as Promise<AccountReply & { listings?: Record<string, { count: number; min: number }>; mine?: Listing[] }>,

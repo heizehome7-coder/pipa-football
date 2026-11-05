@@ -1,3 +1,4 @@
+import { evoOvrBonus } from '../progress/evolution';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Flag, PlayerAvatar } from './PlayerArt';
 import { ovr, SPECIALS, type PlayerDef, type SpecialId } from '../players/players';
@@ -72,7 +73,7 @@ function Pattern({ theme }: { theme: Theme }) {
   return null;
 }
 
-export function PlayerCardGoalOverlay({ player }: { player: PlayerDef }) {
+export function PlayerCardGoalOverlay({ player, evo = 0 }: { player: PlayerDef; evo?: number }) {
   const theme = goalCardTheme(player);
   const sp = SPECIALS[player.special];
   return (
@@ -81,7 +82,7 @@ export function PlayerCardGoalOverlay({ player }: { player: PlayerDef }) {
         <Pattern theme={theme} />
         <div className="gcard-top">
           <span className="gcard-ovr">
-            <b>{ovr(player)}</b>
+            <b>{ovr(player) + evoOvrBonus(evo)}</b>
             <em>OVR</em>
           </span>
           <span className="gcard-pos">{player.positions.join(' / ')}</span>
@@ -90,6 +91,7 @@ export function PlayerCardGoalOverlay({ player }: { player: PlayerDef }) {
           </span>
         </div>
         {player.legend && <span className="gcard-legend-tag">LEGEND</span>}
+        {evo > 0 && <span className={`gcard-evo ${evo >= 10 ? 'high' : ''}`} data-testid="gcard-evo">+{evo}{evo >= 12 ? ' MAX' : ''}</span>}
         <div className="gcard-art">
           <PlayerAvatar player={player} size={118} />
         </div>
@@ -120,16 +122,16 @@ export const GOAL_CARD_MS = 2900;
 
 /** show the scorer's card for one goal; a new key restarts it */
 export function useGoalCard() {
-  const [shown, setShown] = useState<{ key: string; player: PlayerDef } | null>(null);
+  const [shown, setShown] = useState<{ key: string; player: PlayerDef; evo: number } | null>(null);
   const timer = useRef(0);
   const last = useRef('');
-  const show = useCallback((key: string, player: PlayerDef | null | undefined) => {
+  const show = useCallback((key: string, player: PlayerDef | null | undefined, evo = 0) => {
     if (!player || last.current === key) return;
     last.current = key;
     window.clearTimeout(timer.current);
-    setShown({ key, player });
+    setShown({ key, player, evo });
     timer.current = window.setTimeout(() => setShown(null), GOAL_CARD_MS);
   }, []);
   useEffect(() => () => window.clearTimeout(timer.current), []);
-  return { show, el: shown ? <PlayerCardGoalOverlay key={shown.key} player={shown.player} /> : null };
+  return { show, el: shown ? <PlayerCardGoalOverlay key={shown.key} player={shown.player} evo={shown.evo} /> : null };
 }

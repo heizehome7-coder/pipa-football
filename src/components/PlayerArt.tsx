@@ -1,3 +1,5 @@
+import { createContext, useContext } from 'react';
+import { evoOvrBonus } from '../progress/evolution';
 import type { CountryCode, PlayerDef } from '../players/players';
 import { accentHue, COUNTRY_NAME, FIELD_STAT_LABELS, GK_STAT_LABELS, ovr, SPECIALS } from '../players/players';
 
@@ -290,6 +292,24 @@ export function Flag({ code, size = 18 }: { code: CountryCode; size?: number }) 
         </>
       );
       break;
+    // UPDATE 10
+    case 'SEN':
+      body = (
+        <>
+          {stripesV('#00853f', '#fdef42', '#e31b23')}
+          <path d="M15 6.6 l1 2.9 3 0 -2.4 1.8 0.9 2.9 -2.5 -1.8 -2.5 1.8 0.9 -2.9 -2.4 -1.8 3 0z" fill="#00853f" />
+        </>
+      );
+      break;
+    case 'WAL':
+      body = (
+        <>
+          <rect width="30" height="10" fill="#ffffff" />
+          <rect width="30" height="10" y="10" fill="#00b140" />
+          <path d="M8 13 q3 -6 8 -4 q4 -3 7 1 q-2 1 -4 0 q-1 4 -6 4 q-3 1 -5 -1z" fill="#d30731" />
+        </>
+      );
+      break;
     // UPDATE 8
     case 'SRB':
       body = stripesH('#c6363c', '#0c4076', '#ffffff');
@@ -459,6 +479,7 @@ export function PlayerCard({
   onInfo,
   compact,
   market,
+  evo,
 }: {
   player: PlayerDef;
   selected: boolean;
@@ -469,20 +490,25 @@ export function PlayerCard({
   compact?: boolean;
   /** UPDATE 6: TRANSFER MARKET card (price or OWNED instead of SELECT) */
   market?: { price: number; owned: boolean; listed?: boolean; userOffers?: number };
+  /** UPDATE 10: evolution level (else my own level from EvoContext; market cards show none) */
+  evo?: number;
 }) {
   const hue = accentHue(player.id);
+  const ctxEvo = useContext(EvoContext);
+  const lvl = evo ?? (market ? 0 : ctxEvo?.[player.id] ?? 0);
   return (
     <div
-      className={`pcard ${selected ? 'selected' : ''} ${player.role === 'GK' ? 'gk' : ''} ${compact ? 'compact' : ''} ${player.legend ? 'legend' : ''} ${market ? 'market' : ''} ${market?.owned ? 'owned' : ''}`}
+      className={`pcard ${selected ? 'selected' : ''} ${player.role === 'GK' ? 'gk' : ''} ${compact ? 'compact' : ''} ${player.legend ? 'legend' : ''} ${market ? 'market' : ''} ${market?.owned ? 'owned' : ''} ${lvl >= 12 ? 'evo-max' : lvl >= 10 ? 'evo-high' : lvl > 0 ? 'evo' : ''}`}
       style={{ ['--hue' as string]: hue }}
       data-testid="player-card"
       data-id={player.id}
       data-selected={selected ? '1' : '0'}
+      data-evo={lvl}
     >
       <button className="pcard-hit" onClick={onToggle} aria-pressed={selected} aria-label={`${player.nameKo} ${selected ? '선택 해제' : '선택'}`} />
       <div className="pcard-top">
         <span className="pcard-ovr" data-testid="card-ovr">
-          <b>{ovr(player)}</b>
+          <b>{ovr(player) + evoOvrBonus(lvl)}</b>
           <em>OVR</em>
         </span>
         <span className="pcard-topr">
@@ -492,7 +518,14 @@ export function PlayerCard({
       </div>
       {order !== undefined && <span className="pcard-order">{order}</span>}
       {freeKick && <span className="pcard-fk">⭐ FREE KICK</span>}
-      {player.legend && <span className="pcard-legend">LEGEND</span>}
+      {player.legend && <span className="pcard-legend">{player.original ? 'ICON · PIPA ORIGINAL' : 'LEGEND'}</span>}
+      {player.original && !player.legend && <span className="pcard-legend pcard-original">PIPA ORIGINAL</span>}
+      {lvl > 0 && (
+        <span className={`pcard-evo ${lvl >= 12 ? 'max' : lvl >= 10 ? 'high' : ''}`} data-testid="card-evo">
+          +{lvl}
+          {lvl >= 12 && <i>MAX</i>}
+        </span>
+      )}
       <div className="pcard-art">
         <PlayerAvatar player={player} size={compact ? 74 : 92} />
       </div>
@@ -537,3 +570,6 @@ export function PlayerCard({
     </div>
   );
 }
+
+/** UPDATE 10: my evolution levels (playerId → +n) for the cards of MY players (squad, evolution …) */
+export const EvoContext = createContext<Record<string, number> | null>(null);

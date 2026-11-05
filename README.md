@@ -1,4 +1,4 @@
-# PIPA · FOOTBALL GAME  — UPDATE 9.5
+# PIPA · FOOTBALL GAME  — UPDATE 10 · SEASON 1
 
 > 버전 표시는 `src/version.ts`의 `GAME_VERSION` 하나로 관리 (다음 큰 업데이트 때 숫자만 올리기)
 
@@ -50,6 +50,23 @@ npm run build:single   # dist-single/ — index.html 한 파일 (어디서나 �
 - GK: 6방향 블렌딩 다이브, 능력 반영(팔 길이/이동 거리), 선방·실점 리액션 — `Goalkeeper.ts`
 - 골 세리머니: 모든 선수 공통 "두 손 들고 환호" + 실패(SAVE/MISS/POST/CROSSBAR) 리액션 — `reactions.ts`; 리액션 중 입력 잠금(~2초)
 - 카드 앞면 OVR + POWER/ACCURACY/CURVE, 상세에 전체 능력 + SPECIAL ABILITY. 등 이름 크기 확대
+
+## UPDATE 10 — EVOLUTION & SEASON 1 (`GAME_VERSION = 10`, 화면 표시 "UPDATE 10" + 별도 "SEASON 1")
+- **HOME**: 혼자서 · 온라인 · SQUAD · TRANSFER MARKET · **EVOLUTION** · **진화 재료 상점** · PACKS · EVENT CENTER · **WEEKLY MISSIONS** · RANKING · **MATCH STATISTICS** · 개발자 모드
+- **시즌** (`src/progress/season.ts`, `SEASON = 1`): 계정마다 처음 읽힐 때 한 번만 지난 시즌 온라인 전적을 `seasonHistory`에 보관하고 0부터 시작(`data.season` 저장 → 재시작해도 다시 초기화 안 됨). 초기화 대상은 온라인 전적과 승리 랭킹뿐 — MP · FV · 선수 · 스쿼드 · 진화 · 재료 · 팩 · 토큰 · 거래 · 레벨/XP · 출석 · 계정 유지, MP 랭킹 유지
+- **수비수 이적시장 제외**: 주 포지션 CB/LB/RB/LWB/RWB 35명은 구매·판매 등록·팩 불가(`isBuyable`, `packPool`). 이미 가진 카드·스쿼드는 그대로, 서버 시작 시 열려 있던 수비수 판매 등록은 자동 취소 후 원래 주인에게 반환. playerId 변경 없음
+- **신규 선수 50명** (총 250명, 판매 215명): PIPA ORIGINAL 9명(송인우 · 조현선 · 박승호 · 박사하 GK 162 cm · 김태인 ICON · 박준혁 · 이윤호 CHIP SHOT ONLY · 최건우 · 한동연 — 게임 오리지널 선수, 실제 프로 선수 아님, 카드에 "PIPA ORIGINAL") · 현역 31명 · ICON 10명. 새 특수능력 9종(`TWO_FOOT_CURL_MASTER`, `THUNDER_STRIKE`, `UNSTABLE_CANNON`, `SMALL_FLYING_KEEPER`, `ICON_POWER_DRIVE`, `SILK_FINESSE`, `CHIP_SHOT_ONLY`, `WILD_POWER`, `WILD_LEFT_CURL`)이 실제 슛/다이빙에 적용. 박사하는 162/188 크기로 그려지고 충돌도 같은 크기(빠른 다이빙·높이 도약, 대신 높은 공 리치는 짧음)
+- **수비벽 키 랜덤** 165~200 cm: 몸 전체 비율 그대로 크기 조절, 충돌 = 보이는 몸. 온라인은 라운드 시드(`roundSeed`)로 두 폰·서버 판정이 같은 벽
+- **진화 재료 상점**: OVR 130/135/140/145/150 = 50M/120M/250M/500M/900M MP 또는 150/300/600/1,200/2,200 FV(한 번에 한 화폐). 재료는 별도 인벤토리, 거래 불가(UNTRADEABLE)
+- **EVOLUTION** (`src/progress/evolution.ts`): +0 → +12, 기본 확률 90/80/70/60/50/38/28/18/10/5/2/0.75 %. 재료 OVR < 선수 ×0.6~0.85 · 같음 ×1.1 · 높음 ×1.2~1.3, 최대 95 %, +10부터는 좋은 재료로도 기본 확률보다 쉬워지지 않음. 재료는 성공/실패 상관없이 소모, 실패해도 단계 유지. OVR +3/단계(~+9), +6/단계(+10~+12). +10 SPECIAL PERFORMANCE BOOST · +11 ELITE EVOLUTION BOOST · +12 MAX EVOLUTION. 결과는 서버 crypto 난수, nonce로 중복 방지. 진화 레벨은 카드에 저장(무료 스타터는 `starterEvo`), 진화 카드는 판매 불가
+  - 실제 성능: 슛(속도·정확도·회전·너클, 물리 한계 유지) · GK(도약·이동·리치·반응·체공). 카드 "+N", +10↑ 빛, +12 MAX 테두리, 키커/GK 소개 · 골 카드 · HUD 표시. 온라인은 서버가 가진 진화 레벨만 사용(`squad.evo`), `validShotFor`가 진화 레벨까지 검사
+- **온라인 이모티콘**: 🔥 💀 🤫 🤯 😃 ⚽️ 💔 동 EZ · 약 2초 표시 · 3초 쿨다운(서버도 검사) · 무음 · "상대 이모티콘 숨기기"
+- **WEEKLY MISSIONS** (매주 월요일 00:00 KST 초기화, `src/progress/missions.ts`): PERFECT SHOOTOUT 120 FV · PLAY 5 MIN 50 FV(실제 플레이 시간만, 서버가 보고 간격 검사) · 온라인 3판 30 FV · 10골 20,000,000 MP · 프리킥 1승 50 FV. 주마다 1번 CLAIM
+- **MATCH STATISTICS**: 모든 유저의 이번 시즌 온라인 전적(TOTAL / PENALTY / FREE KICK · 경기 · 승/패/무 · 승률), 닉네임 검색, 조회 전용
+- 홍 나와라 뚝딱 1회 100 FV · 10회 1,000 FV(확률·보상 그대로) · 감자의 제왕 20라운드(규칙·비용·보상 그대로)
+- **버그 수정**: 닉네임 `constructor`/`__proto__` 가입 시 500 오류 → 예약어 거부 + 저장소 null-prototype · 즐겨찾기/홍 등급/팩 종류에 프로토타입 키를 넣으면 통과되던 문제 → 자기 키만 허용 · nonce를 다른 기능에 재사용 가능 → 기능별 nonce · 옆으로도 높이도 벗어난 공이 "크로스바 위로" → "골대 밖"
+- API: `/api/evo/buy {ovr, currency, nonce}`, `/api/evo/evolve {cardKey, materialId, nonce}`, `/api/missions/state|play|claim`, `/api/stats {q, board}`
+- 테스트: `npx tsx scripts/update10-test.ts`, `node scripts/update10-server-test.mjs`, `python3 scripts/update10-e2e.py`
 
 ## UPDATE 9.5 — 버그 수정 & 작은 기능 (`GAME_VERSION = 9.5`, 화면 표시 "UPDATE 9.5")
 - **버그 수정**: HOME PACKS 숫자 = PLAYER + GOOD + LEGEND 팩 합계(이전엔 PLAYER PACK만) · "CLUB TBA" 6명 클럽 지정(권창훈 JEJU SK · 홍현석 FC MIDTJYLLAND · 이동경 ULSAN HD · 이동준 JEONBUK HYUNDAI · 스가와라 WERDER BREMEN · 무코코 FC COPENHAGEN, 2026년 11월 기준) · GK 조이스틱이 느린 폰(긴 프레임)에서도 실제 경과 시간만큼 이동(최대 1초 프레임까지)

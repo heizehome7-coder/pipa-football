@@ -6,7 +6,7 @@
  * `look` is purely cosmetic (hair, beard, skin, height, build) so players can be told
  * apart in 3D and on their cards. Stats come in UPDATE 5+.
  */
-import { MARKET_EXISTING_PRICES, MARKET_NEW, MARKET_ORDER, STARTER_IDS, type MarketCountry } from './market';
+import { HEIGHT_CM, MARKET_EXISTING_PRICES, MARKET_NEW, MARKET_ORDER, ORIGINAL_IDS, STARTER_IDS, type MarketCountry } from './market';
 import { CLUB, PRIMARY_POSITION } from './clubs';
 
 export type PlayerRole = 'FW' | 'MF' | 'DF' | 'GK';
@@ -48,7 +48,10 @@ export type SpecialId =
   | 'PENALTY_PRECISION' | 'POWER_FINISH' | 'QUICK_LOW_CURL' | 'BALANCED_FINISH' | 'CONTROLLED_DRIVE'
   | 'LEFT_FINESSE' | 'DRIVEN_CURVE' | 'CLINICAL_FINISH' | 'SET_PIECE_CONTROL'
   | 'LONG_REACH' | 'POSITION_MASTER' | 'LOW_SAVE' | 'HIGH_REACH' | 'PENALTY_SPECIALIST' | 'BLACK_SPIDER'
-  | 'KOREAN_LEGEND' | 'RED_FINISHER' | 'KING_OF_FOOTBALL';
+  | 'KOREAN_LEGEND' | 'RED_FINISHER' | 'KING_OF_FOOTBALL'
+  // UPDATE 10 — PIPA ORIGINALS
+  | 'TWO_FOOT_CURL_MASTER' | 'THUNDER_STRIKE' | 'UNSTABLE_CANNON' | 'SMALL_FLYING_KEEPER' | 'ICON_POWER_DRIVE'
+  | 'SILK_FINESSE' | 'CHIP_SHOT_ONLY' | 'WILD_POWER' | 'WILD_LEFT_CURL';
 
 export const SPECIALS: Record<SpecialId, { name: string; desc: string }> = {
   POWER_BURST: { name: 'POWER BURST', desc: '빠르고 곧은 강한 스트로크에서 더 빠른 슛' },
@@ -74,6 +77,16 @@ export const SPECIALS: Record<SpecialId, { name: string; desc: string }> = {
   KING_OF_FOOTBALL: { name: 'KING OF FOOTBALL', desc: '정확도·파워·감아차기·낮은 슛 모두 최상급, 강하게 차도 원하는 곳으로' },
   KOREAN_LEGEND: { name: 'KOREAN LEGEND', desc: '강하고 정확한 ST 마무리 · 파워 슛 속도와 낮은 슛 정확도 보너스' },
   RED_FINISHER: { name: 'RED FINISHER', desc: '빠르고 강한 ST 마무리, 강하게 차도 흔들림이 적음' },
+  // UPDATE 10
+  TWO_FOOT_CURL_MASTER: { name: 'TWO-FOOT CURL MASTER', desc: '양발 모두 부드럽게 한 방향으로 감기는 최상급 감아차기 · 강한 직선 슛은 약함' },
+  THUNDER_STRIKE: { name: 'THUNDER STRIKE', desc: '강하고 빠른 직선 슛 특화 · 최대 파워에서 공이 강하게 뻗음' },
+  UNSTABLE_CANNON: { name: 'UNSTABLE CANNON', desc: '최고 수준의 강슛 · 풀파워일수록 목표에서 벗어날 위험' },
+  SMALL_FLYING_KEEPER: { name: 'SMALL FLYING KEEPER', desc: '162cm의 작은 키, 폭발적인 순발력과 점프 · 높은 공의 정적 도달 범위는 불리' },
+  ICON_POWER_DRIVE: { name: 'ICON POWER DRIVE', desc: '강력한 중거리 파워슛 · 프리킥 제어는 약함' },
+  SILK_FINESSE: { name: 'SILK FINESSE', desc: '부드럽고 매우 정교하게 감기는 기술적인 구석 슛' },
+  CHIP_SHOT_ONLY: { name: 'CHIP SHOT ONLY', desc: '모든 슛이 포물선을 그리는 칩슛으로 날아감' },
+  WILD_POWER: { name: 'WILD POWER', desc: '강한 속도의 슛 · 풀파워에서 정확도 하락' },
+  WILD_LEFT_CURL: { name: 'WILD LEFT CURL', desc: '매우 강력한 왼발 감아차기 · 강하게 감을수록 조금 빗나갈 위험' },
   BLACK_SPIDER: { name: 'BLACK SPIDER', desc: '폭발적인 다이빙과 긴 손끝 리치, 높은 체공 · 중간 속도 슛은 공중에서 잡아냄' },
 };
 
@@ -114,6 +127,12 @@ export interface PlayerDef {
   /** UPDATE 9: Korean display name on two card lines (e.g. 리오넬 / 메시) — the shirt stays English */
   koFirst: string;
   koLast: string;
+  /** UPDATE 10: a PIPA ORIGINAL character (not a real footballer) */
+  original?: boolean;
+  /** UPDATE 10: real height in cm where it changes play (박사하 162 cm) */
+  heightCm?: number;
+  /** UPDATE 10: a defender by main position (CB/LB/RB/LWB/RWB) — no longer sold on the market */
+  defender?: boolean;
 }
 
 export const COUNTRY_NAME: Record<CountryCode, string> = {
@@ -157,6 +176,8 @@ export const COUNTRY_NAME: Record<CountryCode, string> = {
   UKR: 'UKRAINE',
   USA: 'USA',
   MEX: 'MEXICO',
+  SEN: 'SENEGAL',
+  WAL: 'WALES',
 };
 
 const p = (
@@ -232,8 +253,10 @@ for (const pl of PLAYERS) {
   pl.starter = STARTERS.has(pl.id);
   if (!pl.starter) pl.price = MARKET_EXISTING_PRICES[pl.id];
 }
+/** UPDATE 10: defender positions (the market stops selling these) */
+export const DEF_POSITIONS = ['CB', 'LB', 'RB', 'LWB', 'RWB'];
 const roleOf = (pos: string): PlayerRole =>
-  pos === 'GK' ? 'GK' : ['CB', 'LB', 'RB'].includes(pos) ? 'DF' : ['ST', 'CF', 'LW', 'RW'].includes(pos) ? 'FW' : 'MF';
+  pos === 'GK' ? 'GK' : DEF_POSITIONS.includes(pos) ? 'DF' : ['ST', 'CF', 'LW', 'RW'].includes(pos) ? 'FW' : 'MF';
 for (const r of MARKET_NEW) {
   const [skin, hair, hairStyle, beard, height, build] = r.look;
   PLAYERS.push({
@@ -258,6 +281,10 @@ for (const pl of PLAYERS) {
   const sp = pl.nameKo.lastIndexOf(' ');
   pl.koFirst = sp > 0 ? pl.nameKo.slice(0, sp) : '';
   pl.koLast = sp > 0 ? pl.nameKo.slice(sp + 1) : pl.nameKo;
+  // UPDATE 10
+  pl.original = ORIGINAL_IDS.includes(pl.id);
+  if (HEIGHT_CM[pl.id]) pl.heightCm = HEIGHT_CM[pl.id];
+  pl.defender = DEF_POSITIONS.includes(pl.positions[0]);
 }
 
 /** UPDATE 9: search by Korean or English name (spaces / accents / case ignored) */
@@ -289,19 +316,31 @@ export const GK_STAT_LABELS: [keyof GkStats, string][] = [
   ['lowSave', 'LOW SAVE'], ['highSave', 'HIGH SAVE'], ['penaltyRead', 'PENALTY READ'],
 ];
 
-export const PLAYER_BY_ID: Record<string, PlayerDef> = Object.fromEntries(PLAYERS.map((x) => [x.id, x]));
+// UPDATE 10 fix: a null-prototype map, so "constructor" / "__proto__" are never mistaken for players
+export const PLAYER_BY_ID: Record<string, PlayerDef> = Object.assign(Object.create(null) as Record<string, PlayerDef>, Object.fromEntries(PLAYERS.map((x) => [x.id, x])));
 export const FIELD_PLAYERS = PLAYERS.filter((x) => x.role !== 'GK');
 export const GOALKEEPERS = PLAYERS.filter((x) => x.role === 'GK');
 export const STARTER_PLAYERS = PLAYERS.filter((x) => x.starter);
 /** the 200 TRANSFER MARKET players in catalogue order (UPDATE 8: +50, UPDATE 9: +50) */
 export const MARKET_PLAYERS: PlayerDef[] = MARKET_ORDER.map((id) => PLAYER_BY_ID[id]);
 export const isStarter = (id: string) => !!PLAYER_BY_ID[id]?.starter;
+/**
+ * UPDATE 10: defenders (main position CB / LB / RB / LWB / RWB) are no longer sold — not by the
+ * system, not as new user listings, not in packs. Cards already owned stay owned and playable.
+ */
+export const isBuyable = (id: string) => {
+  const pl = typeof id === 'string' ? PLAYER_BY_ID[id] ?? null : null;
+  return !!pl && !pl.starter && typeof pl.price === 'number' && !pl.defender;
+};
+/** the market players you can still buy (UPDATE 10: no defenders) */
+export const BUYABLE_PLAYERS: PlayerDef[] = MARKET_ORDER.map((id) => PLAYER_BY_ID[id]).filter((pl) => !pl.defender);
 export const marketPrice = (id: string): number | null => {
   const pl = PLAYER_BY_ID[id];
   return pl && !pl.starter && typeof pl.price === 'number' ? pl.price : null;
 };
 
-export const getPlayer = (id: string | null | undefined): PlayerDef | null => (id && PLAYER_BY_ID[id]) || null;
+// UPDATE 10 fix: own keys only ("constructor", "__proto__" … are not players)
+export const getPlayer = (id: string | null | undefined): PlayerDef | null => (typeof id === 'string' ? PLAYER_BY_ID[id] ?? null : null);
 
 /** a small per-player accent hue so every card looks a little different */
 export function accentHue(id: string) {

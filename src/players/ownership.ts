@@ -19,6 +19,10 @@ export interface Wallet {
   cards?: OwnedCard[];
   /** UPDATE 9.5: 관심 선수 (saved on the account) */
   favorites?: string[];
+  /** UPDATE 10: best evolution level per player · free starters' levels · materials */
+  evo?: Record<string, number>;
+  starterEvo?: Record<string, number>;
+  materials?: { id: string; ovr: number }[];
 }
 
 export interface OwnedCard {
@@ -26,6 +30,8 @@ export interface OwnedCard {
   playerId: string;
   /** 'market' | 'pack' | 'legacy' … */
   source: string | null;
+  /** UPDATE 10: evolution level of this card */
+  evo?: number;
 }
 
 export interface Progress {
@@ -59,6 +65,9 @@ export function walletFrom(r: {
   daily?: Progress['daily'];
   cards?: OwnedCard[];
   favorites?: string[];
+  evo?: Record<string, number>;
+  starterEvo?: Record<string, number>;
+  materials?: { id: string; ovr: number }[];
 }): Wallet {
   return {
     mp: r.mp ?? 0,
@@ -66,6 +75,9 @@ export function walletFrom(r: {
     cards: r.cards ?? (r.owned ?? []).map((playerId, i) => ({ id: `${playerId}#${i}`, playerId, source: null })),
     listed: r.listed ?? [],
     favorites: r.favorites ?? [],
+    evo: r.evo ?? {},
+    starterEvo: r.starterEvo ?? {},
+    materials: r.materials ?? [],
     progress:
       typeof r.level === 'number'
         ? { level: r.level, xp: r.xp ?? 0, xpNext: r.xpNext ?? 0, fv: r.fv ?? 0, claimed: r.claimedLevelRewards ?? [], packs: r.unopenedPacks ?? 0, goodPacks: r.goodPacks ?? 0, legendPacks: r.legendPacks ?? 0, hong: r.hong ?? { bronze: 0, silver: 0, gold: 0, red: 0 }, daily: r.daily ?? null }

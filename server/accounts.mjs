@@ -43,6 +43,11 @@
  *   UPDATE 9.5: POST /api/favorites {token, playerId, on?} ← {ok, favorites, …me}
  *               POST /api/dev/grant-items {devToken, nickname, item: fv|bronze|silver|gold|red|good|legend, count}
  *               potatoStats {best, played, recent[]} in /api/events/state and …/potato/finish
+ *   UPDATE 10: POST /api/evo/buy {token, ovr, currency: mp|fv, nonce}      ← {ok, materials, …me}
+ *              POST /api/evo/evolve {token, cardKey, materialId, nonce}     ← {ok, success, rate, from, evoLevel, …me}
+ *              POST /api/missions/state|play|claim {token, (seconds | id)}  ← {ok, missions, week, resetInMs}
+ *              POST /api/stats {q, board: total|penalty|freekick}          ← {ok, rows}  (read-only, this season)
+ *              stats restart once per account per SEASON (archived in data.seasonHistory)
  *                                                     (UPDATE 7 hotfix: read-only, server data only)
  *   Every grant is written to the developer action log (file devlog.json / table pipa_dev_log).
  *   Accounts also keep lastLoginAt / lastSeenAt (server time) and online records per mode:
@@ -92,17 +97,19 @@ function checkPassword(pw, salt, hash) {
 function fileStore(dir) {
   const file = path.join(dir, 'accounts.json');
   const lfile = path.join(dir, 'listings.json');
-  let db = {};
-  let listings = {};
+  // UPDATE 10 fix: null-prototype maps — a nickname like "constructor" / "__proto__" is just a key
+  const bare = (o) => Object.assign(Object.create(null), o && typeof o === 'object' ? o : {});
+  let db = bare();
+  let listings = bare();
   try {
-    db = JSON.parse(fs.readFileSync(file, 'utf8'));
+    db = bare(JSON.parse(fs.readFileSync(file, 'utf8')));
   } catch {
-    db = {};
+    db = bare();
   }
   try {
-    listings = JSON.parse(fs.readFileSync(lfile, 'utf8'));
+    listings = bare(JSON.parse(fs.readFileSync(lfile, 'utf8')));
   } catch {
-    listings = {};
+    listings = bare();
   }
   let timer = null;
   const flush = () => {
@@ -397,6 +404,38 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
   }
   const countOf = (rec, id) => (rec.data?.owned ?? []).filter((x) => x === id).length;
 
+  // ── UPDATE 10: SEASONS — each account's online records restart once per season ──
+  const SEASON = () => catalog?.SEASON ?? 0;
+  /** archive last season's records and start this season at 0 (stored → exactly once) */
+  function seasonMigrate(rec) {
+    if (!rec?.data || !SEASON()) return false;
+    const cur = rec.data.season ?? 0;
+    if (cur === SEASON()) return false;
+    const old = { season: cur, stats: rec.data.stats ?? emptyStats(), endedAt: new Date().toISOString() };
+    rec.data = { ...rec.data, seasonHistory: [...(rec.data.seasonHistory ?? []), old].slice(-10), stats: emptyStats(), season: SEASON() };
+    log(`season: "${rec.nickname}" → SEASON ${SEASON()} (season ${cur} records archived)`);
+    return true;
+  }
+
+  // ── UPDATE 10: EVOLUTION — the level lives on each card ("starter:<id>" for free starters) ──
+  const EVO_MAX = 12;
+  const evoOfCard = (data, cardKey) => {
+    if (typeof cardKey !== 'string') return null;
+    if (cardKey.startsWith('starter:')) {
+      const pid = cardKey.slice(8);
+      return catalog?.isStarter(pid) ? { playerId: pid, level: data?.starterEvo?.[pid] ?? 0, starter: true } : null;
+    }
+    const c = cardsOf(data).find((x) => x.id === cardKey);
+    return c ? { playerId: c.playerId, level: c.evo ?? 0, starter: false, card: c } : null;
+  };
+  /** the best evolution level this account has of each player (what plays in a match) */
+  function evoMap(data) {
+    const m = {};
+    for (const c of cardsOf(data)) if (c.evo) m[c.playerId] = Math.max(m[c.playerId] ?? 0, c.evo);
+    for (const [pid, l] of Object.entries(data?.starterEvo ?? {})) if (l) m[pid] = Math.max(m[pid] ?? 0, l);
+    return m;
+  }
+
   /** accounts from before UPDATE 6: market players already in the saved squad become owned */
   function migrate(rec, squad = rec.data?.squad) {
     if (!rec || rec.data?.v6) return false;
@@ -468,7 +507,7 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
     mp: rec.data?.mp ?? 0,
     owned: rec.data?.owned ?? [],
     // UPDATE 8: every card with its own id (duplicates allowed)
-    cards: cardsOf(rec.data).map((c) => ({ id: c.id, playerId: c.playerId, source: c.source ?? null })),
+    cards: cardsOf(rec.data).map((c) => ({ id: c.id, playerId: c.playerId, source: c.source ?? null, evo: c.evo ?? 0 })),
     // UPDATE 7
     listed: rec.data?.listed ?? [],
     ...progressOf(rec),
@@ -478,6 +517,11 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
     hong: hongOf(rec.data),
     // UPDATE 9.5
     favorites: Array.isArray(rec.data?.favorites) ? rec.data.favorites : [],
+    // UPDATE 10
+    season: SEASON(),
+    starterEvo: rec.data?.starterEvo ?? {},
+    evo: evoMap(rec.data),
+    materials: (rec.data?.materials ?? []).map((m) => ({ id: m.id, ovr: m.ovr })),
   });
 
   async function auth({ nickname, password }, ip) {
@@ -488,13 +532,15 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
     if (typeof password !== 'string' || password.length < PASS_MIN || password.length > PASS_MAX)
       return { status: 400, body: { ok: false, error: 'password', message: `비밀번호는 ${PASS_MIN}자 이상으로 입력해주세요` } };
     const key = nickKey(nick);
+    // UPDATE 10 fix: names the JavaScript runtime reserves
+    if (['__proto__', 'constructor', 'prototype'].includes(key)) return { status: 400, body: { ok: false, error: 'nickname', message: '사용할 수 없는 닉네임이에요' } };
     if (tooMany(ip) || tooMany(key)) return { status: 429, body: { ok: false, error: 'rate', message: '잠시 후 다시 시도해주세요' } };
 
     let rec = await store.get(key);
     if (!rec) {
       const { salt, hash } = hashPassword(password);
       const now = new Date().toISOString();
-      rec = { key, nickname: nick, salt, hash, tokens: [], data: { v6: true, mp: 0, owned: [], rewards: [], lastLoginAt: now, lastSeenAt: now }, createdAt: now };
+      rec = { key, nickname: nick, salt, hash, tokens: [], data: { v6: true, mp: 0, owned: [], rewards: [], lastLoginAt: now, lastSeenAt: now, season: SEASON() }, createdAt: now };
       const token = await newToken(rec);
       if (await store.create(rec)) {
         remember(rec);
@@ -533,7 +579,8 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
       const rec = (await load(found.key)) ?? found;
       if (!rec.tokens.includes(sha(token))) return NO_SESSION;
       const m = migrate(rec);
-      if (syncCards(rec) || m) await store.put(rec);
+      const sm = seasonMigrate(rec);
+      if (syncCards(rec) || m || sm) await store.put(rec);
       return fn(rec);
     });
   }
@@ -604,6 +651,8 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
         syncCards(rec);
         const value = typeof playerId === 'string' && catalog ? catalog.marketPrice(playerId) : null;
         if (value == null) return { status: 400, body: { ok: false, error: 'not_for_sale', message: '판매하지 않는 선수예요' } };
+        // UPDATE 10: defenders are no longer sold (cards already owned stay owned)
+        if (catalog.isBuyable && !catalog.isBuyable(playerId)) return { status: 400, body: { ok: false, error: 'not_for_sale', message: '이적시장에서 더 이상 판매하지 않는 선수예요 (수비수)' } };
         const owned = rec.data.owned ?? [];
         if (owned.includes(playerId) || (rec.data.listed ?? []).includes(playerId))
           return { status: 409, body: { ok: false, error: 'owned', message: '이미 보유한 선수예요', ...view(rec) } };
@@ -660,6 +709,10 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
         if (!owned.includes(playerId)) return { status: 403, body: { ok: false, error: 'not_owned', message: '보유하지 않은 선수예요', ...view(rec) } };
         // UPDATE 8: a spare copy of a squad player can be sold (the squad keeps one card)
         if (inSquad(rec, playerId) && countOf(rec, playerId) <= 1) return { status: 409, body: { ok: false, error: 'in_squad', message: '현재 스쿼드에서 사용 중인 선수입니다.' } };
+        // UPDATE 10: no new defender listings; an evolved card keeps its evolution and is not sold
+        if (catalog.getPlayer(playerId)?.defender) return { status: 403, body: { ok: false, error: 'defender', message: '수비수는 이적시장에 등록할 수 없어요' } };
+        const pick = typeof cardId === 'string' ? cardsOf(rec.data).find((c) => c.id === cardId && c.playerId === playerId) : null;
+        if (pick?.evo) return { status: 403, body: { ok: false, error: 'evolved', message: '진화한 카드는 판매할 수 없어요' } };
         const value = catalog.marketPrice(playerId);
         const { min, max } = catalog.saleRange(value);
         if (typeof price !== 'number' || !Number.isSafeInteger(price) || price < min || price > max)
@@ -746,7 +799,7 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
   }
 
   /** UPDATE 6 patch: online result for one finished game — once per key (resultRecorded) */
-  function recordResult(nickname, key, mode, result) {
+  function recordResult(nickname, key, mode, result, details = {}) {
     if (!['win', 'loss', 'draw'].includes(result)) return Promise.resolve(false);
     const m = mode === 'freekick' ? 'freekick' : 'penalty';
     const k = nickKey(cleanNick(nickname));
@@ -755,6 +808,7 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
       if (!rec) return false;
       const done = rec.data?.results ?? [];
       if (done.includes(key)) return false;
+      seasonMigrate(rec);
       const stats = { ...emptyStats(), ...(rec.data?.stats ?? {}) };
       const st = { ...stats[m] };
       st[result === 'win' ? 'wins' : result === 'loss' ? 'losses' : 'draws']++;
@@ -764,6 +818,15 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
       const gained = P ? P.xp[result] : 0;
       const after = catalog?.addXp ? catalog.addXp(before.level, before.xp, gained) : before;
       rec.data = { ...rec.data, stats: { ...stats, [m]: st }, results: [...done, key].slice(-300), level: after.level, xp: after.xp };
+      // UPDATE 10: weekly missions count real, finished online games (once per game: same key)
+      const goals = Math.max(0, Math.floor(Number(details.goals) || 0));
+      const shots = Math.max(0, Math.floor(Number(details.shots) || 0));
+      const w = weeklyOf(rec.data);
+      w.progress.online3 += 1;
+      w.progress.goals10 += goals;
+      if (m === 'freekick' && result === 'win') w.progress.fkwin += 1;
+      if (m === 'penalty' && result === 'win' && shots >= 5 && goals === shots) w.progress.perfect += 1;
+      rec.data.weekly = w;
       await store.put(rec);
       const claimed = rec.data.claimedLevelRewards ?? [];
       const newRewards = catalog?.availableRewards ? catalog.availableRewards(after.level, claimed).filter((l) => l > before.level) : [];
@@ -826,7 +889,7 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
   function openPack({ token, kind = 'player' }) {
     return withAccount(token, async (rec) => {
       if (!catalog?.drawPackPlayer) return { status: 503, body: { ok: false, error: 'packs', message: '팩을 열 수 없어요' } };
-      const field = PACK_FIELD[kind];
+      const field = typeof kind === 'string' && Object.hasOwn(PACK_FIELD, kind) ? PACK_FIELD[kind] : null; // UPDATE 10 fix
       if (!field || (kind !== 'player' && !catalog.drawAnyPack)) return { status: 400, body: { ok: false, error: 'kind', message: '알 수 없는 팩이에요' } };
       const left = rec.data?.[field] ?? 0;
       if (!(left > 0)) return { status: 409, body: { ok: false, error: 'no_pack', message: '열 수 있는 팩이 없어요', ...view(rec) } };
@@ -861,18 +924,19 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
   const PT = () => catalog?.POTATO;
   /** a repeated request (same nonce, e.g. a network retry) gets the SAME answer, never a second payout */
   const NONCE_RE = /^[A-Za-z0-9_-]{8,64}$/;
-  function seenNonce(rec, nonce) {
+  // UPDATE 10 fix: a nonce only repeats the SAME kind of request (a draw nonce never answers an exchange)
+  function seenNonce(rec, nonce, action) {
     if (typeof nonce !== 'string' || !NONCE_RE.test(nonce)) return null;
-    return (rec.data?.eventNonces ?? []).find((n) => n.nonce === nonce) ?? null;
+    return (rec.data?.eventNonces ?? []).find((n) => n.nonce === nonce && (n.action ?? '') === action) ?? null;
   }
-  const rememberNonce = (data, nonce, body) =>
-    typeof nonce === 'string' && NONCE_RE.test(nonce) ? [...(data?.eventNonces ?? []), { nonce, body }].slice(-20) : data?.eventNonces ?? [];
+  const rememberNonce = (data, nonce, body, action) =>
+    typeof nonce === 'string' && NONCE_RE.test(nonce) ? [...(data?.eventNonces ?? []), { nonce, action, body }].slice(-20) : data?.eventNonces ?? [];
 
   /** 홍 나와라 뚝딱 — draw ×1 (50 FV) or ×10 (500 FV, ten independent draws) */
   function hongDraw({ token, count, nonce }) {
     return withAccount(token, async (rec) => {
       if (!H()) return { status: 503, body: { ok: false, error: 'events', message: '이벤트를 사용할 수 없어요' } };
-      const again = seenNonce(rec, nonce);
+      const again = seenNonce(rec, nonce, 'hong-draw');
       if (again) return { status: 200, body: { ...again.body, repeated: true, ...view(rec) } };
       const n = count === 10 ? 10 : count === 1 ? 1 : 0;
       if (!n) return { status: 400, body: { ok: false, error: 'count', message: '1회 또는 10회만 뽑을 수 있어요' } };
@@ -885,7 +949,7 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
       const id = crypto.randomBytes(6).toString('hex');
       const entry = { id, count: n, cost, results, at: new Date().toISOString() };
       const body = { ok: true, drawId: id, results, cost };
-      rec.data = { ...rec.data, fv: fv - cost, hong, hongLog: [...(rec.data?.hongLog ?? []), entry].slice(-50), eventNonces: rememberNonce(rec.data, nonce, body) };
+      rec.data = { ...rec.data, fv: fv - cost, hong, hongLog: [...(rec.data?.hongLog ?? []), entry].slice(-50), eventNonces: rememberNonce(rec.data, nonce, body, 'hong-draw') };
       await store.put(rec);
       log(`events: "${rec.nickname}" 홍 나와라 뚝딱 ×${n} (−${cost} FV) → ${results.join(',')}`);
       return { status: 200, body: { ...body, ...view(rec) } };
@@ -896,9 +960,9 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
   function hongExchange({ token, grade, nonce }) {
     return withAccount(token, async (rec) => {
       if (!H()) return { status: 503, body: { ok: false, error: 'events', message: '이벤트를 사용할 수 없어요' } };
-      const again = seenNonce(rec, nonce);
+      const again = seenNonce(rec, nonce, 'hong-exchange');
       if (again) return { status: 200, body: { ...again.body, repeated: true, ...view(rec) } };
-      const ex = H().exchange?.[grade];
+      const ex = typeof grade === 'string' && Object.hasOwn(H().exchange ?? {}, grade) ? H().exchange[grade] : null; // UPDATE 10 fix: own keys only
       if (!ex) return { status: 400, body: { ok: false, error: 'grade', message: '알 수 없는 등급이에요' } };
       const hong = hongOf(rec.data);
       if (!(hong[grade] > 0)) return { status: 409, body: { ok: false, error: 'no_token', message: `${H().label[grade]} 토큰이 없어요`, ...view(rec) } };
@@ -923,7 +987,7 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
       }
       const body = { ok: true, exchangeId: id, reward };
       data.hongExchanges = [...(data.hongExchanges ?? []), { id, grade, reward: { mp: reward.mp ?? 0, pack: reward.pack ?? null, playerId: reward.pull?.playerId ?? null }, at: new Date().toISOString() }].slice(-50);
-      data.eventNonces = rememberNonce(data, nonce, body);
+      data.eventNonces = rememberNonce(data, nonce, body, 'hong-exchange');
       rec.data = data;
       await store.put(rec);
       log(`events: "${rec.nickname}" exchanged 1 ${grade} → ${reward.mp ? reward.mp + ' MP' : reward.pack ? 'LEGEND PACK' : reward.pull?.playerId}`);
@@ -977,7 +1041,7 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
   function potatoStart({ token, nonce }) {
     return withAccount(token, async (rec) => {
       if (!PT()) return { status: 503, body: { ok: false, error: 'events', message: '이벤트를 사용할 수 없어요' } };
-      const again = seenNonce(rec, nonce);
+      const again = seenNonce(rec, nonce, 'potato-start');
       if (again) return { status: 200, body: { ...again.body, repeated: true, ...view(rec), potato: potatoView(rec.data?.potato), serverNow: Date.now() } };
       await settlePotato(rec);
       const cur = rec.data?.potato;
@@ -1000,7 +1064,7 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
         createdAt: new Date(now).toISOString(),
       };
       const body = { ok: true, sessionId: sess.id };
-      rec.data = { ...rec.data, fv: fv - PT().cost, potato: sess, eventNonces: rememberNonce(rec.data, nonce, body) };
+      rec.data = { ...rec.data, fv: fv - PT().cost, potato: sess, eventNonces: rememberNonce(rec.data, nonce, body, 'potato-start') };
       await store.put(rec);
       log(`events: "${rec.nickname}" 감자의 제왕 start (−${PT().cost} FV) ${sess.id}`);
       return { status: 200, body: { ...body, ...view(rec), potato: potatoView(sess), serverNow: Date.now() } };
@@ -1076,6 +1140,143 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
     return withAccount(token, async (rec) => {
       if (PT()) await settlePotato(rec);
       return { status: 200, body: { ok: true, ...view(rec), potato: potatoView(rec.data?.potato ?? null), potatoStats: potatoStats(rec.data), serverNow: Date.now(), hongLog: (rec.data?.hongLog ?? []).slice(-10), potatoLog: (rec.data?.potatoLog ?? []).slice(-10) } };
+    });
+  }
+
+  // ── UPDATE 10: WEEKLY MISSIONS (reset Monday 00:00 KST, same for everyone) ──────────
+  function weeklyOf(data) {
+    const wk = catalog?.weekKey ? catalog.weekKey(Date.now()) : '';
+    const cur = data?.weekly;
+    if (cur && cur.week === wk) return { ...cur, progress: { ...cur.progress }, claimed: [...(cur.claimed ?? [])] };
+    return { week: wk, progress: { perfect: 0, playtime: 0, online3: 0, goals10: 0, fkwin: 0 }, claimed: [], lastPlay: 0 };
+  }
+  const missionsView = (data) => {
+    const w = weeklyOf(data);
+    const list = (catalog?.MISSIONS ?? []).map((ms) => {
+      const v = Math.min(ms.goal, Math.floor(w.progress[ms.id] ?? 0));
+      return { ...ms, progress: v, done: v >= ms.goal, claimed: w.claimed.includes(ms.id) };
+    });
+    return { week: w.week, resetInMs: catalog?.msToReset ? catalog.msToReset(Date.now()) : 0, missions: list };
+  };
+  const missionsState = ({ token }) => withAccount(token, async (rec) => ({ status: 200, body: { ok: true, ...missionsView(rec.data), ...view(rec) } }));
+  /** real play time: the phone reports seconds actually played (single or online match), the server caps it */
+  function missionsPlay({ token, seconds }) {
+    return withAccount(token, async (rec) => {
+      const sec = Number(seconds);
+      if (!Number.isFinite(sec) || sec <= 0) return { status: 400, body: { ok: false, error: 'seconds' } };
+      const now = Date.now();
+      const w = weeklyOf(rec.data);
+      // never more than the wall-clock time since the last report (+2 s), at most 60 s at once
+      const since = w.lastPlay ? (now - w.lastPlay) / 1000 + 2 : 30;
+      const add = Math.max(0, Math.min(sec, 60, since));
+      w.progress.playtime = Math.min(100000, (w.progress.playtime ?? 0) + add);
+      w.lastPlay = now;
+      rec.data = { ...rec.data, weekly: w };
+      await store.put(rec);
+      return { status: 200, body: { ok: true, added: Math.round(add), ...missionsView(rec.data) } };
+    });
+  }
+  function missionsClaim({ token, id }) {
+    return withAccount(token, async (rec) => {
+      const ms = (catalog?.MISSIONS ?? []).find((x) => x.id === id);
+      if (!ms) return { status: 400, body: { ok: false, error: 'mission', message: '알 수 없는 미션이에요' } };
+      const w = weeklyOf(rec.data);
+      if (w.claimed.includes(ms.id)) return { status: 409, body: { ok: false, error: 'claimed', message: '이미 받은 보상이에요', ...missionsView(rec.data), ...view(rec) } };
+      if ((w.progress[ms.id] ?? 0) < ms.goal) return { status: 409, body: { ok: false, error: 'not_done', message: '아직 완료하지 않은 미션이에요', ...missionsView(rec.data), ...view(rec) } };
+      w.claimed.push(ms.id);
+      const data = { ...rec.data, weekly: w };
+      if (ms.reward.fv) data.fv = (data.fv ?? 0) + ms.reward.fv;
+      if (ms.reward.mp) data.mp = (data.mp ?? 0) + ms.reward.mp;
+      data.missionLog = [...(data.missionLog ?? []), { week: w.week, id: ms.id, reward: ms.reward, at: new Date().toISOString() }].slice(-60);
+      rec.data = data;
+      await store.put(rec);
+      log(`missions: "${rec.nickname}" claimed ${ms.id} (${w.week}) ${ms.reward.fv ? ms.reward.fv + ' FV' : ms.reward.mp + ' MP'}`);
+      if (ms.reward.mp) {
+        rankingChanged();
+        try {
+          onWallet(rec.nickname, rec.data.mp);
+        } catch {
+          /* offline */
+        }
+      }
+      return { status: 200, body: { ok: true, claimed: ms.id, reward: ms.reward, ...missionsView(rec.data), ...view(rec) } };
+    });
+  }
+
+  // ── UPDATE 10: MATCH STATISTICS (this season, everyone can read, nobody can change) ──
+  async function matchStats({ q, board }) {
+    const b = ['total', 'penalty', 'freekick'].includes(board) ? board : 'total';
+    const query = typeof q === 'string' ? nickKey(q).slice(0, 40) : '';
+    let rows = (await store.list()).map((rec) => {
+      const st = statsOf(rec)[b];
+      const games = st.wins + st.losses + st.draws;
+      return { nickname: rec.nickname, games, wins: st.wins, losses: st.losses, draws: st.draws, rate: games ? Math.round((st.wins / games) * 1000) / 10 : 0 };
+    });
+    if (query) rows = rows.filter((r) => nickKey(r.nickname).includes(query));
+    else rows = rows.filter((r) => r.games > 0);
+    rows.sort((a, b2) => b2.wins - a.wins || b2.rate - a.rate || b2.games - a.games || a.nickname.localeCompare(b2.nickname));
+    return { status: 200, body: { ok: true, season: SEASON(), board: b, rows: rows.slice(0, 200), total: rows.length } };
+  }
+
+  // ── UPDATE 10: EVOLUTION MATERIAL SHOP · EVOLUTION ───────────────────────────
+  function evoBuy({ token, ovr, currency, nonce }) {
+    return withAccount(token, async (rec) => {
+      const again = seenNonce(rec, nonce, 'evo-buy');
+      if (again) return { status: 200, body: { ...again.body, repeated: true, ...view(rec) } };
+      const mat = catalog?.materialOf ? catalog.materialOf(ovr) : null;
+      if (!mat) return { status: 400, body: { ok: false, error: 'material', message: '알 수 없는 진화 재료예요' } };
+      if (currency !== 'mp' && currency !== 'fv') return { status: 400, body: { ok: false, error: 'currency', message: 'MP 또는 FV를 골라주세요' } };
+      const have = currency === 'mp' ? rec.data?.mp ?? 0 : rec.data?.fv ?? 0;
+      const cost = currency === 'mp' ? mat.mp : mat.fv;
+      if (have < cost) return { status: 402, body: { ok: false, error: currency, message: `${currency === 'mp' ? 'MP' : 'FV'}가 부족해요`, ...view(rec) } };
+      const item = { id: crypto.randomBytes(8).toString('base64url'), ovr: mat.ovr, at: new Date().toISOString(), paid: { [currency]: cost } };
+      const body = { ok: true, material: { id: item.id, ovr: item.ovr }, cost, currency };
+      rec.data = {
+        ...rec.data,
+        [currency]: have - cost,
+        materials: [...(rec.data?.materials ?? []), item].slice(-500),
+        eventNonces: rememberNonce(rec.data, nonce, body, 'evo-buy'),
+      };
+      await store.put(rec);
+      log(`evo: "${rec.nickname}" bought material OVR ${mat.ovr} for ${cost} ${currency.toUpperCase()}`);
+      if (currency === 'mp') rankingChanged();
+      return { status: 200, body: { ...body, ...view(rec) } };
+    });
+  }
+
+  /** server order: owner → level → material → material OVR → rate → crypto roll → material used → level up → save */
+  function evolve({ token, cardKey, materialId, nonce }) {
+    return withAccount(token, async (rec) => {
+      if (!catalog?.evoSuccessRate) return { status: 503, body: { ok: false, error: 'evo' } };
+      const again = seenNonce(rec, nonce, 'evolve');
+      if (again) return { status: 200, body: { ...again.body, repeated: true, ...view(rec) } };
+      const target = evoOfCard(rec.data, cardKey);
+      if (!target) return { status: 404, body: { ok: false, error: 'card', message: '보유한 선수 카드가 아니에요', ...view(rec) } };
+      const p = catalog.getPlayer(target.playerId);
+      if (!p) return { status: 404, body: { ok: false, error: 'card', message: '선수를 찾을 수 없어요' } };
+      if (target.level >= EVO_MAX) return { status: 409, body: { ok: false, error: 'max', message: '이미 최대 진화(+12)예요', ...view(rec) } };
+      const mats = rec.data?.materials ?? [];
+      const mi = mats.findIndex((x) => x.id === materialId);
+      if (mi < 0) return { status: 404, body: { ok: false, error: 'material', message: '진화 재료가 없어요', ...view(rec) } };
+      const mat = mats[mi];
+      const playerOvr = catalog.evoOvr(p, target.level);
+      const rate = catalog.evoSuccessRate(target.level, mat.ovr, playerOvr);
+      const roll = rnd();
+      const success = roll < rate;
+      const next = success ? target.level + 1 : target.level;
+      let data = { ...rec.data, materials: mats.filter((_, i) => i !== mi) };
+      if (success) {
+        if (target.starter) data.starterEvo = { ...(data.starterEvo ?? {}), [target.playerId]: next };
+        else data = withCards(data, cardsOf(data).map((c) => (c.id === cardKey ? { ...c, evo: next } : c)));
+      }
+      const entry = { id: crypto.randomBytes(6).toString('hex'), cardKey, playerId: target.playerId, from: target.level, to: next, success, rate, materialOvr: mat.ovr, at: new Date().toISOString() };
+      data.evoLog = [...(data.evoLog ?? []), entry].slice(-100);
+      const body = { ok: true, success, rate, from: target.level, evoLevel: next, playerId: target.playerId, cardKey, ovr: catalog.evoOvr(p, next) };
+      data.eventNonces = rememberNonce(data, nonce, body, 'evolve');
+      rec.data = data;
+      await store.put(rec);
+      log(`evo: "${rec.nickname}" ${target.playerId} +${target.level} → ${success ? '+' + next + ' SUCCESS' : 'fail'} (rate ${(rate * 100).toFixed(2)} %, material ${mat.ovr})`);
+      return { status: 200, body: { ...body, ...view(rec) } };
     });
   }
 
@@ -1197,7 +1398,8 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
   }
 
   const statsOf = (rec) => {
-    const s = { ...emptyStats(), ...(rec.data?.stats ?? {}) };
+    // UPDATE 10: an account not yet moved to this season has no records in it
+    const s = (rec.data?.season ?? 0) === SEASON() ? { ...emptyStats(), ...(rec.data?.stats ?? {}) } : emptyStats();
     const total = {
       wins: s.penalty.wins + s.freekick.wins,
       losses: s.penalty.losses + s.freekick.losses,
@@ -1399,7 +1601,12 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
     if (!catalog || !squad) return squad;
     const rec = nickname ? cache.get(nickKey(cleanNick(nickname))) : null;
     const ok = (id) => catalog.isStarter(id) || (!!rec && owns(rec, id));
-    return squadIds(squad).filter(Boolean).every(ok) ? squad : null;
+    if (!squadIds(squad).filter(Boolean).every(ok)) return null;
+    // UPDATE 10: the server attaches each player's real evolution level (clients cannot send one)
+    const evo = rec ? evoMap(rec.data) : {};
+    const mine = {};
+    for (const id of squadIds(squad).filter(Boolean)) if (evo[id]) mine[id] = evo[id];
+    return { ...squad, evo: mine };
   }
 
   async function logout({ token }) {
@@ -1461,6 +1668,13 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
     '/api/events/potato/finish': potatoFinish,
     // UPDATE 9.5
     '/api/favorites': setFavorite,
+    // UPDATE 10
+    '/api/missions/state': missionsState,
+    '/api/missions/play': missionsPlay,
+    '/api/missions/claim': missionsClaim,
+    '/api/stats': matchStats,
+    '/api/evo/buy': evoBuy,
+    '/api/evo/evolve': evolve,
     '/api/dev/grant-items': devGrantItems,
   };
 
@@ -1500,8 +1714,40 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
     return true;
   }
 
+  // UPDATE 10: defenders left the market — their open listings go back to their owners (idempotent)
+  async function returnDefenderListings() {
+    if (!catalog) return 0;
+    let n = 0;
+    const all = await store.listings();
+    for (const l of all) {
+      if (!catalog.getPlayer(l.playerId)?.defender) continue;
+      await withLock(MARKET_LOCK, () =>
+        withLock(l.seller, async () => {
+          const rec = await load(l.seller);
+          if (!rec) return;
+          const listed = [...(rec.data?.listed ?? [])];
+          const at = listed.indexOf(l.playerId);
+          if (at >= 0) listed.splice(at, 1);
+          const lc = (rec.data?.listedCards ?? []).find((c) => c.listingId === l.id);
+          const back = addCard(rec.data, l.playerId, lc?.source ?? 'market', lc?.id);
+          const notice0 = { id: crypto.randomBytes(6).toString('hex'), type: 'returned', playerId: l.playerId, price: l.price, at: new Date().toISOString() };
+          const next = { ...rec, data: { ...back, listed, listedCards: (rec.data?.listedCards ?? []).filter((c) => c.listingId !== l.id), notices: [...(rec.data?.notices ?? [])].slice(-30), returned: [...(rec.data?.returned ?? []), notice0].slice(-30) } };
+          const ok = await store.tx([{ type: 'delListing', id: l.id, required: true }, { type: 'put', rec: next }]);
+          if (ok) {
+            remember(next);
+            n++;
+            log(`market: defender listing ${l.playerId} of "${rec.nickname}" cancelled and returned (UPDATE 10)`);
+          }
+        }),
+      );
+    }
+    return n;
+  }
+  const sweep = returnDefenderListings().catch((e) => log(`market: defender sweep failed ${e.message}`));
+
   return {
     handleHttp,
+    ready: sweep,
     nicknameFor,
     isRegistered,
     nickKey,

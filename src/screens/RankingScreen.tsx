@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { VersionBadge } from '../components/VersionBadge';
+import { SeasonBadge, VersionBadge } from '../components/VersionBadge';
 import { accountApi, accountsAvailable, type Profile, type RankRow } from '../online/account';
 import { formatFV, formatMP } from '../players/ownership';
 
@@ -58,6 +58,7 @@ export function RankingScreen({ token, me, tick, onBack }: { token: string | nul
           ‹ 홈
         </button>
         <VersionBadge />
+          <SeasonBadge />
       </header>
       <div className="dev-head">
         <span className="mini-logo dev-logo">PIPA</span>

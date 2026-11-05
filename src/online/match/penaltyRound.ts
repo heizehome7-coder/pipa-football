@@ -9,9 +9,12 @@ import { clampKeeperX, DIVE_DIRS, roundSeed } from './protocol';
 import { BALL, KNUCKLE_MAX, curveLimits } from '../../game/physics/BallPhysics';
 import { shotEnvelope } from '../../players/abilities';
 import { sanitizeSquad } from '../../players/squad';
-import { getPlayer } from '../../players/players';
+import { getPlayer, type PlayerDef } from '../../players/players';
 
-export type OnlineLooks = Pick<KickGameOptions, 'kickerLook' | 'keeperLook' | 'keeperStats' | 'keeperSpecial'>;
+/** UPDATE 10: a keeper's body size from his real height (박사하 162 cm; the standard body is 188 cm) */
+export const keeperScaleOf = (p: PlayerDef | null | undefined) => (p?.role === 'GK' && p.heightCm ? p.heightCm / 188 : 1);
+
+export type OnlineLooks = Pick<KickGameOptions, 'kickerLook' | 'keeperLook' | 'keeperStats' | 'keeperSpecial' | 'keeperScale' | 'keeperEvo'>;
 
 /** UPDATE 6: where this round's free kick is taken — both players of a pair get the same spot */
 export function freeKickSpotIndex(matchId: string, round: number) {
@@ -140,11 +143,11 @@ export function roundTaker(squad: unknown, mode: MatchMode, n: number): string {
   return mode === 'freekick' ? ks.freeKickTakerId : ks.penaltyOrder[n % ks.penaltyOrder.length];
 }
 
-export function validShotFor(v: unknown, playerId: string | null | undefined, mode: MatchMode = 'penalty'): v is ShotInput {
+export function validShotFor(v: unknown, playerId: string | null | undefined, mode: MatchMode = 'penalty', evo = 0): v is ShotInput {
   if (!validShot(v)) return false;
   const cfg = MODES[mode];
   const p = getPlayer(playerId ?? null);
-  const env = shotEnvelope(p, mode);
+  const env = shotEnvelope(p, mode, evo);
   const sp = Math.hypot(v.v[0], v.v[1], v.v[2]);
   if (sp > cfg.maxSpeed * env.speedMul + 0.05) return false;
   const lim = curveLimits(cfg);
@@ -178,10 +181,10 @@ export function simulateRound(
   /** UPDATE 5: the defending player's goalkeeper (his DIVING/REACH apply; never a direction) */
   keeperId?: string | null,
   /** UPDATE 6: FREE KICK DUEL (spot from freeKickSpotIndex) */
-  opts: { mode?: MatchMode; spot?: number; keeperX?: number } = {},
+  opts: { mode?: MatchMode; spot?: number; keeperX?: number; keeperEvo?: number } = {},
 ): RoundSimulation {
   const kp = getPlayer(keeperId);
-  const g = new OnlineKickGame('KICKER', seed, false, { keeperStats: kp?.gk, keeperSpecial: kp?.gk ? kp.special : null }, opts.mode ?? 'penalty', opts.spot ?? 0, opts.keeperX ?? 0);
+  const g = new OnlineKickGame('KICKER', seed, false, { keeperStats: kp?.gk, keeperSpecial: kp?.gk ? kp.special : null, keeperScale: keeperScaleOf(kp), keeperEvo: kp?.gk ? opts.keeperEvo ?? 0 : 0 }, opts.mode ?? 'penalty', opts.spot ?? 0, opts.keeperX ?? 0);
   g.start();
   if (!g.shoot(shot)) throw new Error('shot rejected');
   if (dive) g.setKeeperDive(diveCommand(dive, g.keeperLineX));

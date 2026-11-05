@@ -1,3 +1,4 @@
+import { evoKeeperBoost } from '../../progress/evolution';
 import * as THREE from 'three';
 import type { KeeperTuning } from '../core/config';
 import { clamp, easeOutCubic, gauss, lerp, smoothstep } from '../core/math';
@@ -130,6 +131,11 @@ export const KEEPER_BUFF = { arm: 1.04, glove: 0.03, travel: 1.045 } as const;
  * into the top corner still beats him.
  */
 export const BLACK_SPIDER = { push: 0.88, dive: 0.97, travel: 1.035, high: 1.1, low: 1.04, stretch: 0.1, hang: 1.22, jumpCap: 0.7, react: 0.85, catchSpeed: 1.0 } as const;
+/**
+ * UPDATE 10 — SMALL FLYING KEEPER (박사하, 162 cm): explosive push-off and a long flight make up
+ * for the short body (drawn and colliding at 0.86 size); high balls are still harder for him.
+ */
+export const SMALL_FLYER = { push: 0.84, dive: 0.88, travel: 1.17, high: 1.0, low: 1.06, stretch: 0.07, hang: 1.15, lift: 0.22 } as const;
 export const DIVE = { push: 0.1, travel: 1.015, high: 1.08, low: 1.0, stretch: 0.045, hang: 0.18, noise: 0.012 } as const;
 /** UPDATE 7 hotfix: a human dive started right at the strike (not long before) */
 /** how much of the dive depth comes from the keeper's read of the strike (0 = always full depth) */
@@ -249,15 +255,28 @@ export class Goalkeeper {
   /** UPDATE 7 hotfix: the keeper's special (LONG REACH, HIGH REACH, LOW SAVE, BLACK SPIDER …) */
   readonly special: SpecialId | null;
 
-  constructor(look?: { shirt: string; number: string; skin: number; hair: number; hairStyle: Kit['hairStyle']; beard: Kit['beard'] }, stats?: GkStats, special?: SpecialId | null) {
+  /** UPDATE 10: body size (박사하 162 cm → 0.86; everyone else 1) — drawn AND colliding at that size */
+  readonly scale: number;
+  /** UPDATE 10: evolution level (+0 … +12) → quicker, longer, surer dives */
+  readonly evo: number;
+  constructor(
+    look?: { shirt: string; number: string; skin: number; hair: number; hairStyle: Kit['hairStyle']; beard: Kit['beard'] },
+    stats?: GkStats,
+    special?: SpecialId | null,
+    scale = 1,
+    evo = 0,
+  ) {
     this.stats = stats ?? null;
     this.special = stats ? special ?? null : null;
+    this.scale = Math.max(0.8, Math.min(1.15, scale || 1));
+    this.evo = stats ? Math.max(0, Math.min(12, Math.floor(evo || 0))) : 0;
     this.body = new Humanoid(
       look
         ? { ...KEEPER_KIT, skin: look.skin, hair: look.hair, hairStyle: look.hairStyle, beard: look.beard, backName: look.shirt, backNumber: look.number }
         : KEEPER_KIT,
     );
     this.body.root.rotation.y = Math.PI; // faces the kicker (+z)
+    if (this.scale !== 1) this.body.root.scale.setScalar(this.scale);
     this.setArmStretch(0);
     this.colliders = MARKERS.map(([, r]) => ({ pos: new THREE.Vector3(), r }));
     this.reset();
@@ -338,15 +357,17 @@ export class Goalkeeper {
     if (!g) return k;
     const sp = this.special;
     const bs = sp === 'BLACK_SPIDER';
+    const sf = sp === 'SMALL_FLYING_KEEPER';
+    const ev = evoKeeperBoost(this.evo);
     return {
       ...k,
       // DIVING: a quicker, more explosive dive · REACH: more hip travel
-      diveBase: k.diveBase * (1 - 0.07 * sd(g.diving)) * (bs ? BLACK_SPIDER.dive : 1),
-      diveScale: k.diveScale * (1 - 0.07 * sd(g.diving)) * (bs ? BLACK_SPIDER.dive : 1),
-      maxHipTravel: k.maxHipTravel * (1 + 0.03 * sd(g.reach)) * (sp === 'LONG_REACH' ? 1.03 : bs ? BLACK_SPIDER.travel : 1),
+      diveBase: k.diveBase * (1 - 0.07 * sd(g.diving)) * (bs ? BLACK_SPIDER.dive : sf ? SMALL_FLYER.dive : 1) * ev.diveMul,
+      diveScale: k.diveScale * (1 - 0.07 * sd(g.diving)) * (bs ? BLACK_SPIDER.dive : sf ? SMALL_FLYER.dive : 1) * ev.diveMul,
+      maxHipTravel: k.maxHipTravel * (1 + 0.03 * sd(g.reach)) * (sp === 'LONG_REACH' ? 1.03 : bs ? BLACK_SPIDER.travel : sf ? SMALL_FLYER.travel : 1) * ev.travelMul,
       // AI only: REFLEX (reaction), POSITIONING (read), PENALTY READ (guess)
-      reactionMin: k.reactionMin * (1 - 0.1 * sd(g.reflex)) * (bs ? BLACK_SPIDER.react : 1),
-      reactionMax: k.reactionMax * (1 - 0.1 * sd(g.reflex)) * (bs ? BLACK_SPIDER.react : 1),
+      reactionMin: k.reactionMin * (1 - 0.1 * sd(g.reflex)) * (bs ? BLACK_SPIDER.react : 1) * ev.reactMul,
+      reactionMax: k.reactionMax * (1 - 0.1 * sd(g.reflex)) * (bs ? BLACK_SPIDER.react : 1) * ev.reactMul,
       readNoise: k.readNoise * (1 - 0.14 * sd(g.positioning)) * (sp === 'POSITION_MASTER' ? 0.82 : 1),
       guessCorrect: Math.min(0.85, k.guessCorrect + 0.07 * sd(g.penaltyRead) + (sp === 'PENALTY_SPECIALIST' ? 0.06 : 0)),
     };
@@ -360,6 +381,8 @@ export class Goalkeeper {
     const g = this.stats;
     let s = DIVE.stretch * (g ? 1 + 0.2 * sd(g.reach) : 1);
     if (this.special === 'BLACK_SPIDER') s += BLACK_SPIDER.stretch; // UPDATE 9: much longer fingertip reach at full stretch
+    if (this.special === 'SMALL_FLYING_KEEPER') s += SMALL_FLYER.stretch;
+    s += evoKeeperBoost(this.evo).stretchAdd;
     return s;
   }
   private setArmStretch(e: number) {
@@ -376,8 +399,9 @@ export class Goalkeeper {
   private travelFor(py: number) {
     const g = this.stats;
     const sp = this.special;
-    if (py < 0.7) return DIVE.low * (g ? 1 + 0.025 * sd(g.lowSave, 94, 5) : 1) * (sp === 'LOW_SAVE' ? 1.05 : sp === 'BLACK_SPIDER' ? BLACK_SPIDER.low : 1);
-    if (py > 1.6) return DIVE.high * (g ? 1 + 0.025 * sd(g.highSave, 94, 5) : 1) * (sp === 'HIGH_REACH' ? 1.06 : sp === 'BLACK_SPIDER' ? BLACK_SPIDER.high : 1);
+    const ev = evoKeeperBoost(this.evo);
+    if (py < 0.7) return DIVE.low * (g ? 1 + 0.025 * sd(g.lowSave, 94, 5) : 1) * (sp === 'LOW_SAVE' ? 1.05 : sp === 'BLACK_SPIDER' ? BLACK_SPIDER.low : sp === 'SMALL_FLYING_KEEPER' ? SMALL_FLYER.low : 1) * ev.lowMul;
+    if (py > 1.6) return DIVE.high * (g ? 1 + 0.025 * sd(g.highSave, 94, 5) : 1) * (sp === 'HIGH_REACH' ? 1.06 : sp === 'BLACK_SPIDER' ? BLACK_SPIDER.high : sp === 'SMALL_FLYING_KEEPER' ? SMALL_FLYER.high : 1) * ev.highMul;
     return 1;
   }
 
@@ -543,6 +567,12 @@ export class Goalkeeper {
 
   private commit(px: number, py: number) {
     this.predicted.set(px, py, this.home.z);
+    // UPDATE 10: a smaller keeper reaches for the same ball with a smaller body — the target in
+    // his own body units (the whole dive is then drawn and collides at his real size)
+    if (this.scale !== 1) {
+      px = this.feetX + (px - this.feetX) / this.scale;
+      py = py / this.scale;
+    }
     this.stage = 'action';
     this.committedAt = this.tracking ? this.sinceLaunch : 0;
     this.actT = 0;
@@ -587,7 +617,8 @@ export class Goalkeeper {
       // the reactive free-kick AI keeps its UPDATE 6 difficulty (single-player balance)
       const fkAi = this.tracking && !this.lateOnly ? 1 / DIVE.travel : 1;
       travel = clamp(len - this.armReach, 0, k.maxHipTravel * this.travelFor(py) * err * bonus * fkAi);
-      this.hipsTarget.set((lx / len) * travel, clamp(HIPS_IDLE_Y + (vy / len) * travel, 0.4, 1.5), 0);
+      // SMALL FLYING KEEPER: a spring in the legs — the small body flies higher for its size
+      this.hipsTarget.set((lx / len) * travel, clamp(HIPS_IDLE_Y + (vy / len) * travel, 0.4, 1.5 + (sp === 'SMALL_FLYING_KEEPER' ? SMALL_FLYER.lift : 0)), 0);
       this.roll = clamp(Math.atan2(-lx, vy), -1.5, 1.5);
       // LOW / MID / HIGH dive, mirrored for the side (the far leg pushes, the near arm leads)
       this.diveH = clamp((py - 0.35) / 1.7, 0, 1);
@@ -601,11 +632,11 @@ export class Goalkeeper {
       const rf = g ? sd(g.reflex) : 0;
       this.pushT =
         DIVE.push * (1 - 0.14 * dv) * (1 - 0.03 * rf) * (this.perfect ? 0.8 : 1) *
-        (sp === 'BLACK_SPIDER' ? BLACK_SPIDER.push : sp === 'POSITION_MASTER' ? 0.92 : 1) *
+        (sp === 'BLACK_SPIDER' ? BLACK_SPIDER.push : sp === 'SMALL_FLYING_KEEPER' ? SMALL_FLYER.push : sp === 'POSITION_MASTER' ? 0.92 : 1) * evoKeeperBoost(this.evo).pushMul *
         (sp === 'LOW_SAVE' && py < 0.7 ? 0.9 : 1) * (py < 0.7 ? 0.85 : py > 1.6 ? 1.1 : 1);
       const total = this.actionDuration(travel);
       this.flightT = Math.max(0.16, total - this.pushT);
-      this.hangT = DIVE.hang * (1 + 0.3 * dv) * (sp === 'BLACK_SPIDER' ? BLACK_SPIDER.hang : 1) * (py > 1.6 ? 1.2 : py < 0.7 ? 0.7 : 1);
+      this.hangT = DIVE.hang * (1 + 0.3 * dv) * (sp === 'BLACK_SPIDER' ? BLACK_SPIDER.hang : sp === 'SMALL_FLYING_KEEPER' ? SMALL_FLYER.hang : 1) * evoKeeperBoost(this.evo).hangMul * (py > 1.6 ? 1.2 : py < 0.7 ? 0.7 : 1);
       // a short step/weight shift before take-off, the rest in the air
       this.hipsLaunch.set(this.hipsStart.x + (lx / len) * 0.14, HIPS_SET_Y - 0.03, 0);
       this.arc = py < 0.7 ? 0.1 : py > 1.6 ? 0.12 : 0.22;

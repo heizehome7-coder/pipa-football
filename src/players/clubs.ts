@@ -44,6 +44,17 @@ export const CLUB: Record<string, string> = {
   // UPDATE 9.5: the six that showed "CLUB TBA" (checked November 2026)
   kwonchanghoon: 'JEJU SK', honghyunseok: 'FC MIDTJYLLAND', leedongkyeong: 'ULSAN HD', leedongjun: 'JEONBUK HYUNDAI',
   sugawara: 'WERDER BREMEN', moukoko: 'FC COPENHAGEN',
+  // UPDATE 10 — PIPA ORIGINALS (teams as given) + 31 current players (clubs as last known)
+  songinwoo: '잠신중 FC', chohyunsun: '잠신중 FC', parkseungho: 'PARIS SAINT-GERMAIN', parksaha: '잠신중 FC',
+  parkjunhyuk: '잠신중 FC', leeyunho: '잠신중 FC', choigeonwoo: 'TOTTENHAM', handongyeon: '잠신중 FC',
+  sorloth: 'ATLÉTICO MADRID', schick: 'BAYER LEVERKUSEN', ekitike: 'LIVERPOOL', mount: 'MANCHESTER UNITED',
+  joaopedro: 'CHELSEA', pedroneto: 'CHELSEA', madueke: 'ARSENAL', mbeumo: 'MANCHESTER UNITED', bowen: 'WEST HAM',
+  gordon: 'NEWCASTLE', rogers: 'ASTON VILLA', gibbswhite: 'NOTTINGHAM FOREST', mainoo: 'MANCHESTER UNITED',
+  wharton: 'CRYSTAL PALACE', gallagher: 'ATLÉTICO MADRID', camavinga: 'REAL MADRID', tchouameni: 'REAL MADRID',
+  zaireemery: 'PARIS SAINT-GERMAIN', martinelli: 'ARSENAL', jesus: 'ARSENAL', havertz: 'ARSENAL',
+  nicolasjackson: 'BAYERN MUNICH', merino: 'ARSENAL', brahim: 'REAL MADRID', icardi: 'GALATASARAY',
+  ennesyri: 'FENERBAHÇE', toney: 'AL AHLI', solanke: 'TOTTENHAM', boniface: 'WERDER BREMEN', retegui: 'AL QADSIAH',
+  dovbyk: 'ROMA',
 };
 
 /**

@@ -79,7 +79,7 @@ export class OnlineGameView {
   private v2 = new THREE.Vector3();
   private kickerNick = '';
   /** UPDATE 4: this round's players (cosmetic) */
-  private looks: Pick<KickGameOptions, 'kickerLook' | 'keeperLook' | 'keeperStats' | 'keeperSpecial'> & { kickerPlayer?: PlayerDef | null } = {};
+  private looks: Pick<KickGameOptions, 'kickerLook' | 'keeperLook' | 'keeperStats' | 'keeperSpecial' | 'keeperScale' | 'keeperEvo'> & { kickerPlayer?: PlayerDef | null; kickerEvo?: number } = {};
   private canShoot = false;
   /** shot being replayed: local Date.now() of run-up start */
   private shot: WireShot | null = null;
@@ -165,9 +165,9 @@ export class OnlineGameView {
 
   // ── round control (driven by server state) ────────────────────────────
   private makeGame(nick: string, seed: number) {
-    const { kickerLook, keeperLook, keeperStats, keeperSpecial } = this.looks ?? {};
+    const { kickerLook, keeperLook, keeperStats, keeperSpecial, keeperScale, keeperEvo } = this.looks ?? {};
     // UPDATE 8: a struck shot uses the server's keeper position; while aiming he starts mid-line
-    const g = new OnlineKickGame(nick, seed, true, { kickerLook, keeperLook, keeperStats, keeperSpecial }, this.mode, this.spot, this.shot?.keeperX ?? 0);
+    const g = new OnlineKickGame(nick, seed, true, { kickerLook, keeperLook, keeperStats, keeperSpecial, keeperScale, keeperEvo }, this.mode, this.spot, this.shot?.keeperX ?? 0);
     g.start();
     // GOAL vibration from this phone's replay of the server's shot, once per round (a
     // replay after a late dive or a phone catching up stays quiet). UPDATE 8: no sound.
@@ -193,9 +193,11 @@ export class OnlineGameView {
     role: OnlineRole;
     kickerNick: string;
     canShoot: boolean;
-    looks?: Pick<KickGameOptions, 'kickerLook' | 'keeperLook' | 'keeperStats' | 'keeperSpecial'> & { kickerPlayer?: PlayerDef | null };
+    looks?: Pick<KickGameOptions, 'kickerLook' | 'keeperLook' | 'keeperStats' | 'keeperSpecial' | 'keeperScale' | 'keeperEvo'> & { kickerPlayer?: PlayerDef | null; kickerEvo?: number };
     /** free-kick spot index (freeKickSpotIndex) */
     spot?: number;
+    /** UPDATE 10: this round's seed (roundSeed) — the wall heights while aiming = during the shot */
+    seed?: number;
   }) {
     this.looks = r.looks ?? {};
     this.spot = r.spot ?? 0;
@@ -213,7 +215,7 @@ export class OnlineGameView {
     this.joy = 0;
     this.sentX = 0;
     this.lockedRound = -1;
-    this.swapGame(this.makeGame(r.kickerNick, 1));
+    this.swapGame(this.makeGame(r.kickerNick, r.seed ?? 1));
     this.frameCamera();
   }
 
@@ -374,7 +376,7 @@ export class OnlineGameView {
       return;
     }
     const svc = cameraServices(this.camera, this.w, this.h);
-    const r = readStroke(samples, { viewportH: this.h, ball: this.game.ballPos.clone(), ...svc }, this.game.cfg, this.looks.kickerPlayer ?? null);
+    const r = readStroke(samples, { viewportH: this.h, ball: this.game.ballPos.clone(), ...svc }, this.game.cfg, this.looks.kickerPlayer ?? null, this.looks.kickerEvo ?? 0);
     if (!r) {
       this.cb.onHint('골대 쪽으로 슛 경로를 조금 더 길게 그려주세요');
       return;
@@ -545,6 +547,7 @@ export class OnlineGameView {
       keeperHome: this.game.keeperLineX,
       spot: this.spot,
       wall: g.wall ? g.wall.players.filter((p) => p.root.visible).length : 0,
+      wallHeights: g.wall ? g.wall.players.filter((p) => p.root.visible).map((p) => +(p.root.scale.y / 1.01 * 180).toFixed(1)) : [], // UPDATE 10
       w: this.w,
       h: this.h,
       fov: this.camera.fov,

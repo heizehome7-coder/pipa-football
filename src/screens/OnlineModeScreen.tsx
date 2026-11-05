@@ -1,4 +1,4 @@
-import { VersionBadge } from '../components/VersionBadge';
+import { SeasonBadge, VersionBadge } from '../components/VersionBadge';
 import type { DuelMode } from '../online/LobbyClient';
 
 /** UPDATE 6 — ONLINE: pick the duel first, then challenge someone in the lobby. */
@@ -11,6 +11,7 @@ export function OnlineModeScreen({ onPick, onBack }: { onPick: (m: DuelMode) => 
         </button>
         <div className="top-right">
           <VersionBadge />
+          <SeasonBadge />
         </div>
       </header>
       <div className="modes-head">

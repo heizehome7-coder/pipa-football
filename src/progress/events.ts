@@ -2,11 +2,11 @@
  * UPDATE 9 — EVENT CENTER configuration (one place; the SERVER uses these numbers and runs
  * every draw with a crypto random number — a phone never decides a result).
  *
- *  홍 나와라 뚝딱: 50 FV a draw (×10 = 500 FV, ten independent draws, same odds, no pity)
+ *  홍 나와라 뚝딱: 100 FV a draw (×10 = 1,000 FV — UPDATE 10; was 50 / 500, ten independent draws, same odds, no pity)
  *    동 50 % · 은 30 % · 금 15 % · 홍 5 % → tokens, exchanged one at a time:
  *    동 → 20,000,000 MP · 은 → 50,000,000 MP · 금 → LEGEND PACK ×1 · 홍 → TOP LEGEND (5 players, 20 % each)
  *
- *  감자의 제왕: 50 FV a game · 8 holes (4 × 2) · 12 rounds of 1 s
+ *  감자의 제왕: 50 FV a game · 8 holes (4 × 2) · 20 rounds of 1 s (UPDATE 10; was 12)
  *    rounds 1–4 normal (+1) · from 5 + red (−1) · from 8 + rotten (−2) · never two in one hole
  *    score = max(0, score + points) · 10–12 → GOOD PLAYER PACK · 6–9 → 30,000,000 MP · 0–5 → 10,000,000 MP
  */
@@ -16,8 +16,9 @@ export type HongGrade = 'bronze' | 'silver' | 'gold' | 'red';
 export const HONG_GRADES: HongGrade[] = ['bronze', 'silver', 'gold', 'red'];
 
 export const HONG = {
-  costOne: 50,
-  costTen: 500,
+  // UPDATE 10: 100 FV a draw (×10 = 1,000 FV) — odds and exchange unchanged
+  costOne: 100,
+  costTen: 1000,
   odds: [
     { grade: 'bronze', weight: 50 },
     { grade: 'silver', weight: 30 },
@@ -55,7 +56,8 @@ export const POTATO = {
   cost: 50,
   holes: 8,
   cols: 4,
-  rounds: 12,
+  // UPDATE 10: 20 rounds (same rules, same cost and rewards)
+  rounds: 20,
   roundMs: 1000,
   /** "3 · 2 · 1" before round 1 */
   leadMs: 2000,
