@@ -251,6 +251,8 @@ function physicsReport(pl: ReturnType<KickGame['planFor']>) {
   const fgp = (fx: number, fy: number): Pt => ({ x: fl.x + (fr.x - fl.x) * fx, y: fl.y + (ft.y - fl.y) * fy });
   const fk = (pts: Pt[], dur: number) => {
     const g = setup(freekick, 5, 2).game;
+    // UPDATE 10: wall heights are random (165–200 cm) — these checks use the standard 180 cm wall
+    g.wall?.setup(g.spot.ball, g.spot.wallCount ?? 4, [180, 180, 180, 180, 180]);
     const rd = readStroke(timed(pts, dur), F.ctx, g.cfg)!;
     const sh = shapeOf(g.planFor(rd.input));
     g.shoot(rd.input);

@@ -51,7 +51,7 @@ def account(nick, mp, squad, **extra):
     salt = secrets.token_hex(16)
     h = hashlib.scrypt(b'pw1234', salt=salt.encode(), n=16384, r=8, p=1, dklen=32, maxmem=64 * 1024 * 1024).hex()
     return {'key': nick.lower(), 'nickname': nick, 'salt': salt, 'hash': h, 'tokens': [], 'createdAt': '2026-11-01',
-            'data': {'v6': True, 'mp': mp, 'owned': [], 'rewards': [], 'squad': squad, **extra}}
+            'data': {'v6': True, 'mp': mp, 'owned': [], 'rewards': [], 'squad': squad, 'season': 1, **extra}}  # UPDATE 10: records of this season
 
 
 SQ = lambda fk='messi', extra=None: {'penaltyOrder': (extra or []) + ['mbappe', 'messi', 'ronaldo', 'neymar', 'yamal'][len(extra or []):], 'goalkeeperId': 'courtois', 'freeKickTakerId': fk}

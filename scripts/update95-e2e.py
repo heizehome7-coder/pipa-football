@@ -92,7 +92,7 @@ try:
         check('goal a touch smaller (7.14 m × 2.38 m) · keeper line ±2.92 m', GOAL == {'w': 3.57, 'h': 2.38, 'k': 2.92}, GOAL)
         P = ctx().new_page()
         login(P, 'FAN')
-        check('UPDATE 9.5 badge', P.inner_text('[data-testid=version-badge]') == 'UPDATE 9.5' and game_version() == 9.5, P.inner_text('[data-testid=version-badge]'))
+        check('UPDATE badge (current version)', P.inner_text('[data-testid=version-badge]') == f'UPDATE {game_version()}' and game_version() >= 9.5, P.inner_text('[data-testid=version-badge]'))
         v, _ = wait_for(lambda: P.inner_text('[data-testid=home-pack-count]') == '6', 8)
         check('HOME PACKS badge counts every pack kind (1 PLAYER + 2 GOOD + 3 LEGEND = 6)', bool(v), P.inner_text('[data-testid=home-pack-count]') if P.locator('[data-testid=home-pack-count]').count() else '-')
         P.screenshot(path=f'{OUT}/01_home_badge.png')

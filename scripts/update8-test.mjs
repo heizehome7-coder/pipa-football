@@ -20,7 +20,7 @@ const check = (name, ok, extra = '') => {
 {
   const pool = judge.packPool();
   const starters = pool.filter((p) => judge.isStarter(p.id));
-  check('pack pool: every tradeable market player (200, UPDATE 9), no free starter', pool.length === 200 && starters.length === 0, { pool: pool.length, starters: starters.length });
+  check('pack pool: every buyable market player (215, UPDATE 10: no defenders), no free starter', pool.length === 215 && starters.length === 0 && pool.every((p) => !p.defender), { pool: pool.length, starters: starters.length });
   check('pool includes Kim Injik (ICON) and Heo Shin (LIVERPOOL)', pool.some((p) => p.id === 'kiminjik' && p.isIcon && p.club === null) && pool.some((p) => p.id === 'heoshin' && p.club === 'LIVERPOOL' && !p.isIcon));
   const N = 200000;
   const tiers = {};

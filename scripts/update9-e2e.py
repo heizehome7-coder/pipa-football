@@ -58,7 +58,7 @@ SQ = {'penaltyOrder': ['mbappe', 'messi', 'ronaldo', 'neymar', 'yamal'], 'goalke
 data_dir = tempfile.mkdtemp(prefix='pipa-u9-')
 with open(os.path.join(data_dir, 'accounts.json'), 'w') as f:
     json.dump({
-        'eventer': account('EVENTER', 0, SQ, fv=2000, hong={'bronze': 1, 'silver': 1, 'gold': 1, 'red': 1}),
+        'eventer': account('EVENTER', 0, SQ, fv=2500, hong={'bronze': 1, 'silver': 1, 'gold': 1, 'red': 1}),
         'potatoer': account('POTATOER', 0, SQ, fv=70),
     }, f)
 env = {**os.environ, 'PORT': str(PORT), 'PIPA_DATA_DIR': data_dir, 'DATABASE_URL': '', 'DEVELOPER_CODE': 'pipa-test-dev-7531'}
@@ -104,14 +104,14 @@ try:
         check('UPDATE badge (current version)', P.inner_text('[data-testid=version-badge]') == f'UPDATE {game_version()}' and game_version() >= 9)
         order = P.eval_on_selector_all('.mode-list .mode-card', 'els => els.map(e => e.dataset.testid)')
         check('HOME: 혼자서 · 온라인 · SQUAD · TRANSFER MARKET · PACKS · EVENT CENTER · RANKING · DEVELOPER MODE',
-              order == ['play-solo', 'play-online', 'play-squad', 'play-market', 'play-packs', 'play-events', 'play-ranking', 'play-developer'], order)
+              [x for x in order if x not in ('play-evolution', 'play-shop', 'play-missions', 'play-stats')] == ['play-solo', 'play-online', 'play-squad', 'play-market', 'play-packs', 'play-events', 'play-ranking', 'play-developer'], order)
         P.screenshot(path=f'{OUT}/01_home.png', full_page=True)
 
         # ── TRANSFER MARKET: Korean names + search ───────────────────────
         P.click('[data-testid=play-market]')
         P.wait_for_selector('[data-testid=market-grid]')
         n = P.locator('[data-testid=market-grid] [data-testid=player-card]').count()
-        check('TRANSFER MARKET: 200 players', n == 200, n)
+        check('TRANSFER MARKET: 215 players (UPDATE 10)', n == 215, n)
         txt = P.inner_text('[data-testid=market-grid]')
         check('cards show Korean names (야신, 박지성, 펠레, 모드리치 …)', all(k in txt for k in ['야신', '박지성', '펠레', '모드리치']), txt[:120].replace('\n', ' '))
 
@@ -149,8 +149,8 @@ try:
         fv = lambda: int(P.inner_text('[data-testid=hong-fv]').replace(',', '').split()[0])
         tok = lambda g: int(P.get_attribute(f'[data-testid=hong-token-{g}]', 'data-count'))
         total = lambda: sum(tok(g) for g in ['bronze', 'silver', 'gold', 'red'])
-        wait_for(lambda: fv() == 2000, 5)
-        check('start: 2,000 FV · tokens 1/1/1/1', fv() == 2000 and total() == 4)
+        wait_for(lambda: fv() == 2500, 5)
+        check('start: 2,500 FV · tokens 1/1/1/1', fv() == 2500 and total() == 4)
         P.click('[data-testid=hong-draw-1]')
         v, _ = wait_for(lambda: P.get_attribute('[data-testid=gourd]', 'data-state') == 'shake', 5)
         check('the 박 shakes …', bool(v))
@@ -160,7 +160,7 @@ try:
         P.screenshot(path=f'{OUT}/05_hong_open.png')
         P.wait_for_selector('[data-testid=hong-result]', timeout=6000)
         res = P.get_attribute('[data-testid=hong-result]', 'data-results').split(',')
-        check('×1 → one server result · −50 FV · +1 token', len(res) == 1 and fv() == 1950 and total() == 5, (res, fv(), total()))
+        check('×1 → one server result · −100 FV (UPDATE 10) · +1 token', len(res) == 1 and fv() == 2400 and total() == 5, (res, fv(), total()))
         P.screenshot(path=f'{OUT}/06_hong_result1.png')
         P.click('[data-testid=hong-result-ok]')
         P.click('[data-testid=hong-draw-10]')
@@ -169,7 +169,7 @@ try:
         P.click('[data-testid=hong-skip]')
         P.wait_for_selector('[data-testid=hong-result]', timeout=3000)
         res10 = P.get_attribute('[data-testid=hong-result]', 'data-results').split(',')
-        check('×10 + SKIP → all 10 results at once · −500 FV · +10 tokens', len(res10) == 10 and fv() == 1450 and total() == 15 and P.locator('[data-testid=hong-result] [data-testid=hong-medal]').count() == 10, (fv(), total()))
+        check('×10 + SKIP → all 10 results at once · −1,000 FV · +10 tokens', len(res10) == 10 and fv() == 1400 and total() == 15 and P.locator('[data-testid=hong-result] [data-testid=hong-medal]').count() == 10, (fv(), total()))
         time.sleep(0.8)
         P.screenshot(path=f'{OUT}/07_hong_result10.png')
         P.click('[data-testid=hong-result-ok]')
@@ -180,7 +180,7 @@ try:
         P.click('[data-testid=play-events]')
         P.click('[data-testid=event-hong]')
         P.wait_for_selector('[data-testid=hong]')
-        v, _ = wait_for(lambda: {g: tok(g) for g in before} == before and fv() == 1450, 8)
+        v, _ = wait_for(lambda: {g: tok(g) for g in before} == before and fv() == 1400, 8)
         check('reload → the same FV and tokens (kept on the server)', bool(v), {g: tok(g) for g in before})
 
         # exchange 동
@@ -261,7 +261,7 @@ try:
         last_round = 0
         reloaded = False
         t0 = time.time()
-        while time.time() - t0 < 25:
+        while time.time() - t0 < 40:  # UPDATE 10: 20 rounds
             if Q.locator('[data-testid=potato-result]').count():
                 break
             # round + potatoes read from the SAME frame (no race at a round change)
@@ -295,13 +295,14 @@ try:
                         last_round = 0
             time.sleep(0.05)
         check('rounds 1–4: only normal potatoes', all(seen.get(r, set()) <= {'normal'} for r in range(1, 5)), {r: sorted(s) for r, s in seen.items()})
+        check('UPDATE 10: 20 rounds', max(seen) == 20 if seen else False, max(seen) if seen else None)
         check('round 5+: red potatoes appear · round 8+: rotten potatoes too', bool(seen) and any('red' in seen.get(r, set()) for r in range(5, 13)) and any('rotten' in seen.get(r, set()) for r in range(8, 13)) and all('rotten' not in seen.get(r, set()) for r in range(1, 8)), {r: sorted(x) for r, x in seen.items()})
         check('never two potatoes in one hole', overlaps == 0)
         Q.wait_for_selector('[data-testid=potato-result]', timeout=10000)
         score = int(Q.get_attribute('[data-testid=potato-result]', 'data-score'))
         rew = Q.inner_text('[data-testid=potato-reward]')
         want = 'GOOD PLAYER PACK' if score >= 10 else '30,000,000 MP' if score >= 6 else '10,000,000 MP'
-        check(f'GAME OVER: score {score} → {want} (once)', want in rew and 0 <= score <= 12, rew)
+        check(f'GAME OVER: score {score} → {want} (once)', want in rew and 0 <= score <= 20, rew)
         Q.screenshot(path=f'{OUT}/14_potato_result.png')
         me = Q.evaluate("fetch('/api/events/state',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token: JSON.parse(localStorage.getItem('pipa.session.v1')||'{}').token})}).then(r=>r.json())")
         paid = (me.get('goodPacks', 0) == 1) if score >= 10 else me.get('mp') == (30 * M if score >= 6 else 10 * M)

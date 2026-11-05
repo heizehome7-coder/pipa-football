@@ -25,7 +25,7 @@ const M = 1_000_000;
   for (let i = 0; i < N; i++) c[judge.drawHongGrade(Math.random())]++;
   const pct = Object.fromEntries(Object.entries(c).map(([k, v]) => [k, +((100 * v) / N).toFixed(2)]));
   check('홍 odds ≈ 동 50 / 은 30 / 금 15 / 홍 5 %', Math.abs(pct.bronze - 50) < 0.5 && Math.abs(pct.silver - 30) < 0.5 && Math.abs(pct.gold - 15) < 0.4 && Math.abs(pct.red - 5) < 0.25, pct);
-  check('홍 config: 50 FV / 500 FV, rewards 20M / 50M / LEGEND PACK / TOP LEGEND', judge.HONG.costOne === 50 && judge.HONG.costTen === 500 && judge.HONG.exchange.bronze.mp === 20 * M && judge.HONG.exchange.silver.mp === 50 * M && judge.HONG.exchange.gold.pack === 'legend' && judge.HONG.exchange.red.topLegend);
+  check('홍 config (UPDATE 10): 100 FV / 1,000 FV, rewards 20M / 50M / LEGEND PACK / TOP LEGEND', judge.HONG.costOne === 100 && judge.HONG.costTen === 1000 && judge.HONG.exchange.bronze.mp === 20 * M && judge.HONG.exchange.silver.mp === 50 * M && judge.HONG.exchange.gold.pack === 'legend' && judge.HONG.exchange.red.topLegend);
   check('draw edges: r=0 → 동, r→1 → 홍', judge.drawHongGrade(0) === 'bronze' && judge.drawHongGrade(0.999999) === 'red' && judge.drawHongGrade(0.5) === 'silver' && judge.drawHongGrade(0.8) === 'gold' && judge.drawHongGrade(0.95) === 'red');
 
   // LEGEND PACK: 1.2B–2B only, bands 55/30/15
@@ -106,17 +106,17 @@ try {
   srv = await editAccount(srv, 'eventkid', (a) => (a.data.fv = 2000));
 
   const one = await api('/api/events/hong/draw', { token: tok, count: 1, nonce: nonce() });
-  check('×1: −50 FV, one token', one.ok && one.fv === 1950 && one.results.length === 1 && one.hong[one.results[0]] === 1, { fv: one.fv, r: one.results });
+  check('×1: −100 FV, one token', one.ok && one.fv === 1900 && one.results.length === 1 && one.hong[one.results[0]] === 1, { fv: one.fv, r: one.results });
   const n10 = nonce();
   const ten = await api('/api/events/hong/draw', { token: tok, count: 10, nonce: n10 });
   const sum = (h) => h.bronze + h.silver + h.gold + h.red;
-  check('×10: −500 FV, ten independent results', ten.ok && ten.fv === 1450 && ten.results.length === 10 && sum(ten.hong) === 11, { fv: ten.fv });
+  check('×10: −1,000 FV, ten independent results', ten.ok && ten.fv === 900 && ten.results.length === 10 && sum(ten.hong) === 11, { fv: ten.fv });
   const again = await api('/api/events/hong/draw', { token: tok, count: 10, nonce: n10 });
-  check('the same request again (network retry) → same answer, no second charge', again.ok && again.repeated && again.fv === 1450 && sum(again.hong) === 11 && JSON.stringify(again.results) === JSON.stringify(ten.results));
+  check('the same request again (network retry) → same answer, no second charge', again.ok && again.repeated && again.fv === 900 && sum(again.hong) === 11 && JSON.stringify(again.results) === JSON.stringify(ten.results));
   // many parallel draws (two tabs, fast taps): every one charged exactly once
   const par = await Promise.all(Array.from({ length: 8 }, () => api('/api/events/hong/draw', { token: tok, count: 1, nonce: nonce() })));
   const st = await api('/api/events/state', { token: tok });
-  check('8 parallel draws → exactly 8 × 50 FV and 8 tokens', par.every((r) => r.ok) && st.fv === 1450 - 400 && sum(st.hong) === 19, { fv: st.fv, tokens: sum(st.hong) });
+  check('8 parallel draws → exactly 8 × 100 FV and 8 tokens', par.every((r) => r.ok) && st.fv === 900 - 800 && sum(st.hong) === 19, { fv: st.fv, tokens: sum(st.hong) });
 
   // exchange: set known token counts
   srv = await editAccount(srv, 'eventkid', (a) => (a.data.hong = { bronze: 2, silver: 1, gold: 1, red: 1 }));
@@ -148,7 +148,7 @@ try {
   // ── 감자의 제왕 ──
   const fv0 = (await api('/api/me', { token: tok })).fv;
   const g = await api('/api/events/potato/start', { token: tok, nonce: nonce() });
-  check('START: −50 FV on the server, a server session with 12 rounds', g.ok && g.fv === fv0 - 50 && g.potato.status === 'playing' && g.potato.rounds.length === 12 && g.potato.score === 0, { fv: g.fv });
+  check('START: −50 FV on the server, a server session with 20 rounds (UPDATE 10)', g.ok && g.fv === fv0 - 50 && g.potato.status === 'playing' && g.potato.rounds.length === 20 && g.potato.score === 0, { fv: g.fv });
   check('a second START while playing → refused, not charged', (await api('/api/events/potato/start', { token: tok, nonce: nonce() })).status === 409 && (await api('/api/me', { token: tok })).fv === fv0 - 50);
   const sess = g.potato;
   const skew = g.serverNow - Date.now();
@@ -159,7 +159,7 @@ try {
   };
   const early = await api('/api/events/potato/tap', { token: tok, sessionId: sess.sessionId, round: 1, holeId: sess.rounds[0][0].hole });
   check('a tap before round 1 starts does not count', early.ok && early.hit === null && early.score === 0);
-  const future = await api('/api/events/potato/tap', { token: tok, sessionId: sess.sessionId, round: 12, holeId: sess.rounds[11][0].hole });
+  const future = await api('/api/events/potato/tap', { token: tok, sessionId: sess.sessionId, round: 20, holeId: sess.rounds[19][0].hole });
   check('a tap for a future round does not count (no auto-clicking ahead)', future.hit === null);
   let expect = 0;
   const log = [];
