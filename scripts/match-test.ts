@@ -310,7 +310,7 @@ check('lobby presence messages pass through untouched', mgr.handle(A, { t: 'pres
   check('UPDATE 8: keeper:move is relayed to the kicker (x only)', moves(kick).at(-1)?.x === 1.2, JSON.stringify(moves(kick).at(-1)));
   advance(50);
   hj(keep, { t: 'keeper:move', round: 1, x: 99 });
-  check('UPDATE 8: the server clamps him inside the posts (±3.0 m)', moves(kick).at(-1)?.x === judge.KEEPER_LINE.maxX);
+  check('UPDATE 8: the server clamps him inside the posts (±2.92 m)', moves(kick).at(-1)?.x === judge.KEEPER_LINE.maxX);
   advance(50);
   hj(keep, { t: 'keeper:move', round: 1, x: -1.5, y: 3, z: 5 });
   hj(keep, { t: 'keeper:move', round: 1, x: 0.5 }); // < 40 ms later: flood guard drops it
@@ -320,23 +320,38 @@ check('lobby presence messages pass through untouched', mgr.handle(A, { t: 'pres
   hj(kick, { t: 'shot:submit', round: 1, shot: shotTo(3.2, 1.0) });
   const ss = last(P, 'shot:start')!.state!;
   check('UPDATE 8: the strike freezes the keeper’s spot (shot.keeperX, same for both)', ss.shot?.keeperX === 1.8 && JSON.stringify(last(Q, 'shot:start')!.state!.shot) === JSON.stringify(ss.shot));
+  // UPDATE 9.5: during the run-up he may still shuffle — walking speed, ±1.4 m (widened to his
+  // spot at the strike), then the spot is locked just before contact and both phones are told
   const n0 = moves(kick).length;
-  hj(keep, { t: 'keeper:move', round: 1, x: -2 });
-  check('UPDATE 8: no moving after the strike', moves(kick).length === n0);
+  advance(100);
+  hj(keep, { t: 'keeper:move', round: 1, x: -2.9 });
+  const m1 = moves(kick).at(-1)?.x ?? 99;
+  check('UPDATE 9.5: run-up move accepted, at walking speed (no teleport)', moves(kick).length === n0 + 1 && m1 < 1.8 && m1 > 1.0, String(m1));
+  for (let i = 0; i < 20; i++) {
+    advance(100);
+    hj(keep, { t: 'keeper:move', round: 1, x: -2.9 });
+  }
+  const locks = (peer: string) => (inbox[peer] || []).filter((m) => m.t === 'keeper:lock') as unknown as { x: number; round: number }[];
+  const finalX = locks(kick).at(-1)?.x;
+  check('UPDATE 9.5: run-up range limited (never to the far post: ≥ −1.4 m)', moves(kick).slice(n0).every((m) => m.x >= -judge.KEEPER_LINE.runUpMaxX - 1e-9) && (finalX ?? -9) >= -judge.KEEPER_LINE.runUpMaxX - 1e-9, String(finalX));
+  check('UPDATE 9.5: the spot is locked before contact, the same x sent to BOTH phones', typeof finalX === 'number' && locks(keep).at(-1)?.x === finalX && locks(kick).length === 1);
+  const n1 = moves(kick).length;
+  hj(keep, { t: 'keeper:move', round: 1, x: 0 });
+  check('UPDATE 9.5: no moving after the lock', moves(kick).length === n1);
   hj(keep, { t: 'keeper:dive', round: 1, dir: 'right', at: judge.PENALTY_CONTACT_TIME });
   advance(4000);
   const r = last(P, 'round:result')!.state!.result!;
   const seed = judge.roundSeed(jid, 1);
-  const here = judge.simulateRound(seed, ss.shot!.input, { dir: 'right', at: judge.PENALTY_CONTACT_TIME }, null, { mode: 'penalty', keeperX: 1.8 });
+  const here = judge.simulateRound(seed, ss.shot!.input, { dir: 'right', at: judge.PENALTY_CONTACT_TIME }, null, { mode: 'penalty', keeperX: finalX });
   const mid = judge.simulateRound(seed, ss.shot!.input, { dir: 'right', at: judge.PENALTY_CONTACT_TIME }, null, { mode: 'penalty', keeperX: 0 });
-  check('UPDATE 8: the judge dives from where he stood (moved right + dive right ≠ from the middle)', r.outcome === here.outcome && (here.outcome !== mid.outcome || here.detail !== mid.detail || here.decidedAt !== mid.decidedAt), `${here.outcome} vs mid ${mid.outcome}`);
+  check('UPDATE 8/9.5: the judge dives from his locked spot (≠ from the middle)', r.outcome === here.outcome && (here.outcome !== mid.outcome || here.detail !== mid.detail || here.decidedAt !== mid.decidedAt), `${here.outcome} vs mid ${mid.outcome}`);
   advance(judge.MATCH_RULES.resultShowMs + 50);
   check('UPDATE 8: the next round starts with the keeper in the middle again', (last(P)!.state!.keeperX ?? 0) === 0 && last(P)!.state!.round === 2);
   // the keeper never leaves his line: depth fixed, x clamped, for any position
   const g = new (await import('../src/online/match/penaltyRound')).OnlineKickGame('K', 1, false, {}, 'penalty', 0, 50);
   g.start();
   for (let i = 0; i < 60; i++) g.update(1 / 60);
-  check('UPDATE 8: OnlineKickGame keeps the keeper on his line (z fixed, |x| ≤ 3.0)', Math.abs(g.keeper.body.root.position.z - 0.45) < 1e-9 && Math.abs(g.keeper.body.root.position.x) <= 3.0 + 1e-9, JSON.stringify(g.keeper.body.root.position));
+  check('UPDATE 8: OnlineKickGame keeps the keeper on his line (z fixed, |x| ≤ maxX)', Math.abs(g.keeper.body.root.position.z - 0.45) < 1e-9 && Math.abs(g.keeper.body.root.position.x) <= judge.KEEPER_LINE.maxX + 1e-9, JSON.stringify(g.keeper.body.root.position));
 }
 
 const fails = results.filter(([, ok]) => !ok);

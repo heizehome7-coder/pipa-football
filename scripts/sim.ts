@@ -304,7 +304,7 @@ function physicsReport(pl: ReturnType<KickGame['planFor']>) {
     if (sg && prevSign && sg !== prevSign) turns++;
     if (sg) prevSign = sg;
   }
-  check('RONALDO: KNUCKLE DRIVE — no spin, visible but small wobble (5–25 cm), no zig-zag', cr.rd.input.spin === 0 && (cr.rd.input.knuckle ?? 0) > 0.8 && wob > 0.05 && wob < 0.25 && turns <= 2,
+  check('RONALDO: KNUCKLE DRIVE — no spin, visible wobble (5–35 cm, UPDATE 9 stronger), no zig-zag', cr.rd.input.spin === 0 && (cr.rd.input.knuckle ?? 0) > 0.8 && wob > 0.05 && wob < 0.35 && turns <= 2,
     { wob: +wob.toFixed(3), turns, knuckle: cr.rd.input.knuckle });
   check('Knuckle ≠ curl: a curled stroke never knuckles', !pl('ronaldo', screenStroke(ballS, goalPt(0.3, 0.5), 60), 120).rd.input.knuckle);
 

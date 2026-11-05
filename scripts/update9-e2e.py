@@ -101,7 +101,7 @@ try:
         C = ctx()
         P = C.new_page()
         login(P, 'EVENTER')
-        check('UPDATE 9 badge', P.inner_text('[data-testid=version-badge]') == 'UPDATE 9' and game_version() == 9)
+        check('UPDATE badge (current version)', P.inner_text('[data-testid=version-badge]') == f'UPDATE {game_version()}' and game_version() >= 9)
         order = P.eval_on_selector_all('.mode-list .mode-card', 'els => els.map(e => e.dataset.testid)')
         check('HOME: 혼자서 · 온라인 · SQUAD · TRANSFER MARKET · PACKS · EVENT CENTER · RANKING · DEVELOPER MODE',
               order == ['play-solo', 'play-online', 'play-squad', 'play-market', 'play-packs', 'play-events', 'play-ranking', 'play-developer'], order)

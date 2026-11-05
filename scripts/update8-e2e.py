@@ -95,11 +95,11 @@ SHOOT_JS = """([side, high, dur]) => {
 
 try:
     with sync_playwright() as p:
-        browser = p.chromium.launch(executable_path='/usr/bin/google-chrome', args=['--use-gl=swiftshader', '--enable-unsafe-swiftshader'])
+        browser = p.chromium.launch(executable_path='/usr/bin/google-chrome', args=['--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--disable-renderer-backgrounding', '--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows'])  # two phones = two foreground pages
         errors = []
 
-        def ctx():
-            c = browser.new_context(viewport={'width': 390, 'height': 844}, is_mobile=True, has_touch=True, device_scale_factor=2)
+        def ctx(dpr=2):
+            c = browser.new_context(viewport={'width': 390, 'height': 844}, is_mobile=True, has_touch=True, device_scale_factor=dpr)
             c.add_init_script(NO_DAILY_JS)
             c.add_init_script(AUDIO_JS)
             c.add_init_script(PHASES_JS)
@@ -228,8 +228,9 @@ try:
         check('no audio was ever created (packs included)', P.evaluate('window.__audioCtx') == 0)
 
         # ── online JOYSTICK (penalty, then free kick) ─────────────────
-        A = ctx().new_page()
-        B = ctx().new_page()
+        # software WebGL: two 3D phones at 1× pixels so frames stay real-time (the run-up test needs it)
+        A = ctx(1).new_page()
+        B = ctx(1).new_page()
         login(A, 'GKA')
         login(B, 'GKB')
 
@@ -273,11 +274,11 @@ try:
             v, _ = wait_for(lambda: abs(kicker.evaluate('window.__PIPA_ONLINE.debug().keeperLineX') - keeper.evaluate('window.__PIPA_ONLINE.debug().keeperX')) < 0.2, 6)
             check(f'{mode}: the kicker sees him move (synced)', bool(v), [kicker.evaluate('window.__PIPA_ONLINE.debug().keeperLineX'), keeper.evaluate('window.__PIPA_ONLINE.debug().keeperX')])
             keeper.evaluate('window.__PIPA_ONLINE.setJoystick(-1)')
-            wait_for(lambda: keeper.evaluate('window.__PIPA_ONLINE.debug().keeperX') <= -2.999, 12)
+            wait_for(lambda: keeper.evaluate('window.__PIPA_ONLINE.debug().keeperX') <= -2.919, 12)
             time.sleep(0.5)
             keeper.evaluate('window.__PIPA_ONLINE.setJoystick(0)')
             lx = keeper.evaluate('window.__PIPA_ONLINE.debug().keeperX')
-            check(f'{mode}: LEFT all the way stops at the post margin (−3.0 m)', abs(lx + 3.0) < 1e-6, lx)
+            check(f'{mode}: LEFT all the way stops at the post margin (UPDATE 9.5: −2.92 m)', abs(lx + 2.92) < 1e-6, lx)
             keeper.evaluate('window.__PIPA_ONLINE.setJoystick(1)')
             time.sleep(0.5)
             keeper.evaluate('window.__PIPA_ONLINE.setJoystick(0)')
@@ -285,15 +286,26 @@ try:
             want = keeper.evaluate('window.__PIPA_ONLINE.debug().keeperX')
             keeper.screenshot(path=f'{OUT}/07_{mode}_keeper_joystick.png')
             kicker.screenshot(path=f'{OUT}/07_{mode}_kicker_sees.png')
+            # UPDATE 9.5: record (in the page, so a slow browser can't miss it) the joystick state
+            # during the run-up: push RIGHT as soon as the shot starts, dive at once
+            keeper.evaluate("""() => { window.__lockLog = []; let pushed = false;
+              const rec = () => { const g = document.querySelector('[data-testid=online-game]'); const j = document.querySelector('[data-testid=gk-joystick]');
+                const e = [g ? g.dataset.phase : '', j ? j.dataset.locked : '-']; const l = window.__lockLog[window.__lockLog.length - 1];
+                if (!l || l[0] !== e[0] || l[1] !== e[1]) window.__lockLog.push(e);
+                if (e[0] === 'shot' && !pushed) { pushed = true; window.__PIPA_ONLINE.setJoystick(1); }
+                if (e[0] === 'result') { window.__PIPA_ONLINE.setJoystick(0); if (!window.__homes) { const d = window.__PIPA_ONLINE.debug(); window.__homes = [d.keeperHome]; } } };
+              window.__lockObs = new MutationObserver(rec); window.__lockObs.observe(document.body, { subtree: true, attributes: true, childList: true }); rec(); }""")
+            kicker.evaluate("""() => { new MutationObserver(() => { const g = document.querySelector('[data-testid=online-game]');
+              if (g && g.dataset.phase === 'result' && !window.__homes) window.__homes = [window.__PIPA_ONLINE.debug().keeperHome]; }).observe(document.body, { subtree: true, attributes: true, childList: true }); }""")
             kicker.evaluate(SHOOT_JS, ['L', 0.3, 200])
-            v, _ = wait_for(lambda: keeper.get_attribute('[data-testid=online-game]', 'data-phase') == 'shot', 15)
-            check(f'{mode}: the strike locks the joystick', bool(v) and keeper.get_attribute('[data-testid=gk-joystick]', 'data-locked') == '1')
-            home = kicker.evaluate('window.__PIPA_ONLINE.debug().keeperHome')
-            home2 = keeper.evaluate('window.__PIPA_ONLINE.debug().keeperHome')
-            check(f'{mode}: both phones replay the shot with the keeper where he stood', abs(home - home2) < 1e-9 and abs(home - want) < 0.2, [home, home2, want])
-            keeper.evaluate('window.__PIPA_ONLINE.keeperDive("left")')
-            v, _ = wait_for(lambda: A.get_attribute('[data-testid=online-game]', 'data-phase') == 'result', 30)
-            check(f'{mode}: joystick + dive → round result from the server', bool(v))
+            v, _ = wait_for(lambda: keeper.evaluate('!!window.__homes') and kicker.evaluate('!!window.__homes'), 40)
+            check(f'{mode}: joystick + run-up → round result from the server', bool(v))
+            log = keeper.evaluate('window.__lockLog')
+            shot = [x[1] for x in log if x[0] == 'shot']
+            check(f'{mode}: UPDATE 9.5 — the joystick still works during the run-up, then locks before contact', '0' in shot and '1' in shot and shot.index('0') < len(shot) - 1 - shot[::-1].index('1'), log)
+            home = kicker.evaluate('window.__homes[0]')
+            home2 = keeper.evaluate('window.__homes[0]')
+            check(f'{mode}: both phones replay the shot from the same locked spot (moved in the run-up, ≤ 1.4 m)', abs(home - home2) < 1e-9 and home > want + 0.3 and home <= 1.4 + 1e-6, [home, home2, want])
             # leave the match: a fresh load (the session logs straight back in)
             for pg in (A, B):
                 pg.goto(BASE)

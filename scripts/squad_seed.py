@@ -19,4 +19,5 @@ NO_DAILY_JS = """(() => { new MutationObserver(() => {
 import re as _re, os as _os
 def game_version():
     src = open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', 'src', 'version.ts')).read()
-    return int(_re.search(r'GAME_VERSION = (\d+)', src).group(1))
+    v = float(_re.search(r'GAME_VERSION = ([\d.]+)', src).group(1))
+    return int(v) if v == int(v) else v  # 9.5 stays 9.5, 9 stays 9
