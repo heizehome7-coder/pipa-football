@@ -391,9 +391,22 @@ export function createMatchManager(o) {
         input.kseed = msg.shot.kseed >>> 0;
       }
       // UPDATE 8: the keeper's line position is fixed the moment the shot is struck
-      m.shot = { round: m.round, input, runStart: now() + R.shotLeadMs, seed, keeperX: judge.clampKeeperX(m.keeperX ?? 0) };
+      const x0 = judge.clampKeeperX(m.keeperX ?? 0);
+      m.shot = { round: m.round, input, runStart: now() + R.shotLeadMs, seed, keeperX: x0, x0 };
       m.flightMs = Math.round(sim.decidedAt * 1000);
       m.phase = 'shot';
+      // UPDATE 9.5: the keeper may still shuffle (limited range) during the run-up; his spot is
+      // locked a moment before foot–ball contact and both phones are told the final spot
+      const lockAt = m.shot.runStart + Math.round(sim.contact * 1000) - judge.KEEPER_LINE.lockLeadMs;
+      m.shot.lockAt = lockAt;
+      const round = m.round;
+      const lockTimer = setTimer(() => {
+        m.timers = m.timers.filter((x) => x !== lockTimer);
+        if (matches.get(m.id) !== m || m.phase !== 'shot' || m.round !== round || !m.shot || m.shot.locked) return;
+        m.shot.locked = true;
+        for (const p of m.players) if (p.connected) send(p.peer, { t: 'keeper:lock', matchId: m.id, round, x: m.shot.keeperX });
+      }, Math.max(0, lockAt - now()));
+      m.timers.push(lockTimer);
       emit(m, 'shot:start');
       scheduleJudge(m);
       return true;
@@ -401,8 +414,22 @@ export function createMatchManager(o) {
 
     // UPDATE 8: keeper joystick — along the goal line only, clamped here, ~12 Hz, aim phase only
     if (t === 'keeper:move') {
-      if (m.phase !== 'aim' || msg.round !== m.round || keeperOf(m).peer !== peer) return true;
+      if (msg.round !== m.round || keeperOf(m).peer !== peer) return true;
       const t0 = now();
+      // UPDATE 9.5: during the run-up (until the lock) — a smaller range, walking speed only
+      if (m.phase === 'shot' && m.shot && !m.shot.locked && t0 < (m.shot.lockAt ?? 0)) {
+        if (m.lastMoveAt && t0 - m.lastMoveAt < 40) return true;
+        const dt = Math.min(0.5, (t0 - (m.lastMoveAt || t0 - 80)) / 1000);
+        m.lastMoveAt = t0;
+        const want = judge.clampRunUpX(msg.x, m.shot.x0 ?? m.shot.keeperX);
+        const step = judge.KEEPER_LINE.maxSpeed * 1.4 * dt + 0.06; // no teleporting
+        const cur = m.shot.keeperX;
+        m.shot.keeperX = Math.max(cur - step, Math.min(cur + step, want));
+        const k = kickerOf(m);
+        if (k.connected) send(k.peer, { t: 'keeper:move', matchId: m.id, round: m.round, x: m.shot.keeperX });
+        return true;
+      }
+      if (m.phase !== 'aim') return true;
       if (m.lastMoveAt && t0 - m.lastMoveAt < 40) return true; // flood guard (25/s max)
       m.lastMoveAt = t0;
       m.keeperX = judge.clampKeeperX(msg.x);

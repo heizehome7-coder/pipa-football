@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { VersionBadge } from '../components/VersionBadge';
-import { AccountError, accountsAvailable, devApi, type DevSquadUser, type DevStats, type DevUser } from '../online/account';
+import { AccountError, accountsAvailable, devApi, type DevItem, type DevSquadUser, type DevStats, type DevUser } from '../online/account';
 import { formatMP } from '../players/ownership';
 import { PlayerCard } from '../components/PlayerArt';
 import { getPlayer, SPECIALS, type PlayerDef } from '../players/players';
@@ -86,7 +86,7 @@ function DevAccess({ onOk, onBack }: { onOk: (t: string) => void; onBack: () => 
 }
 
 // ── 5. DEVELOPER DASHBOARD ──────────────────────────────────────────────
-type Tab = 'recent' | 'records' | 'mp' | 'packs' | 'squads';
+type Tab = 'recent' | 'records' | 'mp' | 'packs' | 'items' | 'squads';
 type RecMode = 'total' | 'penalty' | 'freekick';
 
 /** server ISO time → "YYYY-MM-DD HH:mm" in Korean time */
@@ -162,6 +162,7 @@ function DevDashboard({ devToken, onExpired, onBack }: { devToken: string; onExp
             ['records', '유저 전적'],
             ['mp', 'MP 관리'],
             ['packs', 'PACK 지급'],
+            ['items', 'FV · 토큰 · 팩'],
             ['squads', 'USER SQUADS'],
           ] as [Tab, string][]
         ).map(([t, label]) => (
@@ -228,6 +229,7 @@ function DevDashboard({ devToken, onExpired, onBack }: { devToken: string; onExp
 
       {tab === 'mp' && <MpManager users={users} devToken={devToken} onExpired={onExpired} onGranted={() => void load()} />}
       {tab === 'packs' && <PackGrant users={users} devToken={devToken} onExpired={onExpired} onGranted={() => void load()} />}
+      {tab === 'items' && <ItemGrant users={users} devToken={devToken} onExpired={onExpired} onGranted={() => void load()} />}
       {tab === 'squads' && <UserSquads devToken={devToken} onExpired={onExpired} />}
     </div>
   );
@@ -536,6 +538,130 @@ function PackGrant({ users, devToken, onExpired, onGranted }: { users: DevUser[]
             </dl>
             <div className="detail-actions">
               <button className="btn-primary" onClick={grant} disabled={busy} data-testid="dev-pack-ok">
+                {busy ? '지급 중…' : '확인'}
+              </button>
+              <button className="btn-ghost" onClick={() => setConfirm(false)} disabled={busy}>
+                취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── UPDATE 9.5 — FV · 홍 토큰 · GOOD / LEGEND PACK 지급 (server-checked, logged) ─────
+const ITEMS: { id: DevItem; label: string; unit: string; max: number }[] = [
+  { id: 'fv', label: 'FV', unit: 'FV', max: 100000 },
+  { id: 'bronze', label: '동 토큰', unit: '개', max: 100 },
+  { id: 'silver', label: '은 토큰', unit: '개', max: 100 },
+  { id: 'gold', label: '금 토큰', unit: '개', max: 100 },
+  { id: 'red', label: '홍 토큰', unit: '개', max: 100 },
+  { id: 'good', label: 'GOOD PLAYER PACK', unit: '개', max: 100 },
+  { id: 'legend', label: 'LEGEND PACK', unit: '개', max: 100 },
+];
+const itemOf = (u: DevUser, id: DevItem) =>
+  id === 'fv' ? u.fv ?? 0 : id === 'good' ? u.goodPacks ?? 0 : id === 'legend' ? u.legendPacks ?? 0 : u.hong?.[id] ?? 0;
+const fmt = (n: number) => n.toLocaleString('en-US');
+
+function ItemGrant({ users, devToken, onExpired, onGranted }: { users: DevUser[]; devToken: string; onExpired: () => void; onGranted: () => void }) {
+  const [sel, setSel] = useState<string | null>(null);
+  const [item, setItem] = useState<DevItem>('fv');
+  const [raw, setRaw] = useState('');
+  const [confirm, setConfirm] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ text: string; tone: 'good' | 'bad' } | null>(null);
+  const user = useMemo(() => users.find((u) => u.nickname === sel) ?? null, [users, sel]);
+  const it = ITEMS.find((x) => x.id === item)!;
+  const count = /^[0-9]+$/.test(raw.trim()) ? Number(raw.trim()) : NaN;
+  const valid = Number.isSafeInteger(count) && count >= 1 && count <= it.max;
+  const cur = user ? itemOf(user, item) : 0;
+
+  const grant = async () => {
+    if (!user || !valid || busy) return;
+    setBusy(true);
+    try {
+      const r = await devApi.grantItems(devToken, user.nickname, item, count);
+      setMsg({ text: `${it.unit === 'FV' ? `${fmt(r.granted ?? count)} FV` : `${it.label} ${fmt(r.granted ?? count)}개`} 지급 완료 (보유 ${fmt(r.after ?? cur + count)})`, tone: 'good' });
+      onGranted();
+    } catch (e) {
+      if (e instanceof AccountError && e.code === 'dev') return onExpired();
+      setMsg({ text: e instanceof Error ? e.message : '지급하지 못했어요', tone: 'bad' });
+    } finally {
+      setBusy(false);
+      setConfirm(false);
+    }
+  };
+
+  return (
+    <div className="dev-mp" data-testid="dev-items">
+      <ul className="dev-list dev-pick">
+        {users.map((u) => (
+          <li key={u.nickname}>
+            <button className={`dev-row pick ${sel === u.nickname ? 'on' : ''}`} onClick={() => (setSel(u.nickname), setMsg(null))} data-testid="dev-item-pick" data-nick={u.nickname}>
+              <b>{u.nickname}</b>
+              <span className="dev-time">
+                FV {fmt(u.fv ?? 0)} · 동{u.hong?.bronze ?? 0} 은{u.hong?.silver ?? 0} 금{u.hong?.gold ?? 0} 홍{u.hong?.red ?? 0} · GOOD {u.goodPacks ?? 0} · LEGEND {u.legendPacks ?? 0}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      {user && (
+        <div className="dev-grant" data-testid="dev-item-grant">
+          <div className="dev-grant-row">
+            <span>유저</span>
+            <b>{user.nickname}</b>
+          </div>
+          <div className="dev-subtabs" role="radiogroup">
+            {ITEMS.map((x) => (
+              <button key={x.id} className={`chip ${item === x.id ? 'on' : ''}`} onClick={() => (setItem(x.id), setMsg(null))} data-testid={`dev-item-${x.id}`} role="radio" aria-checked={item === x.id}>
+                {x.label}
+              </button>
+            ))}
+          </div>
+          <div className="dev-grant-row">
+            <span>현재 보유</span>
+            <b data-testid="dev-item-current">
+              {fmt(cur)}
+              {it.unit === 'FV' ? ' FV' : '개'}
+            </b>
+          </div>
+          <label className="field">
+            <span>
+              지급할 {it.label} (1 ~ {fmt(it.max)})
+            </span>
+            <input inputMode="numeric" value={raw} onChange={(e) => (setRaw(e.target.value), setMsg(null))} placeholder="예: 10" data-testid="dev-item-count" />
+          </label>
+          {raw && !valid && <p className="dev-msg bad">1 ~ {fmt(it.max)} 사이의 정수만 입력할 수 있어요</p>}
+          <button className="btn-primary" disabled={!valid || busy} onClick={() => setConfirm(true)} data-testid="dev-item-btn">
+            지급
+          </button>
+        </div>
+      )}
+      {msg && (
+        <p className={`dev-msg ${msg.tone}`} data-testid="dev-item-msg">
+          {msg.text}
+        </p>
+      )}
+      {confirm && user && valid && (
+        <div className="detail-backdrop confirm" data-testid="dev-item-confirm">
+          <div className="detail-card confirm-card">
+            <p className="confirm-q">
+              {user.nickname}에게
+              <br />
+              <b className="confirm-name">{it.unit === 'FV' ? `${fmt(count)} FV` : `${it.label} ${fmt(count)}개`}</b>
+              를 지급하시겠습니까?
+            </p>
+            <dl className="confirm-rows">
+              <dt>현재</dt>
+              <dd>{fmt(cur)}</dd>
+              <dt>지급 후</dt>
+              <dd className="after">{fmt(cur + count)}</dd>
+            </dl>
+            <div className="detail-actions">
+              <button className="btn-primary" onClick={grant} disabled={busy} data-testid="dev-item-ok">
                 {busy ? '지급 중…' : '확인'}
               </button>
               <button className="btn-ghost" onClick={() => setConfirm(false)} disabled={busy}>

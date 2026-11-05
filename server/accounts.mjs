@@ -40,6 +40,9 @@
  *   POST /api/events/potato/start {token, nonce}    ← {ok, potato:{sessionId, startAt, rounds…}, serverNow}  −50 FV
  *   POST /api/events/potato/tap {token, sessionId, round, holeId} ← {ok, hit, score}
  *   POST /api/events/potato/finish {token, sessionId} ← {ok, potato:{status:'done', reward}}  paid once
+ *   UPDATE 9.5: POST /api/favorites {token, playerId, on?} ← {ok, favorites, …me}
+ *               POST /api/dev/grant-items {devToken, nickname, item: fv|bronze|silver|gold|red|good|legend, count}
+ *               potatoStats {best, played, recent[]} in /api/events/state and …/potato/finish
  *                                                     (UPDATE 7 hotfix: read-only, server data only)
  *   Every grant is written to the developer action log (file devlog.json / table pipa_dev_log).
  *   Accounts also keep lastLoginAt / lastSeenAt (server time) and online records per mode:
@@ -457,6 +460,7 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
       rounds: sess.rounds,
       clicked: sess.clicked,
       reward: sess.reward ?? null,
+      newBest: !!sess.newBest,
     };
   const view = (rec) => ({
     nickname: rec.nickname,
@@ -472,6 +476,8 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
     notices: rec.data?.notices ?? [],
     // UPDATE 9
     hong: hongOf(rec.data),
+    // UPDATE 9.5
+    favorites: Array.isArray(rec.data?.favorites) ? rec.data.favorites : [],
   });
 
   async function auth({ nickname, password }, ip) {
@@ -939,11 +945,15 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
     if (!sess || sess.status !== 'playing' || at < sess.endAt + PT().graceMs) return { sess, paid: false };
     // round over: pay exactly once (status 'done' is saved in the same write as the reward)
     const reward = catalog.potatoReward(sess.score);
-    const done = { ...sess, status: 'done', finishedAt: new Date(at).toISOString(), reward };
+    const prevBest = Math.max(rec.data?.potatoBest ?? 0, ...(rec.data?.potatoLog ?? []).map((x) => x.score ?? 0), 0);
+    const done = { ...sess, status: 'done', finishedAt: new Date(at).toISOString(), reward, newBest: sess.score > prevBest };
     let data = { ...rec.data, potato: done };
     if (reward.mp) data.mp = (data.mp ?? 0) + reward.mp;
     if (reward.pack === 'good') data.goodPacks = (data.goodPacks ?? 0) + 1;
     data.potatoLog = [...(data.potatoLog ?? []), { id: sess.id, score: sess.score, reward, startedAt: new Date(sess.startAt).toISOString(), finishedAt: done.finishedAt }].slice(-30);
+    // UPDATE 9.5: best score + games played (kept even when the log rolls over)
+    data.potatoBest = Math.max(data.potatoBest ?? 0, sess.score);
+    data.potatoPlayed = (data.potatoPlayed ?? (data.potatoLog.length - 1)) + 1;
     rec.data = data;
     return { sess: done, paid: true };
   }
@@ -1032,15 +1042,40 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
       if (!sess || (sessionId && sess.id !== sessionId)) return { status: 404, body: { ok: false, error: 'session', message: '게임을 찾을 수 없어요', ...view(rec) } };
       const r = await settlePotato(rec);
       if (r.sess.status === 'playing') return { status: 425, body: { ok: false, error: 'not_over', message: '아직 게임 중이에요', potato: potatoView(r.sess), serverNow: Date.now(), ...view(rec) } };
-      return { status: 200, body: { ok: true, potato: potatoView(r.sess), paidNow: r.paid, ...view(rec), serverNow: Date.now() } };
+      return { status: 200, body: { ok: true, potato: potatoView(r.sess), paidNow: r.paid, potatoStats: potatoStats(rec.data), ...view(rec), serverNow: Date.now() } };
     });
   }
+
+  // ── UPDATE 9.5: 관심 선수 (favourites) — kept on the account, every device sees them ──
+  const MAX_FAVS = 60;
+  function setFavorite({ token, playerId, on }) {
+    return withAccount(token, async (rec) => {
+      if (typeof playerId !== 'string' || !catalog?.getPlayer?.(playerId)) return { status: 400, body: { ok: false, error: 'player', message: '알 수 없는 선수예요' } };
+      const favs = Array.isArray(rec.data?.favorites) ? rec.data.favorites.filter((x) => typeof x === 'string') : [];
+      const has = favs.includes(playerId);
+      const want = on === undefined ? !has : !!on;
+      if (want && !has && favs.length >= MAX_FAVS) return { status: 409, body: { ok: false, error: 'full', message: `관심 선수는 ${MAX_FAVS}명까지예요`, ...view(rec) } };
+      const next = want ? (has ? favs : [...favs, playerId]) : favs.filter((x) => x !== playerId);
+      if (next !== favs) {
+        rec.data = { ...rec.data, favorites: next };
+        await store.put(rec);
+      }
+      return { status: 200, body: { ok: true, ...view(rec) } };
+    });
+  }
+
+  /** 감자의 제왕: best score ever + recent games (newest first) */
+  const potatoStats = (d) => {
+    const logs = Array.isArray(d?.potatoLog) ? d.potatoLog : [];
+    const best = Math.max(d?.potatoBest ?? 0, ...logs.map((x) => x.score ?? 0), 0);
+    return { best, played: d?.potatoPlayed ?? logs.length, recent: logs.slice(-10).reverse().map((x) => ({ id: x.id, score: x.score, reward: x.reward, at: x.finishedAt })) };
+  };
 
   /** EVENT CENTER: tokens, packs and the current 감자 game (settles a finished game first) */
   function eventsState({ token }) {
     return withAccount(token, async (rec) => {
       if (PT()) await settlePotato(rec);
-      return { status: 200, body: { ok: true, ...view(rec), potato: potatoView(rec.data?.potato ?? null), serverNow: Date.now(), hongLog: (rec.data?.hongLog ?? []).slice(-10), potatoLog: (rec.data?.potatoLog ?? []).slice(-10) } };
+      return { status: 200, body: { ok: true, ...view(rec), potato: potatoView(rec.data?.potato ?? null), potatoStats: potatoStats(rec.data), serverNow: Date.now(), hongLog: (rec.data?.hongLog ?? []).slice(-10), potatoLog: (rec.data?.potatoLog ?? []).slice(-10) } };
     });
   }
 
@@ -1185,6 +1220,10 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
     fv: rec.data?.fv ?? 0,
     dailyStreak: rec.data?.dailyStreak ?? 0,
     unopenedPacks: rec.data?.unopenedPacks ?? 0,
+    // UPDATE 9.5
+    goodPacks: rec.data?.goodPacks ?? 0,
+    legendPacks: rec.data?.legendPacks ?? 0,
+    hong: hongOf(rec.data),
   });
 
   async function devUsers({ devToken, q }) {
@@ -1306,6 +1345,50 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
     return { status: 200, body: { ok: true, nickname: r.nickname, granted: count, before: r.before, unopenedPacks: r.after } };
   }
 
+  // ── UPDATE 9.5: developer gives FV, 홍 tokens or GOOD / LEGEND packs (server-checked, logged) ──
+  const DEV_ITEMS = {
+    fv: { max: 100000, label: 'FV', get: (d) => d.fv ?? 0, set: (d, v) => ({ ...d, fv: v }) },
+    bronze: { max: 100, label: '동 토큰', get: (d) => hongOf(d).bronze, set: (d, v) => ({ ...d, hong: { ...hongOf(d), bronze: v } }) },
+    silver: { max: 100, label: '은 토큰', get: (d) => hongOf(d).silver, set: (d, v) => ({ ...d, hong: { ...hongOf(d), silver: v } }) },
+    gold: { max: 100, label: '금 토큰', get: (d) => hongOf(d).gold, set: (d, v) => ({ ...d, hong: { ...hongOf(d), gold: v } }) },
+    red: { max: 100, label: '홍 토큰', get: (d) => hongOf(d).red, set: (d, v) => ({ ...d, hong: { ...hongOf(d), red: v } }) },
+    good: { max: 100, label: 'GOOD PLAYER PACK', get: (d) => d.goodPacks ?? 0, set: (d, v) => ({ ...d, goodPacks: v }) },
+    legend: { max: 100, label: 'LEGEND PACK', get: (d) => d.legendPacks ?? 0, set: (d, v) => ({ ...d, legendPacks: v }) },
+  };
+  async function devGrantItems({ devToken, nickname, item, count }, ip) {
+    if (!devOk(devToken)) return NO_DEV;
+    const it = typeof item === 'string' && Object.hasOwn(DEV_ITEMS, item) ? DEV_ITEMS[item] : null;
+    if (!it) return { status: 400, body: { ok: false, error: 'item', message: '지급할 항목을 골라주세요' } };
+    if (typeof count !== 'number' || !Number.isSafeInteger(count) || count <= 0 || count > it.max)
+      return { status: 400, body: { ok: false, error: 'count', message: `${it.label}은(는) 1 ~ ${it.max.toLocaleString('en-US')}까지 지급할 수 있어요` } };
+    if (typeof nickname !== 'string' || !nickname.trim()) return { status: 400, body: { ok: false, error: 'user', message: '유저를 선택해주세요' } };
+    const k = nickKey(cleanNick(nickname));
+    const r = await withLock(k, async () => {
+      const rec = await load(k);
+      if (!rec) return null;
+      migrate(rec);
+      const before = it.get(rec.data ?? {});
+      rec.data = it.set(rec.data ?? {}, before + count);
+      await store.put(rec);
+      return { nickname: rec.nickname, before, after: it.get(rec.data), rec };
+    });
+    if (!r) return { status: 404, body: { ok: false, error: 'user', message: '그런 유저가 없어요' } };
+    const action = `GRANT_${item.toUpperCase()}`;
+    const entry = { developer_action: action, action, target: r.nickname, amount: count, before: r.before, after: r.after, timestamp: new Date().toISOString(), ip };
+    try {
+      await store.logAction(entry);
+    } catch (e) {
+      log(`devlog failed: ${e.message}`);
+    }
+    log(`dev: ${action} ${count} → "${r.nickname}" (${r.before} → ${r.after})`);
+    try {
+      onPacks(r.nickname, r.rec.data?.unopenedPacks ?? 0); // the phone re-reads its wallet (packs:update)
+    } catch {
+      /* offline */
+    }
+    return { status: 200, body: { ok: true, nickname: r.nickname, item, granted: count, before: r.before, after: r.after } };
+  }
+
   async function devLog({ devToken }) {
     if (!devOk(devToken)) return NO_DEV;
     return { status: 200, body: { ok: true, actions: await store.actions(50) } };
@@ -1376,6 +1459,9 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
     '/api/events/potato/start': potatoStart,
     '/api/events/potato/tap': potatoTap,
     '/api/events/potato/finish': potatoFinish,
+    // UPDATE 9.5
+    '/api/favorites': setFavorite,
+    '/api/dev/grant-items': devGrantItems,
   };
 
   /** returns true when it handled the request */

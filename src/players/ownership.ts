@@ -17,6 +17,8 @@ export interface Wallet {
   progress?: Progress | null;
   /** UPDATE 8: every market-player card, each with its own id (duplicates possible) */
   cards?: OwnedCard[];
+  /** UPDATE 9.5: 관심 선수 (saved on the account) */
+  favorites?: string[];
 }
 
 export interface OwnedCard {
@@ -56,12 +58,14 @@ export function walletFrom(r: {
   hong?: Progress['hong'];
   daily?: Progress['daily'];
   cards?: OwnedCard[];
+  favorites?: string[];
 }): Wallet {
   return {
     mp: r.mp ?? 0,
     owned: makeOwned(r.owned ?? []),
     cards: r.cards ?? (r.owned ?? []).map((playerId, i) => ({ id: `${playerId}#${i}`, playerId, source: null })),
     listed: r.listed ?? [],
+    favorites: r.favorites ?? [],
     progress:
       typeof r.level === 'number'
         ? { level: r.level, xp: r.xp ?? 0, xpNext: r.xpNext ?? 0, fv: r.fv ?? 0, claimed: r.claimedLevelRewards ?? [], packs: r.unopenedPacks ?? 0, goodPacks: r.goodPacks ?? 0, legendPacks: r.legendPacks ?? 0, hong: r.hong ?? { bronze: 0, silver: 0, gold: 0, red: 0 }, daily: r.daily ?? null }

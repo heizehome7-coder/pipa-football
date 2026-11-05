@@ -41,6 +41,9 @@ export const CLUB: Record<string, string> = {
   dimarco: 'INTER', benwhite: 'ARSENAL', timber: 'ARSENAL', vandeven: 'TOTTENHAM', huijsen: 'REAL MADRID',
   endo: 'LIVERPOOL', minamino: 'MONACO', kamada: 'CRYSTAL PALACE', itohiroki: 'BAYERN MUNICH', suzukizion: 'PARMA',
   goncaloramos: 'PARIS SAINT-GERMAIN', fabianruiz: 'PARIS SAINT-GERMAIN', manukone: 'ROMA',
+  // UPDATE 9.5: the six that showed "CLUB TBA" (checked November 2026)
+  kwonchanghoon: 'JEJU SK', honghyunseok: 'FC MIDTJYLLAND', leedongkyeong: 'ULSAN HD', leedongjun: 'JEONBUK HYUNDAI',
+  sugawara: 'WERDER BREMEN', moukoko: 'FC COPENHAGEN',
 };
 
 /**

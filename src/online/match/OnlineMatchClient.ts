@@ -166,9 +166,18 @@ export class OnlineMatchClient {
   /** UPDATE 8: keeper joystick position (world x on the goal line); the server clamps it */
   moveKeeper(x: number) {
     const s = this.view.state;
-    if (!s || this.view.role !== 'keeper' || s.phase !== 'aim') return;
+    // UPDATE 9.5: also during the run-up (the server limits the range and locks it before contact)
+    if (!s || this.view.role !== 'keeper' || (s.phase !== 'aim' && s.phase !== 'shot')) return;
     this.send({ t: 'keeper:move', round: s.round, x: Math.round(x * 1000) / 1000 });
   }
+  /** UPDATE 9.5: the server fixed the keeper's spot for this shot (just before contact) */
+  onKeeperLock(fn: (x: number, round: number) => void) {
+    this.lockFns.add(fn);
+    return () => {
+      this.lockFns.delete(fn);
+    };
+  }
+  private lockFns = new Set<(x: number, round: number) => void>();
   /** UPDATE 8: the opponent keeper's position while I aim */
   onKeeperMove(fn: (x: number, round: number) => void) {
     this.moveFns.add(fn);
@@ -199,6 +208,11 @@ export class OnlineMatchClient {
         this.bestRtt = rtt;
         this.offset = m.s - (m.c + rtt / 2);
       }
+      return;
+    }
+    if ((m.t as string) === 'keeper:lock') {
+      const mm = m as unknown as { x?: number; round?: number; matchId?: string };
+      if (mm.matchId === this.info.matchId && typeof mm.x === 'number') for (const f of this.lockFns) f(mm.x, mm.round ?? 0);
       return;
     }
     if ((m.t as string) === 'keeper:move') {

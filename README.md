@@ -1,4 +1,4 @@
-# PIPA · FOOTBALL GAME  — UPDATE 9
+# PIPA · FOOTBALL GAME  — UPDATE 9.5
 
 > 버전 표시는 `src/version.ts`의 `GAME_VERSION` 하나로 관리 (다음 큰 업데이트 때 숫자만 올리기)
 
@@ -50,6 +50,15 @@ npm run build:single   # dist-single/ — index.html 한 파일 (어디서나 �
 - GK: 6방향 블렌딩 다이브, 능력 반영(팔 길이/이동 거리), 선방·실점 리액션 — `Goalkeeper.ts`
 - 골 세리머니: 모든 선수 공통 "두 손 들고 환호" + 실패(SAVE/MISS/POST/CROSSBAR) 리액션 — `reactions.ts`; 리액션 중 입력 잠금(~2초)
 - 카드 앞면 OVR + POWER/ACCURACY/CURVE, 상세에 전체 능력 + SPECIAL ABILITY. 등 이름 크기 확대
+
+## UPDATE 9.5 — 버그 수정 & 작은 기능 (`GAME_VERSION = 9.5`, 화면 표시 "UPDATE 9.5")
+- **버그 수정**: HOME PACKS 숫자 = PLAYER + GOOD + LEGEND 팩 합계(이전엔 PLAYER PACK만) · "CLUB TBA" 6명 클럽 지정(권창훈 JEJU SK · 홍현석 FC MIDTJYLLAND · 이동경 ULSAN HD · 이동준 JEONBUK HYUNDAI · 스가와라 WERDER BREMEN · 무코코 FC COPENHAGEN, 2026년 11월 기준) · GK 조이스틱이 느린 폰(긴 프레임)에서도 실제 경과 시간만큼 이동(최대 1초 프레임까지)
+- **골대 약간 축소**: 7.32 × 2.44 m → 7.14 × 2.38 m(약 −2.5 %, `FIELD` 한 곳) · 온라인 GK 라인 ±2.92 m
+- **온라인 GK 조이스틱 — 키커 런업 중에도 이동**: 상대가 슛을 그린 뒤 달려오는 동안에도 좌우 이동 가능. 단 범위는 가운데 ±1.4 m(슛 순간 서 있던 곳까지는 허용)로 제한, 걷는 속도 제한(서버 검사), 발–공 접촉 0.22초 전에 서버가 위치를 고정(`keeper:lock`)하고 두 폰에 같은 값을 보냄 → 두 폰 재생과 서버 판정이 같은 위치에서 다이빙
+- **관심 선수(★)**: 이적시장 카드·상세의 ☆/★, `★ 관심` 필터(검색·정렬과 함께), 계정에 저장(`/api/favorites`) → 다른 기기에서도 동일, 최대 60명
+- **감자의 제왕 기록**: 내 최고 점수 · 플레이 횟수 · 최근 기록(점수·보상·시간), 최고 기록 경신 표시(서버가 판정 `newBest`)
+- **개발자 모드 · FV · 토큰 · 팩 지급** (`/api/dev/grant-items`): FV(1~100,000) · 동/은/금/홍 토큰(1~100) · GOOD / LEGEND PACK(1~100), 확인 창(현재 → 지급 후), 개발자 로그(GRANT_FV …), 유저 화면에 바로 반영, 유저 목록에 FV·토큰·팩 표시
+- 테스트: `node scripts/update95-server-test.mjs`, `python3 scripts/update95-e2e.py` (+ `match-test` 런업 이동·잠금)
 
 ## UPDATE 9 — EVENT CENTER & PLAYER BALANCE
 - **HOME**: 혼자서 · 온라인 · SQUAD · TRANSFER MARKET · PACKS · **EVENT CENTER** · RANKING · 개발자 모드. `GAME_VERSION = 9`

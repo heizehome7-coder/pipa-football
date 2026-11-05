@@ -179,8 +179,11 @@ function MatchPlay({ v, s, client, mode, onLeave }: { v: MatchView; s: MatchStat
     const offMove = client.onKeeperMove((x, round) => {
       if (round === client.getSnapshot().state?.round) viewRef.current?.setRemoteKeeperX(x);
     });
+    // UPDATE 9.5: the keeper's final spot for this shot (both phones replay from it)
+    const offLock = client.onKeeperLock((x, round) => viewRef.current?.lockKeeper(x, round));
     return () => {
       offMove();
+      offLock();
       view?.dispose();
       viewRef.current = null;
     };
@@ -250,7 +253,7 @@ function MatchPlay({ v, s, client, mode, onLeave }: { v: MatchView; s: MatchStat
   return (
     <div className={`screen game online-game role-${role ?? 'none'}`} data-testid="online-game" data-phase={s.phase} data-round={s.round} data-role={role ?? ''}>
       <div className="game-host" ref={hostRef} />
-      {role === 'keeper' && (s.phase === 'aim' || s.phase === 'shot') && <KeeperJoystick view={viewRef} locked={s.phase !== 'aim'} />}
+      {role === 'keeper' && (s.phase === 'aim' || s.phase === 'shot') && <KeeperJoystick view={viewRef} locked={false} />}
 
       <div className="ohud" data-testid="online-hud">
         <button className="hud-back ohud-back" onClick={onLeave} aria-label="경기 나가기">
@@ -507,6 +510,14 @@ function KeeperJoystick({ view, locked }: { view: React.MutableRefObject<OnlineG
   const pid = useRef<number | null>(null);
   const cx = useRef(0);
   const R = 46;
+  // UPDATE 9.5: free while the kicker aims AND during his run-up (smaller range) until the
+  // server locks the keeper's spot just before contact — the view knows when
+  const [lockedNow, setLockedNow] = useState(false);
+  useEffect(() => {
+    const t = window.setInterval(() => setLockedNow(!(view.current?.keeperCanMove() ?? false)), 50);
+    return () => window.clearInterval(t);
+  }, [view]);
+  locked = locked || lockedNow;
   useEffect(() => {
     if (locked) {
       pid.current = null;

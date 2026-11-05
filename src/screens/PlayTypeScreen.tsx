@@ -100,6 +100,8 @@ export function PlayTypeScreen({
   mp: number | null;
   onLogout: () => void;
 }) {
+  // UPDATE 9.5 fix: PLAYER + GOOD + LEGEND packs (the badge counted only PLAYER PACKs)
+  const allPacks = (progress?.packs ?? 0) + (progress?.goodPacks ?? 0) + (progress?.legendPacks ?? 0);
   return (
     <div className="screen modes">
       <header className="modes-top">
@@ -181,12 +183,12 @@ export function PlayTypeScreen({
               <path d="M16 22 H48" stroke="currentColor" strokeWidth="3" />
               <path d="M32 30 l4 8 8 1 -6 5 2 8 -8 -4 -8 4 2 -8 -6 -5 8 -1z" fill="var(--lime)" />
             </svg>
-            {!!progress?.packs && <span className="pack-count" data-testid="home-pack-count">{progress.packs}</span>}
+            {!!allPacks && <span className="pack-count" data-testid="home-pack-count">{allPacks}</span>}
           </div>
           <div className="mode-text">
             <strong>PACKS</strong>
             <span className="mode-ko">플레이어 팩</span>
-            <span className="mode-desc">{progress?.packs ? `열 수 있는 팩 ${progress.packs}개` : '팩을 열어 새 선수 획득'}</span>
+            <span className="mode-desc">{allPacks ? `열 수 있는 팩 ${allPacks}개` : '팩을 열어 새 선수 획득'}</span>
           </div>
           <span className="mode-arrow" aria-hidden>
             ›

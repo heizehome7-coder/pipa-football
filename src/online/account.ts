@@ -96,6 +96,13 @@ export interface PackPull {
   at: string;
 }
 
+/** UPDATE 9.5 — 감자의 제왕 best score + recent games */
+export interface PotatoStats {
+  best: number;
+  played: number;
+  recent: { id: string; score: number; reward: { mp?: number; pack?: 'good' } | null; at: string }[];
+}
+
 /** UPDATE 9 — EVENT CENTER */
 export type HongGradeId = 'bronze' | 'silver' | 'gold' | 'red';
 export type HongTokens = Record<HongGradeId, number>;
@@ -109,6 +116,8 @@ export interface PotatoSessionView {
   rounds: { hole: number; kind: 'normal' | 'red' | 'rotten' }[][];
   clicked: string[];
   reward: { mp?: number; pack?: 'good' } | null;
+  /** UPDATE 9.5: this game beat my best score */
+  newBest?: boolean;
 }
 
 export interface AccountReply {
@@ -146,6 +155,9 @@ export interface AccountReply {
   ended?: boolean;
   paidNow?: boolean;
   repeated?: boolean;
+  /** UPDATE 9.5 */
+  favorites?: string[];
+  potatoStats?: PotatoStats;
   daily?: DailyStatus;
   notices?: SaleNotice[];
   price?: number;
@@ -221,6 +233,8 @@ export const accountApi = {
   potatoStart: (token: string, nonce: string) => post('/api/events/potato/start', { token, nonce }, 30_000),
   potatoTap: (token: string, sessionId: string, round: number, holeId: number) => post('/api/events/potato/tap', { token, sessionId, round, holeId }, 15_000),
   potatoFinish: (token: string, sessionId: string) => post('/api/events/potato/finish', { token, sessionId }, 30_000),
+  /** UPDATE 9.5: 관심 선수 on/off (saved on the account) */
+  setFavorite: (token: string, playerId: string, on: boolean) => post('/api/favorites', { token, playerId, on }, 15_000),
   cancel: (token: string, listingId: string) => post('/api/market/cancel', { token, listingId }, 30_000),
   marketState: (token: string | null) =>
     post('/api/market/state', { token }, 30_000) as Promise<AccountReply & { listings?: Record<string, { count: number; min: number }>; mine?: Listing[] }>,
@@ -251,6 +265,10 @@ export interface DevUser {
   fv?: number;
   dailyStreak?: number;
   unopenedPacks?: number;
+  /** UPDATE 9.5 */
+  goodPacks?: number;
+  legendPacks?: number;
+  hong?: HongTokens;
 }
 /** UPDATE 7 hotfix — USER SQUADS (read-only, straight from the server) */
 export interface DevSquadUser {
@@ -265,6 +283,7 @@ export interface DevSquadUser {
   listed: string[];
   updatedAt: string | null;
 }
+export type DevItem = 'fv' | 'bronze' | 'silver' | 'gold' | 'red' | 'good' | 'legend';
 type DevReply = AccountReply & {
   devToken?: string;
   users?: DevUser[];
@@ -283,6 +302,9 @@ export const devApi = {
   /** UPDATE 8: give a user PLAYER PACKS */
   grantPacks: (devToken: string, nickname: string, count: number) =>
     devPost('/api/dev/grant-packs', { devToken, nickname, count }) as Promise<DevReply & { unopenedPacks?: number }>,
+  /** UPDATE 9.5: FV, 홍 tokens, GOOD / LEGEND packs */
+  grantItems: (devToken: string, nickname: string, item: DevItem, count: number) =>
+    devPost('/api/dev/grant-items', { devToken, nickname, item, count }) as Promise<DevReply & { after?: number; item?: DevItem }>,
 };
 
 /** UPDATE 9: a fresh id per button press (a network retry of the same press is answered once) */

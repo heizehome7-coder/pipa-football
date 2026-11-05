@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { VersionBadge } from '../components/VersionBadge';
-import { AccountError, accountApi, accountsAvailable, newNonce, type AccountReply, type HongGradeId, type PackPull, type PotatoSessionView } from '../online/account';
+import { AccountError, accountApi, accountsAvailable, newNonce, type AccountReply, type HongGradeId, type PackPull, type PotatoSessionView, type PotatoStats } from '../online/account';
 import { formatFV, formatMP, type Wallet } from '../players/ownership';
 import { HONG, HONG_GRADES, POTATO, potatoScore, type PotatoKind } from '../progress/events';
 import { TOP_LEGENDS } from '../progress/packs';
@@ -356,6 +356,17 @@ export function Potato({ kind }: { kind: PotatoKind }) {
   );
 }
 
+/** "11/04 23:41" in Korea time */
+function shortTime(iso: string) {
+  try {
+    const d = new Date(new Date(iso).getTime() + 9 * 3600_000);
+    const p = (n: number) => String(n).padStart(2, '0');
+    return `${p(d.getUTCMonth() + 1)}/${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
+  } catch {
+    return '';
+  }
+}
+
 const KIND_KO: Record<PotatoKind, string> = { normal: '일반 감자 +1', red: '빨간 감자 −1', rotten: '썩은 감자 −2' };
 
 function PotatoScreen({ wallet, token, online, onReply, onBack }: { wallet: Wallet; token: string | null; online: boolean; onReply: (r: AccountReply) => void; onBack: () => void }) {
@@ -368,6 +379,7 @@ function PotatoScreen({ wallet, token, online, onReply, onBack }: { wallet: Wall
   const [tapped, setTapped] = useState<Set<string>>(new Set());
   const [pops, setPops] = useState<{ key: string; hole: number; text: string; kind: PotatoKind | 'miss' }[]>([]);
   const [openGood, setOpenGood] = useState(false);
+  const [stats, setStats] = useState<PotatoStats | null>(null);
   const offset = useRef(0); // server clock − phone clock
   const seq = useRef(0);
   const lastApplied = useRef(0);
@@ -392,6 +404,7 @@ function PotatoScreen({ wallet, token, online, onReply, onBack }: { wallet: Wall
       .then((r) => {
         sync(r.serverNow, t0, Date.now());
         onReply(r);
+        if (r.potatoStats) setStats(r.potatoStats);
         if (r.potato?.status === 'playing') adopt(r.potato);
         else if (r.potato) setSess(null);
       })
@@ -429,6 +442,7 @@ function PotatoScreen({ wallet, token, online, onReply, onBack }: { wallet: Wall
       .then((r) => {
         sync(r.serverNow, t0, Date.now());
         onReply(r);
+        if (r.potatoStats) setStats(r.potatoStats);
         adopt(r.potato ?? null);
       })
       .catch((e) => {
@@ -571,6 +585,27 @@ function PotatoScreen({ wallet, token, online, onReply, onBack }: { wallet: Wall
           {msg}
         </p>
       )}
+      {/* UPDATE 9.5: my best score + recent games (from the server) */}
+      {!playing && stats && (
+        <section className="potato-stats" data-testid="potato-stats" data-best={stats.best} data-played={stats.played}>
+          <div className="potato-best">
+            <span>내 최고 점수</span>
+            <b data-testid="potato-best">{stats.best}점</b>
+            <em>플레이 {stats.played}회</em>
+          </div>
+          {stats.recent.length > 0 && (
+            <ol className="potato-recent" data-testid="potato-recent">
+              {stats.recent.slice(0, 5).map((g) => (
+                <li key={g.id} className={g.score === stats.best ? 'best' : ''}>
+                  <b>{g.score}점</b>
+                  <span>{g.reward?.pack === 'good' ? 'GOOD PACK' : g.reward?.mp ? formatMP(g.reward.mp) : ''}</span>
+                  <em>{shortTime(g.at)}</em>
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
+      )}
       <p className="pack-hint">5라운드부터 빨간 감자, 8라운드부터 썩은 감자! 점수는 0점 아래로 내려가지 않아요 · 10점 이상 GOOD PACK · 6~9점 3,000만 MP · 0~5점 1,000만 MP</p>
       {done && (
         <div className="hong-result potato-result" data-testid="potato-result" data-score={done.score}>
@@ -579,6 +614,11 @@ function PotatoScreen({ wallet, token, online, onReply, onBack }: { wallet: Wall
             <p className="potato-final">
               <b>{done.score}</b>점
             </p>
+            {done.newBest && (
+              <p className="potato-newbest" data-testid="potato-newbest">
+                🏆 최고 기록 경신!
+              </p>
+            )}
             <p className="potato-reward" data-testid="potato-reward">
               {done.reward?.pack === 'good' ? 'GOOD PLAYER PACK ×1 획득!' : done.reward?.mp ? `${formatMP(done.reward.mp)} 획득!` : ''}
             </p>

@@ -11,7 +11,7 @@ import { buildStadium } from './world/Stadium';
 import { diveCommand, OnlineKickGame } from '../online/match/penaltyRound';
 import type { KickGameOptions } from './KickGame';
 import type { PlayerDef } from '../players/players';
-import { clampKeeperX, KEEPER_LINE, type DiveDir, type MatchMode, type WireDive, type WireShot } from '../online/match/protocol';
+import { clampKeeperX, clampRunUpX, KEEPER_LINE, type DiveDir, type MatchMode, type WireDive, type WireShot } from '../online/match/protocol';
 
 export type OnlineRole = 'kicker' | 'keeper';
 
@@ -212,6 +212,7 @@ export class OnlineGameView {
     this.keeperX = 0;
     this.joy = 0;
     this.sentX = 0;
+    this.lockedRound = -1;
     this.swapGame(this.makeGame(r.kickerNick, 1));
     this.frameCamera();
   }
@@ -395,22 +396,52 @@ export class OnlineGameView {
   setJoystick(v: number) {
     this.joy = Math.max(-1, Math.min(1, Number.isFinite(v) ? v : 0));
   }
-  /** can the keeper still walk his line? (only while the kicker aims) */
+  /** UPDATE 9.5: is this run-up still before the keeper's lock? */
+  private runUpOpen() {
+    if (!this.shot || this.lockedRound === this.shot.round) return false;
+    const lockT = this.game.kicker.contactTime - KEEPER_LINE.lockLeadMs / 1000 - 0.03;
+    return this.runClock() < lockT && !this.game.keeper.committed;
+  }
+  /** can the keeper still walk his line? (while the kicker aims, and — UPDATE 9.5 — during the run-up until the lock) */
   keeperCanMove() {
-    return this.role === 'keeper' && !this.shot && this.game.phase === 'aim';
+    if (this.role !== 'keeper') return false;
+    if (!this.shot) return this.game.phase === 'aim';
+    return this.runUpOpen();
   }
   /** the opponent keeper moved (relayed by the server) → he shuffles there on this phone */
   setRemoteKeeperX(x: number) {
-    if (this.role === 'keeper' || this.shot) return;
+    if (this.role === 'keeper') return;
+    if (this.shot && !this.runUpOpen()) return;
     this.keeperX = clampKeeperX(x);
     this.game.keeper.shuffleTo(this.keeperX, KEEPER_LINE.maxSpeed);
   }
+  /**
+   * UPDATE 9.5: the server locked the keeper's spot for this shot. The replay is rebuilt with
+   * the keeper standing exactly there (= what the server judges), then caught up to now.
+   */
+  lockKeeper(x: number, round: number) {
+    if (!this.shot || this.shot.round !== round || this.lockedRound === round) return;
+    this.lockedRound = round;
+    const fx = clampKeeperX(x);
+    this.keeperX = fx;
+    this.joy = 0;
+    if (Math.abs(fx - (this.shot.keeperX ?? 0)) < 1e-6 && Math.abs(this.game.keeper.lineX - fx) < 1e-3) return;
+    this.shot = { ...this.shot, keeperX: fx };
+    const target = Math.max(0, this.simT);
+    this.swapGame(this.makeGame(this.kickerNick, this.shot.seed));
+    this.started = false;
+    this.simT = 0;
+    if (target > 0) this.advanceTo(target);
+  }
+  private lockedRound = -1;
   private stepKeeperLine(dt: number) {
     if (!this.keeperCanMove()) return;
     if (this.joy !== 0) {
       // a little push = slow side-step, full push = quick shuffle (never a sprint)
       const sp = KEEPER_LINE.maxSpeed * Math.sign(this.joy) * Math.pow(Math.abs(this.joy), 1.4);
-      this.keeperX = clampKeeperX(this.keeperX + sp * dt);
+      const next = this.keeperX + sp * dt;
+      // UPDATE 9.5: in the run-up only a smaller range (never all the way to a post)
+      this.keeperX = this.shot ? clampRunUpX(next, this.shot.x0 ?? this.shot.keeperX ?? 0) : clampKeeperX(next);
       this.game.keeper.shuffleTo(this.keeperX, KEEPER_LINE.maxSpeed);
     }
     const now = performance.now();
@@ -461,14 +492,17 @@ export class OnlineGameView {
     this.last = now;
     const lineAt = this.lineAt;
     this.lineAt = now;
+    // UPDATE 9.5 fix: real elapsed time up to 1 s (a slow phone with long frames still walks the full distance)
+    const lineDt = lineAt ? Math.min(1, Math.max(0, (now - lineAt) / 1000)) : 0;
     if (this.shot) {
+      this.stepKeeperLine(lineDt);
       const before = this.game.phase;
       this.catchUp();
       if (before !== 'flight' && this.game.phase === 'flight') this.launchAt = now;
       if (this.game.outcome && !(this.shot.round in this.localOutcomes)) this.localOutcomes[this.shot.round] = this.game.outcome;
     } else {
       // the walk uses real time (a slow phone still moves at the same metres per second)
-      this.stepKeeperLine(lineAt ? Math.min(0.25, Math.max(0, (now - lineAt) / 1000)) : 0);
+      this.stepKeeperLine(lineDt);
       this.game.update(dt); // idle animation while aiming
     }
     this.renderer.render(this.scene, this.camera);

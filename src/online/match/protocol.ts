@@ -40,8 +40,27 @@ export const DIVE_DIRS: DiveDir[] = ['left', 'right', 'upLeft', 'upRight', 'up',
  * UPDATE 8: online keeper joystick — he may walk ALONG his goal line only (never forward,
  * back or past a post): x ∈ [−maxX, +maxX] (post 3.66 m − body margin). Depth never changes.
  */
-export const KEEPER_LINE = { maxX: 3.0, maxSpeed: 2.3, sendMs: 80 } as const;
+export const KEEPER_LINE = {
+  /** UPDATE 9.5: 2.92 m (the goal is a touch smaller) */
+  maxX: 2.92,
+  maxSpeed: 2.3,
+  sendMs: 80,
+  /** UPDATE 9.5: during the kicker's run-up he may still shuffle, but only this far from the middle … */
+  runUpMaxX: 1.4,
+  /** … and his spot is locked this long before foot–ball contact (both phones get the final spot) */
+  lockLeadMs: 220,
+} as const;
 export const clampKeeperX = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) ? Math.max(-KEEPER_LINE.maxX, Math.min(KEEPER_LINE.maxX, x)) : 0);
+/**
+ * UPDATE 9.5 — the range allowed during the run-up: ±runUpMaxX, widened to wherever he stood
+ * when the shot was struck (x0), so he never jumps back and can always walk back to x0.
+ */
+export function clampRunUpX(x: unknown, x0: number) {
+  const lo = Math.min(-KEEPER_LINE.runUpMaxX, x0);
+  const hi = Math.max(KEEPER_LINE.runUpMaxX, x0);
+  const v = clampKeeperX(x);
+  return Math.max(lo, Math.min(hi, v));
+}
 
 /** UPDATE 6: which online duel this match is */
 export type MatchMode = 'penalty' | 'freekick';
@@ -87,6 +106,10 @@ export interface WireShot {
   seed: number;
   /** UPDATE 8: where the keeper stood on his line when the shot was struck (server-clamped) */
   keeperX?: number;
+  /** UPDATE 9.5: his spot at the strike (the run-up range is around it) · lock time · locked */
+  x0?: number;
+  lockAt?: number;
+  locked?: boolean;
 }
 
 export interface WireDive {

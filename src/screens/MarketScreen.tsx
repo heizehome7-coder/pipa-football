@@ -7,13 +7,15 @@ import { formatMP, formatMPKo, type Wallet } from '../players/ownership';
 import type { Squad } from '../players/squad';
 import { PROGRESSION, saleFee, saleRange, sellerRevenue } from '../progress/progression';
 
-type Filter = 'ALL' | 'FORWARD' | 'MIDFIELDER' | 'DEFENDER' | 'GOALKEEPER' | 'LEGEND';
-const FILTERS: Filter[] = ['ALL', 'FORWARD', 'MIDFIELDER', 'DEFENDER', 'GOALKEEPER', 'LEGEND'];
+type Filter = 'ALL' | 'FORWARD' | 'MIDFIELDER' | 'DEFENDER' | 'GOALKEEPER' | 'LEGEND' | 'FAVORITE';
+const FILTERS: Filter[] = ['ALL', 'FAVORITE', 'FORWARD', 'MIDFIELDER', 'DEFENDER', 'GOALKEEPER', 'LEGEND'];
+const FILTER_LABEL: Partial<Record<Filter, string>> = { FAVORITE: '★ 관심' };
 type Sort = 'PRICE LOW' | 'PRICE HIGH' | 'NAME';
 const SORTS: Sort[] = ['PRICE LOW', 'PRICE HIGH', 'NAME'];
 
-const inFilter = (p: PlayerDef, f: Filter) =>
+const inFilter = (p: PlayerDef, f: Filter, favs: Set<string> = new Set()) =>
   f === 'ALL' ||
+  (f === 'FAVORITE' && favs.has(p.id)) ||
   (f === 'FORWARD' && p.role === 'FW') ||
   (f === 'MIDFIELDER' && p.role === 'MF') ||
   (f === 'DEFENDER' && p.role === 'DF') ||
@@ -57,6 +59,27 @@ export function MarketScreen({
   const [mine, setMine] = useState<Listing[]>([]);
   const available = wallet.mp !== null && !!token;
   const mp = wallet.mp ?? 0;
+  // UPDATE 9.5: 관심 선수 — saved on the account (instant on screen, the server's list wins)
+  const [favs, setFavs] = useState<Set<string>>(() => new Set(wallet.favorites ?? []));
+  useEffect(() => setFavs(new Set(wallet.favorites ?? [])), [wallet.favorites]);
+  const toggleFav = (p: PlayerDef) => {
+    if (!available || !token) return setToast({ text: '관심 선수는 Render 서버 버전에서 저장할 수 있어요', tone: 'warn' });
+    const on = !favs.has(p.id);
+    setFavs((f) => {
+      const n = new Set(f);
+      if (on) n.add(p.id);
+      else n.delete(p.id);
+      return n;
+    });
+    accountApi
+      .setFavorite(token, p.id, on)
+      .then(onReply)
+      .catch((e) => {
+        if (e instanceof AccountError && e.reply) onReply(e.reply);
+        setFavs(new Set(wallet.favorites ?? []));
+        setToast({ text: e instanceof Error ? e.message : '저장하지 못했어요', tone: 'warn' });
+      });
+  };
 
   const loadState = useCallback(() => {
     if (!token) return;
@@ -80,11 +103,11 @@ export function MarketScreen({
   const priceOf = (p: PlayerDef) => offers[p.id]?.min ?? p.price!;
 
   const list = useMemo(() => {
-    const l = MARKET_PLAYERS.filter((p) => inFilter(p, filter) && matchesSearch(p, query));
+    const l = MARKET_PLAYERS.filter((p) => inFilter(p, filter, favs) && matchesSearch(p, query));
     const pr = (p: PlayerDef) => offers[p.id]?.min ?? p.price!;
     if (sort === 'NAME') return [...l].sort((a, b) => a.nameKo.localeCompare(b.nameKo, 'ko'));
     return [...l].sort((a, b) => (sort === 'PRICE LOW' ? pr(a) - pr(b) : pr(b) - pr(a)) || a.nameKo.localeCompare(b.nameKo, 'ko'));
-  }, [filter, sort, offers, query]);
+  }, [filter, sort, offers, query, favs]);
 
   const isListed = (id: string) => (wallet.listed ?? []).includes(id);
   const askBuy = (p: PlayerDef) => {
@@ -165,7 +188,8 @@ export function MarketScreen({
           <div className="squad-filters" role="tablist">
             {FILTERS.map((f) => (
               <button key={f} className={`chip ${filter === f ? 'on' : ''}`} onClick={() => setFilter(f)} role="tab" aria-selected={filter === f} data-testid={`mfilter-${f}`}>
-                {f}
+                {FILTER_LABEL[f] ?? f}
+                {f === 'FAVORITE' && favs.size > 0 ? ` ${favs.size}` : ''}
               </button>
             ))}
           </div>
@@ -176,7 +200,12 @@ export function MarketScreen({
               </button>
             ))}
           </div>
-          {!list.length && (
+          {!list.length && filter === 'FAVORITE' && !query && (
+            <p className="dev-empty" data-testid="market-empty">
+              아직 관심 선수가 없어요 — 카드의 ☆를 눌러 추가하세요
+            </p>
+          )}
+          {!list.length && (filter !== 'FAVORITE' || query) && (
             <p className="dev-empty" data-testid="market-empty">
               {PLAYERS.some((p) => p.starter && matchesSearch(p, query))
                 ? `"${query}" — 무료 스타터 선수예요 (SQUAD에서 바로 사용, 이적시장 판매 없음)`
@@ -185,14 +214,25 @@ export function MarketScreen({
           )}
           <div className="card-grid" data-testid="market-grid">
             {list.map((p) => (
-              <PlayerCard
-                key={p.id}
-                player={p}
-                selected={false}
-                market={{ price: priceOf(p), owned: wallet.owned.has(p.id), listed: isListed(p.id), userOffers: offers[p.id]?.count ?? 0 }}
-                onToggle={() => setDetail(p)}
-                onInfo={() => setDetail(p)}
-              />
+              <div className="mcard-wrap" key={p.id}>
+                <PlayerCard
+                  player={p}
+                  selected={false}
+                  market={{ price: priceOf(p), owned: wallet.owned.has(p.id), listed: isListed(p.id), userOffers: offers[p.id]?.count ?? 0 }}
+                  onToggle={() => setDetail(p)}
+                  onInfo={() => setDetail(p)}
+                />
+                <button
+                  className={`fav-star ${favs.has(p.id) ? 'on' : ''}`}
+                  onClick={(e) => (e.stopPropagation(), toggleFav(p))}
+                  aria-label={favs.has(p.id) ? '관심 선수 해제' : '관심 선수 추가'}
+                  aria-pressed={favs.has(p.id)}
+                  data-testid="fav-star"
+                  data-on={favs.has(p.id) ? '1' : '0'}
+                >
+                  {favs.has(p.id) ? '★' : '☆'}
+                </button>
+              </div>
             ))}
           </div>
         </>
@@ -249,6 +289,9 @@ export function MarketScreen({
                   BUY
                 </button>
               )}
+              <button className={`btn-ghost fav-btn ${favs.has(detail.id) ? 'on' : ''}`} onClick={() => toggleFav(detail)} data-testid="detail-fav">
+                {favs.has(detail.id) ? '★ 관심' : '☆ 관심'}
+              </button>
               <button className="btn-ghost" onClick={() => setDetail(null)}>
                 닫기
               </button>

@@ -2,8 +2,9 @@ import type { GameMode } from './types';
 
 /** Real-world football dimensions (metres). Goal line is z = 0, pitch extends to +z. */
 export const FIELD = {
-  goalHalfWidth: 3.66,
-  goalHeight: 2.44,
+  // UPDATE 9.5: the goal a touch smaller (7.32 × 2.44 → 7.14 × 2.38, about −2.5 %)
+  goalHalfWidth: 3.57,
+  goalHeight: 2.38,
   postRadius: 0.06,
   goalDepth: 1.95,
   netBackHeight: 2.0,
