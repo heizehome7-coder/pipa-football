@@ -141,8 +141,23 @@ export interface PotatoSessionView {
   newBest?: boolean;
 }
 
+/** UPDATE 11 patch: the weekday play time limit (decided by the server's clock) */
+export interface AccessState {
+  locked: boolean;
+  mode: 'auto' | 'open';
+  window: boolean;
+  endsAt: string | null;
+  serverTime: string;
+}
+/** anything that hits the limit (HTTP 423) tells the app at once */
+let onLocked: ((a: AccessState) => void) | null = null;
+export const setLockedHandler = (f: ((a: AccessState) => void) | null) => (onLocked = f);
+
 export interface AccountReply {
   ok: boolean;
+  /** UPDATE 11 patch */
+  matchSquad?: import('../match/formation').MatchSquad | null;
+  access?: AccessState;
   created?: boolean;
   token?: string;
   nickname?: string;
@@ -245,11 +260,15 @@ async function post(path: string, body: unknown, timeoutMs = 75_000): Promise<Ac
   } catch {
     throw new AccountError('offline', '서버에 연결할 수 없어요. 잠시 후 다시 시도해주세요');
   }
+  if (res.status === 423 && data.access) onLocked?.(data.access);
   if (!data.ok) throw new AccountError(data.error ?? 'error', data.message ?? '잠시 후 다시 시도해주세요', data);
   return data;
 }
 
 export const accountApi = {
+  /** UPDATE 11 patch */
+  access: () => post('/api/access', {}, 15_000) as Promise<AccountReply & AccessState>,
+  saveMatchSquad: (token: string, matchSquad: import('../match/formation').MatchSquad) => post('/api/match-squad', { token, matchSquad }, 20_000),
   auth: (nickname: string, password: string) => post('/api/auth', { nickname, password }),
   session: (token: string) => post('/api/session', { token }, 30_000),
   saveSquad: (token: string, squad: Squad) => post('/api/squad', { token, squad }, 20_000),
@@ -347,6 +366,11 @@ export const devApi = {
   /** UPDATE 9.5: FV, 홍 tokens, GOOD / LEGEND packs */
   grantItems: (devToken: string, nickname: string, item: DevItem, count: number) =>
     devPost('/api/dev/grant-items', { devToken, nickname, item, count }) as Promise<DevReply & { after?: number; item?: DevItem }>,
+  /** UPDATE 11: take MP / FV back (never more than the user has) */
+  /** UPDATE 11 patch: SERVER ACCESS CONTROL — 'open' = 전체 게임 열기 · 'auto' = 자동 시간 제한 복구 */
+  access: (devToken: string, mode: 'open' | 'auto') => devPost('/api/dev/access', { devToken, mode }) as Promise<DevReply & AccessState>,
+  removeCurrency: (devToken: string, nickname: string, currency: 'mp' | 'fv', amount: number) =>
+    devPost('/api/dev/remove-currency', { devToken, nickname, currency, amount }) as Promise<DevReply & { before?: number; after?: number; removed?: number }>,
 };
 
 /** UPDATE 9: a fresh id per button press (a network retry of the same press is answered once) */

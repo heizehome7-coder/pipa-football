@@ -18,6 +18,20 @@ function MarketIcon() {
   );
 }
 
+/** UPDATE 11: two goals and a ball (5 vs 5) */
+export function MatchIcon() {
+  return (
+    <svg viewBox="0 0 64 64" aria-hidden>
+      <rect x="6" y="14" width="52" height="36" rx="3" fill="none" stroke="currentColor" strokeWidth="3" />
+      <line x1="32" y1="14" x2="32" y2="50" stroke="currentColor" strokeWidth="2.5" />
+      <circle cx="32" cy="32" r="7" fill="none" stroke="currentColor" strokeWidth="2.5" />
+      <rect x="2" y="25" width="5" height="14" fill="var(--lime)" />
+      <rect x="57" y="25" width="5" height="14" fill="var(--lime)" />
+      <circle cx="41" cy="38" r="3.4" fill="var(--lime)" />
+    </svg>
+  );
+}
+
 function SoloIcon() {
   return (
     <svg viewBox="0 0 64 64" aria-hidden>
@@ -69,6 +83,7 @@ export function PlayTypeScreen({
   squad,
   onSolo,
   onOnline,
+
   onSquad,
   onMarket,
   onPacks,
@@ -88,6 +103,8 @@ export function PlayTypeScreen({
   squad: Squad | null;
   onSolo: () => void;
   onOnline: () => void;
+  /** UPDATE 11: the 5-a-side MATCH (after the warning) */
+  onMatch?: () => void;
   onSquad: () => void;
   onMarket: () => void;
   /** UPDATE 8: PLAYER PACKS */

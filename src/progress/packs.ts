@@ -42,8 +42,8 @@ export function packTier(price: number): PackTier {
 
 /** every player a pack can give: tradeable market players only */
 export function packPool(players: PlayerDef[] = MARKET_PLAYERS): PlayerDef[] {
-  // UPDATE 10: same policy as the market — no defenders in packs (cards already given stay)
-  return players.filter((p) => p.tradeable && !p.starter && typeof p.price === 'number' && !p.defender);
+  // UPDATE 11 patch: defenders are back in packs too
+  return players.filter((p) => p.tradeable && !p.starter && typeof p.price === 'number');
 }
 
 /** chance (0–1) of every pool player — for tests and an odds list */

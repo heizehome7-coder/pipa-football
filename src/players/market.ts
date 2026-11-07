@@ -19,7 +19,9 @@ export type MarketCountry =
   // UPDATE 9
   | 'USA' | 'MEX'
   // UPDATE 10
-  | 'SEN' | 'WAL';
+  | 'SEN' | 'WAL'
+  // UPDATE 11
+  | 'GAB';
 
 export interface MarketRow {
   id: string;
@@ -286,7 +288,7 @@ const ICONS9: Def[] = [
  */
 const ORIGINALS10: Def[] = [
   ['songinwoo', 'Song In-woo', '송인우', 'SONG', 'IN-WOO', 'SONG', '7', ['RW'], 'KOR', [S1, BLK, 'fringe', 'none', 0.95, 0.9], F(69, 88, 99, 60, 82, 94, 86), 'TWO_FOOT_CURL_MASTER', 'B', 360],
-  ['chohyunsun', 'Cho Hyun-sun', '조현선', 'CHO', 'HYUN-SUN', 'CHO', '11', ['LW'], 'KOR', [S1, BLK, 'short', 'none', 1.0, 1.04], F(99, 90, 78, 85, 86, 70, 86), 'THUNDER_STRIKE', 'R', 390],
+  ['chohyunsun', 'Cho Hyun-sun', '조현선', 'CHO', 'HYUN-SUN', 'CHO', '11', ['LW'], 'KOR', [S1, BLK, 'short', 'none', 1.0, 1.04], F(99, 90, 78, 85, 86, 70, 86), 'THUNDER_STRIKE', 'R', 2000], // UPDATE 11: 3.9억 → 20억
   ['parkseungho', 'Park Seung-ho', '박승호', 'PARK', 'SEUNG-HO', 'PARK S.H.', '10', ['LW', 'CAM'], 'KOR', [S1, BLK, 'spiky', 'none', 1.02, 1.02], F(99, 65, 73, 82, 78, 66, 70), 'UNSTABLE_CANNON', 'R', 270],
   ['parksaha', 'Park Sa-ha', '박사하', 'PARK', 'SA-HA', 'PARK SAHA', '1', ['GK'], 'KOR', [S1, BLK, 'short', 'none', 0.9, 0.92], G(97, 98, 89, 94, 98, 88, 95), 'SMALL_FLYING_KEEPER', 'R', 1300],
   ['kimtaein', 'Kim Tae-in', '김태인', 'KIM', 'TAE-IN', 'KIM T.I.', '10', ['CAM'], 'KOR', [S1, BLK, 'swept', 'none', 1.0, 1.02], F(97, 90, 81, 86, 86, 53, 88), 'ICON_POWER_DRIVE', 'R', 1150],
@@ -296,7 +298,7 @@ const ORIGINALS10: Def[] = [
   ['handongyeon', 'Han Dong-yeon', '한동연', 'HAN', 'DONG-YEON', 'HAN', '19', ['RW'], 'KOR', [S1, BLK, 'fringe', 'none', 0.96, 0.92], F(84, 67, 99, 64, 78, 86, 74), 'WILD_LEFT_CURL', 'L', 250],
 ];
 /** PIPA ORIGINAL ids (shown with a "PIPA ORIGINAL" tag; ICON 김태인 is one too) */
-export const ORIGINAL_IDS = ORIGINALS10.map((d) => d[0]);
+export const ORIGINAL_IDS = [...ORIGINALS10.map((d) => d[0]), 'jangyounggwang', 'hanyujun', 'leejusung', 'kimgeunho', 'kimtaei', 'kimdongmin'];
 /** UPDATE 10: real height (cm) where it matters in play — 박사하's 162 cm body is drawn and collides at that size */
 export const HEIGHT_CM: Record<string, number> = { parksaha: 162 };
 
@@ -347,6 +349,52 @@ const ICONS10: Def[] = [
   ['vanpersie', 'Robin van Persie', '로빈 판 페르시', 'ROBIN', 'VAN PERSIE', 'VAN PERSIE', '20', ['ST'], 'NED', [S2, DRK, 'short', 'stubble', 1.02, 0.96], F(88, 92, 88, 80, 88, 84, 92), 'LEFT_FINESSE', 'L', 1000],
 ];
 
+// ── UPDATE 11 — 32 new players: 2 PIPA ORIGINALS · 25 current · 5 ICONS (no defenders) ──
+/** PIPA ORIGINAL players (fictional, as the game's creator specified — not real professionals) */
+const ORIGINALS11: Def[] = [
+  // UPDATE 11 patch: four more PIPA ORIGINALS
+  ['jangyounggwang', 'Jang Young-gwang', '장영광', 'JANG', 'YOUNG-GWANG', 'JANG', '6', ['CDM'], 'KOR', [S1, BLK, 'short', 'none', 0.98, 1.0], F(43, 89, 83, 62, 90, 80, 84), 'TOE_POKE_SPECIALIST', 'R', 160],
+  ['hanyujun', 'Han Yu-jun', '한유준', 'HAN', 'YU-JUN', 'HAN Y.J.', '4', ['CB'], 'KOR', [S1, BLK, 'buzz', 'none', 1.06, 1.08], F(34, 23, 28, 20, 25, 20, 40), 'DEFENSIVE_WALL', 'R', 45],
+  ['leejusung', 'Lee Ju-sung', '이주성', 'LEE', 'JU-SUNG', 'LEE J.S.', '11', ['LW'], 'KOR', [S1, BLK, 'sidepart', 'none', 0.96, 0.92], F(55, 88, 98, 40, 89, 85, 84), 'ONE_FOOT_FINESSE', 'L', 270],
+  ['kimgeunho', 'Kim Geun-ho', '김근호', 'KIM', 'GEUN-HO', 'KIM G.H.', '9', ['ST'], 'KOR', [S1, BLK, 'spiky', 'stubble', 1.04, 1.06], F(105, 76, 42, 98, 90, 70, 80), 'CHAOTIC_CANNON', 'R', 850],
+  ['kimtaei', 'Kim Tae-i', '김태이', 'KIM', 'TAE-I', 'KIM T.Y.', '16', ['CM'], 'KOR', [S1, BLK, 'sidepart', 'none', 0.95, 0.9], F(63, 98, 90, 65, 95, 90, 96), 'PRECISION_MASTER', 'R', 180],
+  ['kimdongmin', 'Kim Dong-min', '김동민', 'KIM', 'DONG-MIN', 'KIM D.M.', '9', ['ST'], 'KOR', [S1, BLK, 'spiky', 'none', 1.02, 1.04], F(98, 65, 95, 90, 81, 78, 76), 'OUTSIDE_POWER', 'R', 350],
+];
+const CURRENT11: Def[] = [
+  ['grealish', 'Jack Grealish', '잭 그릴리시', 'JACK', 'GREALISH', 'GREALISH', '18', ['LW'], 'ENG', [S1, BRN, 'swept', 'stubble', 1.0, 0.98], F(78, 80, 82, 68, 80, 76, 84), 'QUICK_LOW_CURL', 'R', 170],
+  ['trossard', 'Leandro Trossard', '레안드로 트로사르', 'LEANDRO', 'TROSSARD', 'TROSSARD', '19', ['LW'], 'BEL', [S2, BRN, 'short', 'stubble', 0.96, 0.94], F(80, 84, 84, 70, 82, 74, 82), 'TWO_FOOT_FINESSE', 'R', 120],
+  ['ferrantorres', 'Ferran Torres', '페란 토레스', 'FERRAN', 'TORRES', 'FERRAN', '7', ['RW'], 'ESP', [S2, DRK, 'short', 'none', 1.0, 0.94], F(80, 84, 76, 68, 84, 64, 80), 'CLINICAL_FINISH', 'R', 180],
+  ['ansufati', 'Ansu Fati', '안수 파티', 'ANSU', 'FATI', 'ANSU FATI', '31', ['LW'], 'ESP', [S5, BLK, 'buzz', 'none', 0.96, 0.92], F(78, 80, 76, 64, 82, 62, 76), 'LOW_DISGUISE', 'R', 60],
+  ['malen', 'Donyell Malen', '도니얼 말런', 'DONYELL', 'MALEN', 'MALEN', '17', ['RW'], 'NED', [S6, BLK, 'buzz', 'none', 0.94, 0.94], F(84, 78, 74, 70, 82, 60, 76), 'POWER_BURST', 'R', 140],
+  ['diaby', 'Moussa Diaby', '무사 디아비', 'MOUSSA', 'DIABY', 'DIABY', '10', ['RW'], 'FRA', [S7, BLK, 'buzz', 'none', 0.9, 0.88], F(80, 78, 80, 64, 84, 64, 76), 'LEFT_CURL', 'L', 150],
+  ['brennanjohnson', 'Brennan Johnson', '브레넌 존슨', 'BRENNAN', 'JOHNSON', 'B. JOHNSON', '22', ['RW'], 'WAL', [S4, BLK, 'short', 'none', 0.98, 0.92], F(80, 80, 72, 66, 84, 60, 78), 'CLINICAL_FINISH', 'R', 100],
+  ['nicogonzalez', 'Nicolás González', '니콜라스 곤살레스', 'NICOLÁS', 'GONZÁLEZ', 'N. GONZALEZ', '11', ['RW'], 'ARG', [S2, DRK, 'swept', 'stubble', 1.0, 0.98], F(82, 78, 80, 70, 78, 70, 78), 'LEFT_CURL', 'L', 130],
+  ['correa', 'Ángel Correa', '앙헬 코레아', 'ÁNGEL', 'CORREA', 'CORREA', '10', ['CF'], 'ARG', [S3, BLK, 'short', 'none', 0.92, 0.9], F(78, 82, 80, 66, 84, 70, 80), 'LOW_DISGUISE', 'R', 90],
+  ['depaul', 'Rodrigo De Paul', '로드리고 데 파울', 'RODRIGO', 'DE PAUL', 'DE PAUL', '5', ['CM'], 'ARG', [S2, BRN, 'swept', 'full', 0.98, 0.98], F(82, 80, 82, 78, 76, 80, 84), 'CONTROLLED_DRIVE', 'R', 180],
+  ['locelso', 'Giovani Lo Celso', '지오바니 로셀소', 'GIOVANI', 'LO CELSO', 'LO CELSO', '20', ['CAM'], 'ARG', [S2, BRN, 'swept', 'stubble', 0.96, 0.9], F(76, 82, 86, 70, 78, 84, 82), 'LEFT_FINESSE', 'L', 70],
+  ['nkunku', 'Christopher Nkunku', '크리스토퍼 은쿤쿠', 'CHRISTOPHER', 'NKUNKU', 'NKUNKU', '18', ['CAM', 'ST'], 'FRA', [S6, BLK, 'buzz', 'none', 0.96, 0.94], F(82, 84, 82, 70, 84, 76, 82), 'BALANCED_FINISH', 'R', 180],
+  ['morata', 'Álvaro Morata', '알바로 모라타', 'ÁLVARO', 'MORATA', 'MORATA', '7', ['ST'], 'ESP', [S2, DRK, 'short', 'stubble', 1.08, 1.0], F(82, 80, 70, 72, 80, 60, 74), 'POWER_FINISH', 'R', 110],
+  ['asensio', 'Marco Asensio', '마르코 아센시오', 'MARCO', 'ASENSIO', 'ASENSIO', '21', ['RW', 'CAM'], 'ESP', [S2, BRN, 'short', 'stubble', 1.0, 0.96], F(86, 80, 84, 80, 76, 82, 78), 'DRIVEN_CURVE', 'L', 140],
+  ['pedrogoncalves', 'Pedro Gonçalves', '페드루 곤살베스', 'PEDRO', 'GONÇALVES', 'POTE', '8', ['CAM'], 'POR', [S2, DRK, 'short', 'none', 0.94, 0.92], F(80, 84, 84, 70, 82, 80, 82), 'TWO_FOOT_FINESSE', 'R', 160],
+  ['isco', 'Isco', '이스코', 'FRANCISCO', 'ISCO', 'ISCO', '22', ['CAM'], 'ESP', [S2, DRK, 'short', 'full', 0.94, 0.98], F(76, 84, 84, 66, 82, 80, 88), 'SET_PIECE_CONTROL', 'R', 120],
+  ['zaha', 'Wilfried Zaha', '윌프리드 자하', 'WILFRIED', 'ZAHA', 'ZAHA', '11', ['LW'], 'CIV', [S7, BLK, 'twists', 'none', 0.98, 0.98], F(80, 76, 74, 66, 82, 60, 74), 'POWER_BURST', 'R', 75],
+  ['aubameyang', 'Pierre-Emerick Aubameyang', '피에르에메리크 오바메양', 'PIERRE-EMERICK', 'AUBAMEYANG', 'AUBAMEYANG', '10', ['ST'], 'GAB', [S6, BLK, 'buzz', 'stubble', 1.02, 0.96], F(84, 84, 70, 72, 86, 62, 82), 'CLINICAL_FINISH', 'R', 75],
+  ['haller', 'Sébastien Haller', '세바스티앵 알레', 'SÉBASTIEN', 'HALLER', 'HALLER', '9', ['ST'], 'CIV', [S6, BLK, 'buzz', 'full', 1.1, 1.06], F(84, 80, 66, 74, 76, 58, 80), 'POWER_FINISH', 'R', 65],
+  ['dimaria', 'Ángel Di María', '앙헬 디 마리아', 'ÁNGEL', 'DI MARÍA', 'DI MARIA', '11', ['RW'], 'ARG', [S2, BRN, 'curly', 'none', 0.98, 0.88], F(80, 86, 90, 74, 80, 86, 86), 'LEFT_FINESSE', 'L', 110],
+  ['unaisimon', 'Unai Simón', '우나이 시몬', 'UNAI', 'SIMÓN', 'UNAI SIMON', '1', ['GK'], 'ESP', [S2, DRK, 'short', 'stubble', 1.06, 1.0], G(86, 84, 84, 86, 84, 84, 84), 'POSITION_MASTER', 'R', 180],
+  ['ramsdale', 'Aaron Ramsdale', '에런 램스데일', 'AARON', 'RAMSDALE', 'RAMSDALE', '32', ['GK'], 'ENG', [S1, BRN, 'short', 'stubble', 1.04, 1.0], G(84, 82, 80, 78, 80, 80, 78), 'HIGH_REACH', 'R', 90],
+  ['petrovic', 'Đorđe Petrović', '조르제 페트로비치', 'ĐORĐE', 'PETROVIĆ', 'PETROVIC', '1', ['GK'], 'SRB', [S1, DRK, 'short', 'none', 1.1, 1.02], G(82, 80, 84, 78, 80, 82, 76), 'LONG_REACH', 'R', 65],
+  ['pope', 'Nick Pope', '닉 포프', 'NICK', 'POPE', 'POPE', '1', ['GK'], 'ENG', [S1, BRN, 'short', 'none', 1.08, 1.02], G(84, 80, 84, 84, 80, 84, 78), 'HIGH_REACH', 'R', 80],
+  ['leno', 'Bernd Leno', '베른트 레노', 'BERND', 'LENO', 'LENO', '1', ['GK'], 'GER', [S1, BRN, 'short', 'stubble', 1.04, 0.98], G(84, 80, 80, 80, 82, 78, 78), 'LOW_SAVE', 'R', 65],
+];
+const ICONS11: Def[] = [
+  ['puskas', 'Ferenc Puskás', '페렌츠 푸스카스', 'FERENC', 'PUSKÁS', 'PUSKAS', '10', ['ST'], 'HUN', [S2, BLK, 'swept', 'none', 0.96, 1.08], F(96, 92, 86, 88, 86, 84, 92), 'GALLOPING_CANNON', 'L', 1800],
+  ['gerdmuller', 'Gerd Müller', '게르트 뮐러', 'GERD', 'MÜLLER', 'G. MULLER', '13', ['ST'], 'GER', [S1, DRK, 'short', 'none', 0.9, 1.06], F(88, 96, 74, 76, 96, 68, 96), 'BOX_BOMBER', 'R', 1450],
+  ['zico', 'Zico', '지쿠', 'ARTHUR', 'ZICO', 'ZICO', '10', ['CAM'], 'BRA', [S2, BLK, 'curly', 'none', 0.94, 0.92], F(86, 92, 95, 82, 84, 98, 90), 'FREE_KICK_ARTIST', 'R', 1250],
+  ['platini', 'Michel Platini', '미셸 플라티니', 'MICHEL', 'PLATINI', 'PLATINI', '10', ['CAM'], 'FRA', [S1, BRN, 'curly', 'none', 0.98, 0.96], F(86, 95, 94, 80, 84, 96, 94), 'MAESTRO_CURL', 'R', 1350],
+  ['davidsilva', 'David Silva', '다비드 실바', 'DAVID', 'SILVA', 'D. SILVA', '21', ['CAM'], 'ESP', [S2, BLK, 'short', 'none', 0.9, 0.88], F(76, 92, 92, 66, 90, 84, 94), 'MAGIC_LEFT', 'L', 1050],
+];
+
 const row = (d: Def, legend: boolean): MarketRow => {
   const [id, name, nameKo, first, last, shirt, number, positions, country, look, ab, special, foot, priceM] = d;
   return { id, name, nameKo, first, last, shirt, number, positions, country, look, special, foot, price: priceM * M, legend, ...(isGk(ab) ? { gk: ab } : { stats: ab }) };
@@ -355,7 +403,9 @@ const row = (d: Def, legend: boolean): MarketRow => {
 /** the 95 new market players (current + legends) */
 export const MARKET_NEW: MarketRow[] = [...CURRENT.map((d) => row(d, false)), ...CURRENT8.map((d) => row(d, false)), ...ICONS8.map((d) => row(d, true)), ...CURRENT9.map((d) => row(d, false)), ...ICONS9.map((d) => row(d, true)), ...LEGENDS.map((d) => row(d, true)),
   // UPDATE 10
-  ...ORIGINALS10.map((d) => row(d, d[0] === 'kimtaein')), ...CURRENT10.map((d) => row(d, false)), ...ICONS10.map((d) => row(d, true))];
+  ...ORIGINALS10.map((d) => row(d, d[0] === 'kimtaein')), ...CURRENT10.map((d) => row(d, false)), ...ICONS10.map((d) => row(d, true)),
+  // UPDATE 11
+  ...ORIGINALS11.map((d) => row(d, false)), ...CURRENT11.map((d) => row(d, false)), ...ICONS11.map((d) => row(d, true))];
 
 /** UPDATE 4 players that move to the market (record already exists) — price only */
 export const MARKET_EXISTING_PRICES: Record<string, number> = {
@@ -387,4 +437,8 @@ export const MARKET_ORDER: string[] = [
   ...ORIGINALS10.map((d) => d[0]),
   ...CURRENT10.map((d) => d[0]),
   ...ICONS10.map((d) => d[0]),
+  // UPDATE 11: 251–282
+  ...ORIGINALS11.map((d) => d[0]),
+  ...CURRENT11.map((d) => d[0]),
+  ...ICONS11.map((d) => d[0]),
 ];

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { VersionBadge } from '../components/VersionBadge';
-import { AccountError, accountsAvailable, devApi, type DevItem, type DevSquadUser, type DevStats, type DevUser } from '../online/account';
+import { AccountError, accountApi, accountsAvailable, devApi, type AccessState, type DevItem, type DevSquadUser, type DevStats, type DevUser } from '../online/account';
 import { formatMP } from '../players/ownership';
 import { PlayerCard } from '../components/PlayerArt';
 import { getPlayer, SPECIALS, type PlayerDef } from '../players/players';
@@ -86,7 +86,7 @@ function DevAccess({ onOk, onBack }: { onOk: (t: string) => void; onBack: () => 
 }
 
 // ── 5. DEVELOPER DASHBOARD ──────────────────────────────────────────────
-type Tab = 'recent' | 'records' | 'mp' | 'packs' | 'items' | 'squads';
+type Tab = 'recent' | 'records' | 'mp' | 'remove' | 'packs' | 'items' | 'squads' | 'access';
 type RecMode = 'total' | 'penalty' | 'freekick';
 
 /** server ISO time → "YYYY-MM-DD HH:mm" in Korean time */
@@ -160,10 +160,12 @@ function DevDashboard({ devToken, onExpired, onBack }: { devToken: string; onExp
           [
             ['recent', '최근 접속자'],
             ['records', '유저 전적'],
-            ['mp', 'MP 관리'],
+            ['mp', 'MP 지급'],
+            ['remove', '재화 회수'],
             ['packs', 'PACK 지급'],
             ['items', 'FV · 토큰 · 팩'],
             ['squads', 'USER SQUADS'],
+            ['access', 'SERVER ACCESS'],
           ] as [Tab, string][]
         ).map(([t, label]) => (
           <button key={t} className={`chip ${tab === t ? 'on' : ''}`} onClick={() => setTab(t)} role="tab" aria-selected={tab === t} data-testid={`dev-tab-${t}`}>
@@ -171,7 +173,7 @@ function DevDashboard({ devToken, onExpired, onBack }: { devToken: string; onExp
           </button>
         ))}
       </div>
-      {tab !== 'squads' && <input className="dev-search" placeholder="닉네임 검색" value={q} onChange={(e) => setQ(e.target.value)} data-testid="dev-search" />}
+      {tab !== 'squads' && tab !== 'access' && <input className="dev-search" placeholder="닉네임 검색" value={q} onChange={(e) => setQ(e.target.value)} data-testid="dev-search" />}
       {err && <p className="dev-msg bad">{err}</p>}
 
       {tab === 'recent' && (
@@ -228,9 +230,11 @@ function DevDashboard({ devToken, onExpired, onBack }: { devToken: string; onExp
       )}
 
       {tab === 'mp' && <MpManager users={users} devToken={devToken} onExpired={onExpired} onGranted={() => void load()} />}
+      {tab === 'remove' && <CurrencyRemove users={users} devToken={devToken} onExpired={onExpired} onDone={() => void load()} />}
       {tab === 'packs' && <PackGrant users={users} devToken={devToken} onExpired={onExpired} onGranted={() => void load()} />}
       {tab === 'items' && <ItemGrant users={users} devToken={devToken} onExpired={onExpired} onGranted={() => void load()} />}
       {tab === 'squads' && <UserSquads devToken={devToken} onExpired={onExpired} />}
+      {tab === 'access' && <AccessControl devToken={devToken} onExpired={onExpired} />}
     </div>
   );
 }
@@ -670,6 +674,196 @@ function ItemGrant({ users, devToken, onExpired, onGranted }: { users: DevUser[]
             </div>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+/** UPDATE 11 — 재화 회수: MP or FV back from a user, only up to what he has (the server checks too) */
+function CurrencyRemove({ users, devToken, onExpired, onDone }: { users: DevUser[]; devToken: string; onExpired: () => void; onDone: () => void }) {
+  const [sel, setSel] = useState<string | null>(null);
+  const [cur, setCur] = useState<'mp' | 'fv'>('mp');
+  const [raw, setRaw] = useState('');
+  const [confirm, setConfirm] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ text: string; tone: 'good' | 'bad' } | null>(null);
+  const user = useMemo(() => users.find((u) => u.nickname === sel) ?? null, [users, sel]);
+  const unit = cur === 'mp' ? 'MP' : 'FV';
+  const have = user ? (cur === 'mp' ? user.mp ?? 0 : user.fv ?? 0) : 0;
+  const clean = raw.replace(/,/g, '').trim();
+  const amount = /^[0-9]+$/.test(clean) ? Number(clean) : NaN;
+  const valid = Number.isSafeInteger(amount) && amount >= 1;
+  const tooMuch = valid && amount > have;
+
+  const remove = async () => {
+    if (!user || !valid || tooMuch || busy) return;
+    setBusy(true);
+    try {
+      const r = await devApi.removeCurrency(devToken, user.nickname, cur, amount);
+      setMsg({ text: `재화 회수 완료 — ${fmt(r.removed ?? amount)} ${unit} (남은 ${unit} ${fmt(r.after ?? have - amount)})`, tone: 'good' });
+      setRaw('');
+      onDone();
+    } catch (e) {
+      if (e instanceof AccountError && e.code === 'dev') return onExpired();
+      setMsg({ text: e instanceof Error ? e.message : '회수하지 못했어요', tone: 'bad' });
+      onDone();
+    } finally {
+      setBusy(false);
+      setConfirm(false);
+    }
+  };
+
+  return (
+    <div className="dev-mp" data-testid="dev-remove">
+      <ul className="dev-list dev-pick">
+        {users.map((u) => (
+          <li key={u.nickname}>
+            <button className={`dev-row pick ${sel === u.nickname ? 'on' : ''}`} onClick={() => (setSel(u.nickname), setMsg(null))} data-testid="dev-remove-pick" data-nick={u.nickname}>
+              <b>{u.nickname}</b>
+              <span className="dev-time">
+                MP {fmt(u.mp ?? 0)} · FV {fmt(u.fv ?? 0)}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      {user && (
+        <div className="dev-grant" data-testid="dev-remove-form">
+          <div className="dev-grant-row">
+            <span>유저</span>
+            <b>{user.nickname}</b>
+          </div>
+          <div className="dev-grant-row">
+            <span>MP</span>
+            <b data-testid="dev-remove-mp">{fmt(user.mp ?? 0)}</b>
+          </div>
+          <div className="dev-grant-row">
+            <span>FV</span>
+            <b data-testid="dev-remove-fv">{fmt(user.fv ?? 0)}</b>
+          </div>
+          <div className="dev-subtabs" role="radiogroup">
+            {(['mp', 'fv'] as const).map((c) => (
+              <button key={c} className={`chip ${cur === c ? 'on' : ''}`} onClick={() => (setCur(c), setMsg(null))} data-testid={`dev-remove-${c}-tab`} role="radio" aria-checked={cur === c}>
+                {c.toUpperCase()}
+              </button>
+            ))}
+          </div>
+          <label className="field">
+            <span>회수 금액 ({unit})</span>
+            <input inputMode="numeric" value={raw} onChange={(e) => (setRaw(e.target.value), setMsg(null))} placeholder="예: 100000000" data-testid="dev-remove-amount" />
+          </label>
+          {raw && !valid && <p className="dev-msg bad">1 이상의 정수만 입력할 수 있어요</p>}
+          {tooMuch && (
+            <p className="dev-msg bad" data-testid="dev-remove-toomuch">
+              보유량({fmt(have)} {unit})보다 많이 회수할 수 없어요
+            </p>
+          )}
+          <button className="btn-primary danger" disabled={!valid || tooMuch || busy} onClick={() => setConfirm(true)} data-testid="dev-remove-btn">
+            재화 회수
+          </button>
+        </div>
+      )}
+      {msg && (
+        <p className={`dev-msg ${msg.tone}`} data-testid="dev-remove-msg">
+          {msg.text}
+        </p>
+      )}
+      {confirm && user && valid && !tooMuch && (
+        <div className="detail-backdrop confirm" data-testid="dev-remove-confirm">
+          <div className="detail-card confirm-card">
+            <p className="confirm-q">
+              {user.nickname}에게서
+              <br />
+              <b className="confirm-name">
+                {fmt(amount)} {unit}
+              </b>
+              를 회수하시겠습니까?
+            </p>
+            <dl className="confirm-rows">
+              <dt>현재 {unit}</dt>
+              <dd>{fmt(have)}</dd>
+              <dt>회수 후 {unit}</dt>
+              <dd className="after">{fmt(have - amount)}</dd>
+            </dl>
+            <div className="detail-actions">
+              <button className="btn-primary" onClick={remove} disabled={busy} data-testid="dev-remove-ok">
+                {busy ? '회수 중…' : '확인'}
+              </button>
+              <button className="btn-ghost" onClick={() => setConfirm(false)} disabled={busy} data-testid="dev-remove-cancel">
+                취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * UPDATE 11 patch — SERVER ACCESS CONTROL: the weekday limit (MON–FRI 08:35–15:00 KST,
+ * decided by the server clock). [전체 게임 열기] opens the game for everyone even inside the
+ * window; [자동 시간 제한 복구] goes back to the automatic limit. Saved on the server.
+ */
+function AccessControl({ devToken, onExpired }: { devToken: string; onExpired: () => void }) {
+  const [st, setSt] = useState<AccessState | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const load = async () => {
+    try {
+      setSt(await accountApi.access());
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : '상태를 불러오지 못했어요');
+    }
+  };
+  useEffect(() => {
+    void load();
+  }, []);
+  const set = async (mode: 'open' | 'auto') => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const r = await devApi.access(devToken, mode);
+      setSt(r);
+      setMsg(mode === 'open' ? '전체 게임을 열었어요 (시간 제한 없음)' : '자동 시간 제한을 복구했어요');
+    } catch (e) {
+      if (e instanceof AccountError && e.code === 'dev') return onExpired();
+      setMsg(e instanceof Error ? e.message : '변경하지 못했어요');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const kst = (iso?: string | null) => (iso ? new Date(iso).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', hour12: false }) : '-');
+  return (
+    <div className="dev-grant" data-testid="dev-access-ctl">
+      <p className="eyebrow">SERVER ACCESS CONTROL</p>
+      <p className="ms-sub">평일(월–금) 08:35–15:00 (서울 시간)에는 게임 이용이 제한돼요. 서버 시간 기준이에요.</p>
+      <div className="dev-grant-row">
+        <span>현재 모드</span>
+        <b data-testid="dev-access-mode">{st ? (st.mode === 'open' ? '전체 열림 (OPEN)' : '자동 시간 제한 (AUTO)') : '…'}</b>
+      </div>
+      <div className="dev-grant-row">
+        <span>지금 상태</span>
+        <b data-testid="dev-access-state">{st ? (st.locked ? '이용 제한 중' : '이용 가능') : '…'}</b>
+      </div>
+      <div className="dev-grant-row">
+        <span>서버 시간 (KST)</span>
+        <b>{kst(st?.serverTime)}</b>
+      </div>
+      <div className="dev-grant-row">
+        <span>제한 시간대</span>
+        <b>{st ? (st.window ? '지금 제한 시간대' : '제한 시간대 아님') : '…'}</b>
+      </div>
+      <button className="btn-primary" disabled={busy || st?.mode === 'open'} onClick={() => void set('open')} data-testid="dev-access-open">
+        전체 게임 열기
+      </button>
+      <button className="btn-ghost" disabled={busy || st?.mode === 'auto'} onClick={() => void set('auto')} data-testid="dev-access-auto">
+        자동 시간 제한 복구
+      </button>
+      {msg && (
+        <p className="dev-msg" data-testid="dev-access-msg">
+          {msg}
+        </p>
       )}
     </div>
   );

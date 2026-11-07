@@ -57,6 +57,11 @@ export function SquadScreen({
       setGk((g) => (g === p.id ? null : p.id)); // one keeper: picking another replaces him
       return;
     }
+    // UPDATE 11 patch: defenders play in the MATCH, but never take penalties / free kicks
+    if (p.defender && !order.includes(p.id)) {
+      setToast('수비수는 페널티킥·프리킥 키커로 선택할 수 없어요 (경기 MATCH에서는 출전 가능)');
+      return;
+    }
     if (order.includes(p.id)) {
       setOrder(order.filter((x) => x !== p.id));
       if (fk === p.id) setFk(null);

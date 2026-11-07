@@ -7,9 +7,9 @@ import { formatMP, formatMPKo, type Wallet } from '../players/ownership';
 import type { Squad } from '../players/squad';
 import { PROGRESSION, saleFee, saleRange, sellerRevenue } from '../progress/progression';
 
-// UPDATE 10: no DEFENDER filter — defenders are no longer sold
+// UPDATE 11 patch: defenders are back (DEFENDER filter)
 type Filter = 'ALL' | 'FORWARD' | 'MIDFIELDER' | 'DEFENDER' | 'GOALKEEPER' | 'LEGEND' | 'FAVORITE';
-const FILTERS: Filter[] = ['ALL', 'FAVORITE', 'FORWARD', 'MIDFIELDER', 'GOALKEEPER', 'LEGEND'];
+const FILTERS: Filter[] = ['ALL', 'FAVORITE', 'FORWARD', 'MIDFIELDER', 'DEFENDER', 'GOALKEEPER', 'LEGEND'];
 const FILTER_LABEL: Partial<Record<Filter, string>> = { FAVORITE: '★ 관심' };
 type Sort = 'PRICE LOW' | 'PRICE HIGH' | 'NAME';
 const SORTS: Sort[] = ['PRICE LOW', 'PRICE HIGH', 'NAME'];
@@ -449,10 +449,6 @@ function MyPlayers({
             {locked ? (
               <button className="btn-ghost small" onClick={() => toast('현재 스쿼드에서 사용 중인 선수입니다.', 'warn')} data-testid="sell-blocked">
                 IN SQUAD
-              </button>
-            ) : p.defender ? (
-              <button className="btn-ghost small" onClick={() => toast('수비수는 이적시장에 등록할 수 없어요 (UPDATE 10)', 'warn')} data-testid="sell-defender">
-                판매 불가 · 수비수
               </button>
             ) : card.evo ? (
               <button className="btn-ghost small" onClick={() => toast('진화한 카드는 판매할 수 없어요', 'warn')} data-testid="sell-evolved">

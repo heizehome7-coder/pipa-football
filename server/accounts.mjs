@@ -43,6 +43,11 @@
  *   UPDATE 9.5: POST /api/favorites {token, playerId, on?} ← {ok, favorites, …me}
  *               POST /api/dev/grant-items {devToken, nickname, item: fv|bronze|silver|gold|red|good|legend, count}
  *               potatoStats {best, played, recent[]} in /api/events/state and …/potato/finish
+ *   UPDATE 11: POST /api/dev/remove-currency {devToken, nickname, currency: mp|fv, amount} ← {ok, before, after}  (≤ balance)
+ *   UPDATE 11 patch: POST /api/match-squad {token, matchSquad:{formation:'4-3-3H', xi:{GK…RW}, subs[≤4]}} ← {ok, matchSquad}
+ *              POST /api/access {} ← {ok, locked, mode, window, endsAt, serverTime}  (weekday MON–FRI 08:35–15:00 KST)
+ *              POST /api/dev/access {devToken, mode: open|auto}  (kept in settings, survives restarts)
+ *              while locked every game API except auth/session/logout/me/access/dev answers 423 {error:'locked', access}
  *   UPDATE 10: POST /api/evo/buy {token, ovr, currency: mp|fv, nonce}      ← {ok, materials, …me}
  *              POST /api/evo/evolve {token, cardKey, materialId, nonce}     ← {ok, success, rate, from, evoLevel, …me}
  *              POST /api/missions/state|play|claim {token, (seconds | id)}  ← {ok, missions, week, resetInMs}
@@ -171,6 +176,28 @@ function fileStore(dir) {
         return [];
       }
     },
+    // UPDATE 11 patch: server settings (SERVER ACCESS CONTROL) — kept across restarts
+    async getSetting(key) {
+      try {
+        const all = JSON.parse(fs.readFileSync(path.join(dir, 'settings.json'), 'utf8'));
+        return Object.hasOwn(all, key) ? all[key] : null;
+      } catch {
+        return null;
+      }
+    },
+    async setSetting(key, value) {
+      const f = path.join(dir, 'settings.json');
+      let all = {};
+      try {
+        all = JSON.parse(fs.readFileSync(f, 'utf8'));
+      } catch {
+        all = {};
+      }
+      all[key] = value;
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(f + '.tmp', JSON.stringify(all));
+      fs.renameSync(f + '.tmp', f);
+    },
     // UPDATE 7: market listings
     async listings() {
       return Object.values(listings);
@@ -221,6 +248,10 @@ async function pgStore(url) {
     amount  BIGINT,
     detail  JSONB NOT NULL DEFAULT '{}'::jsonb
   )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS pipa_settings (
+    key   TEXT PRIMARY KEY,
+    value JSONB NOT NULL
+  )`);
   const row = (r) => r && { key: r.nick_key, nickname: r.nickname, salt: r.salt, hash: r.hash, tokens: r.tokens, data: r.data, createdAt: r.created_at };
   return {
     kind: 'postgres',
@@ -256,6 +287,14 @@ async function pgStore(url) {
     async actions(limit = 50) {
       const { rows } = await pool.query('SELECT detail FROM pipa_dev_log ORDER BY id DESC LIMIT $1', [limit]);
       return rows.map((r) => r.detail);
+    },
+    // UPDATE 11 patch: server settings (SERVER ACCESS CONTROL)
+    async getSetting(key) {
+      const { rows } = await pool.query('SELECT value FROM pipa_settings WHERE key = $1', [key]);
+      return rows[0] ? rows[0].value : null;
+    },
+    async setSetting(key, value) {
+      await pool.query('INSERT INTO pipa_settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value', [key, JSON.stringify(value)]);
     },
     async listings() {
       const { rows } = await pool.query('SELECT * FROM pipa_listings');
@@ -304,9 +343,17 @@ function cleanSquad(s, catalog) {
     if (!s.penaltyOrder.every((x) => role(x) && role(x) !== 'GK') || role(s.goalkeeperId) !== 'GK') return null;
     if (!s.penaltyOrder.includes(s.freeKickTakerId)) return null;
   }
-  return { penaltyOrder: [...s.penaltyOrder], goalkeeperId: s.goalkeeperId, freeKickTakerId: s.freeKickTakerId };
+  // UPDATE 11: SUBSTITUTES — up to 5 owned players, never one of the starters, no duplicates
+  let subs = [];
+  if (s.subs !== undefined) {
+    if (!Array.isArray(s.subs) || s.subs.length > 5 || !s.subs.every(id) || new Set(s.subs).size !== s.subs.length) return null;
+    if (s.subs.some((x) => s.penaltyOrder.includes(x) || x === s.goalkeeperId)) return null;
+    if (catalog && !s.subs.every((x) => catalog.getPlayer(x))) return null;
+    subs = [...s.subs];
+  }
+  return { penaltyOrder: [...s.penaltyOrder], goalkeeperId: s.goalkeeperId, freeKickTakerId: s.freeKickTakerId, ...(subs.length ? { subs } : {}) };
 }
-const squadIds = (s) => (s ? [...s.penaltyOrder, s.goalkeeperId, s.freeKickTakerId] : []);
+const squadIds = (s) => (s ? [...s.penaltyOrder, s.goalkeeperId, s.freeKickTakerId, ...(Array.isArray(s.subs) ? s.subs : [])] : []);
 
 // ── manager ──────────────────────────────────────────────
 // ── DEVELOPER MODE code: env DEVELOPER_CODE, else this salted scrypt hash (no plain code anywhere) ──
@@ -517,6 +564,8 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
     hong: hongOf(rec.data),
     // UPDATE 9.5
     favorites: Array.isArray(rec.data?.favorites) ? rec.data.favorites : [],
+    // UPDATE 11 patch: the MATCH squad (separate from the penalty squad)
+    matchSquad: rec.data?.matchSquad ?? null,
     // UPDATE 10
     season: SEASON(),
     starterEvo: rec.data?.starterEvo ?? {},
@@ -611,6 +660,9 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
         const rec = (await load(found.key)) ?? found;
         const s = cleanSquad(squad, catalog);
         if (!s) return { status: 400, body: { ok: false, error: 'squad', message: '스쿼드 구성이 올바르지 않아요' } };
+        // UPDATE 11 patch: defenders never take penalties / free kicks (they play in the MATCH)
+        if (catalog && s.penaltyOrder.some((id) => catalog.getPlayer(id)?.defender))
+          return { status: 400, body: { ok: false, error: 'defender_kicker', message: '수비수는 페널티킥·프리킥 키커로 선택할 수 없어요' } };
         // a pre-UPDATE-6 account that never saved a squad on the server: its device squad counts
         migrate(rec, rec.data?.squad ?? s);
         if (catalog && !squadIds(s).every((id) => owns(rec, id)))
@@ -621,6 +673,69 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
       });
     })();
   }
+
+  /**
+   * UPDATE 11 patch — the MATCH squad (4-3-3 HOLDING: 11 starters + 4 substitutes), kept apart
+   * from the penalty squad (penaltyOrder / free-kick taker never change here).
+   */
+  function saveMatchSquad({ token, matchSquad }) {
+    if (typeof token !== 'string' || token.length < 16) return NO_SESSION;
+    return (async () => {
+      const found = await store.byToken(sha(token));
+      if (!found) return NO_SESSION;
+      return withLock(found.key, async () => {
+        const rec = (await load(found.key)) ?? found;
+        migrate(rec);
+        if (!catalog?.validMatchSquad || !catalog.validMatchSquad(matchSquad, catalog.getPlayer))
+          return { status: 400, body: { ok: false, error: 'match_squad', message: 'MATCH 스쿼드 구성이 올바르지 않아요 (선발 11명 · 교체 최대 4명 · 중복 없음 · GK 자리에는 GK)' } };
+        const ids = [...catalog.SLOT_IDS.map((k) => matchSquad.xi[k]), ...matchSquad.subs];
+        if (!ids.every((id) => owns(rec, id))) return { status: 403, body: { ok: false, error: 'not_owned', message: '보유하지 않은 선수가 있어요' } };
+        const clean = { formation: matchSquad.formation, xi: Object.fromEntries(catalog.SLOT_IDS.map((k) => [k, matchSquad.xi[k]])), subs: [...matchSquad.subs] };
+        rec.data = { ...(rec.data ?? {}), matchSquad: clean };
+        await store.put(rec);
+        return { status: 200, body: { ok: true, matchSquad: clean } };
+      });
+    })();
+  }
+
+  // ── SERVER ACCESS CONTROL (UPDATE 11 patch) ───────────────────────────
+  // weekday play time limit MON–FRI 08:35–15:00 Asia/Seoul — the server's clock decides
+  let accessMode = 'auto'; // 'auto' (the weekday limit) | 'open' (the developer opened the game)
+  const accessReady = store.getSetting ? store.getSetting('access').then((v) => {
+    if (v && (v.mode === 'open' || v.mode === 'auto')) accessMode = v.mode;
+  }).catch(() => {}) : Promise.resolve();
+  // tests only: PIPA_CLOCK_OVERRIDE pins the server clock (never set in production)
+  const serverNow = () => (process.env.PIPA_CLOCK_OVERRIDE ? Date.parse(process.env.PIPA_CLOCK_OVERRIDE) : Date.now());
+  function accessNow() {
+    const w = catalog?.accessWindow ? catalog.accessWindow(serverNow()) : { inside: false, endsAt: null };
+    const locked = w.inside && accessMode !== 'open';
+    return { locked, mode: accessMode, window: w.inside, endsAt: locked ? new Date(w.endsAt).toISOString() : null, serverTime: new Date(serverNow()).toISOString(), text: catalog?.ACCESS_TEXT ?? null };
+  }
+  async function accessState() {
+    await accessReady;
+    return { status: 200, body: { ok: true, ...accessNow() } };
+  }
+  async function devAccess({ devToken, mode }, ip) {
+    if (!devOk(devToken)) return NO_DEV;
+    if (mode !== 'open' && mode !== 'auto') return { status: 400, body: { ok: false, error: 'mode', message: 'open 또는 auto 만 가능해요' } };
+    await accessReady;
+    accessMode = mode;
+    try {
+      await store.setSetting?.('access', { mode, at: new Date().toISOString() });
+    } catch (e) {
+      log(`access: save failed ${e.message}`);
+    }
+    const entry = { developer_action: 'DEVELOPER_ACCESS_CONTROL', action: 'DEVELOPER_ACCESS_CONTROL', target: 'ALL', amount: 0, mode, timestamp: new Date().toISOString(), ip };
+    try {
+      await store.logAction(entry);
+    } catch {
+      /* log only */
+    }
+    log(`dev: SERVER ACCESS CONTROL → ${mode === 'open' ? '전체 게임 열기' : '자동 시간 제한 복구'}`);
+    return { status: 200, body: { ok: true, ...accessNow() } };
+  }
+  /** routes that still work during the limit: login, own account, the access state, developer */
+  const ACCESS_ALLOW = new Set(['/api/auth', '/api/session', '/api/logout', '/api/me', '/api/access']);
 
   // ── TRANSFER MARKET (UPDATE 6 buy · UPDATE 7 user listings, sell, cancel) ─────────
   const inSquad = (rec, id) => squadIds(rec.data?.squad).includes(id);
@@ -651,8 +766,8 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
         syncCards(rec);
         const value = typeof playerId === 'string' && catalog ? catalog.marketPrice(playerId) : null;
         if (value == null) return { status: 400, body: { ok: false, error: 'not_for_sale', message: '판매하지 않는 선수예요' } };
-        // UPDATE 10: defenders are no longer sold (cards already owned stay owned)
-        if (catalog.isBuyable && !catalog.isBuyable(playerId)) return { status: 400, body: { ok: false, error: 'not_for_sale', message: '이적시장에서 더 이상 판매하지 않는 선수예요 (수비수)' } };
+        // UPDATE 11 patch: defenders are on sale again (isBuyable = every market player)
+        if (catalog.isBuyable && !catalog.isBuyable(playerId)) return { status: 400, body: { ok: false, error: 'not_for_sale', message: '판매하지 않는 선수예요' } };
         const owned = rec.data.owned ?? [];
         if (owned.includes(playerId) || (rec.data.listed ?? []).includes(playerId))
           return { status: 409, body: { ok: false, error: 'owned', message: '이미 보유한 선수예요', ...view(rec) } };
@@ -709,8 +824,7 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
         if (!owned.includes(playerId)) return { status: 403, body: { ok: false, error: 'not_owned', message: '보유하지 않은 선수예요', ...view(rec) } };
         // UPDATE 8: a spare copy of a squad player can be sold (the squad keeps one card)
         if (inSquad(rec, playerId) && countOf(rec, playerId) <= 1) return { status: 409, body: { ok: false, error: 'in_squad', message: '현재 스쿼드에서 사용 중인 선수입니다.' } };
-        // UPDATE 10: no new defender listings; an evolved card keeps its evolution and is not sold
-        if (catalog.getPlayer(playerId)?.defender) return { status: 403, body: { ok: false, error: 'defender', message: '수비수는 이적시장에 등록할 수 없어요' } };
+        // UPDATE 11 patch: defenders can be listed again; an evolved card keeps its evolution and is not sold
         const pick = typeof cardId === 'string' ? cardsOf(rec.data).find((c) => c.id === cardId && c.playerId === playerId) : null;
         if (pick?.evo) return { status: 403, body: { ok: false, error: 'evolved', message: '진화한 카드는 판매할 수 없어요' } };
         const value = catalog.marketPrice(playerId);
@@ -1591,6 +1705,52 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
     return { status: 200, body: { ok: true, nickname: r.nickname, item, granted: count, before: r.before, after: r.after } };
   }
 
+  /**
+   * UPDATE 11 — take MP or FV back from a user (e.g. a mistaken grant). Only what the user
+   * still has: more than the balance is refused (never below 0). Logged as
+   * DEVELOPER_REMOVE_CURRENCY {targetUserId, currency, amount, timestamp}.
+   */
+  async function devRemoveCurrency({ devToken, nickname, currency, amount }, ip) {
+    if (!devOk(devToken)) return NO_DEV;
+    if (currency !== 'mp' && currency !== 'fv') return { status: 400, body: { ok: false, error: 'currency', message: '회수할 재화(MP 또는 FV)를 골라주세요' } };
+    if (typeof amount !== 'number' || !Number.isSafeInteger(amount) || amount <= 0)
+      return { status: 400, body: { ok: false, error: 'amount', message: '회수할 금액은 1 이상의 정수만 가능해요' } };
+    if (typeof nickname !== 'string' || !nickname.trim()) return { status: 400, body: { ok: false, error: 'user', message: '유저를 선택해주세요' } };
+    const k = nickKey(cleanNick(nickname));
+    const r = await withLock(k, async () => {
+      const rec = await load(k);
+      if (!rec) return { missing: true };
+      migrate(rec);
+      const before = currency === 'mp' ? rec.data?.mp ?? 0 : rec.data?.fv ?? 0;
+      if (amount > before) return { tooMuch: true, before, nickname: rec.nickname };
+      rec.data = { ...rec.data, [currency]: before - amount };
+      await store.put(rec);
+      return { nickname: rec.nickname, before, after: before - amount, rec };
+    });
+    if (r.missing) return { status: 404, body: { ok: false, error: 'user', message: '그런 유저가 없어요' } };
+    const unit = currency === 'mp' ? 'MP' : 'FV';
+    if (r.tooMuch)
+      return { status: 409, body: { ok: false, error: 'insufficient', message: `${r.nickname}의 보유량(${r.before.toLocaleString('en-US')} ${unit})보다 많이 회수할 수 없어요`, before: r.before } };
+    const entry = {
+      developer_action: 'DEVELOPER_REMOVE_CURRENCY', action: 'DEVELOPER_REMOVE_CURRENCY', target: r.nickname, targetUserId: k,
+      currency: unit, amount, before: r.before, after: r.after, timestamp: new Date().toISOString(), ip,
+    };
+    try {
+      await store.logAction(entry);
+    } catch (e) {
+      log(`devlog failed: ${e.message}`);
+    }
+    log(`dev: DEVELOPER_REMOVE_CURRENCY ${amount} ${unit} ← "${r.nickname}" (${r.before} → ${r.after})`);
+    if (currency === 'mp') rankingChanged();
+    try {
+      if (currency === 'mp') onWallet(r.nickname, r.after);
+      onPacks(r.nickname, r.rec.data?.unopenedPacks ?? 0); // the phone re-reads its whole wallet
+    } catch {
+      /* offline */
+    }
+    return { status: 200, body: { ok: true, nickname: r.nickname, currency, removed: amount, before: r.before, after: r.after } };
+  }
+
   async function devLog({ devToken }) {
     if (!devOk(devToken)) return NO_DEV;
     return { status: 200, body: { ok: true, actions: await store.actions(50) } };
@@ -1676,6 +1836,11 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
     '/api/evo/buy': evoBuy,
     '/api/evo/evolve': evolve,
     '/api/dev/grant-items': devGrantItems,
+    '/api/dev/remove-currency': devRemoveCurrency,
+    // UPDATE 11 patch
+    '/api/match-squad': saveMatchSquad,
+    '/api/access': accessState,
+    '/api/dev/access': devAccess,
   };
 
   /** returns true when it handled the request */
@@ -1704,6 +1869,12 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
       }
       const ip = String(req.headers['x-forwarded-for'] ?? req.socket.remoteAddress ?? '').split(',')[0].trim();
       try {
+        // UPDATE 11 patch: the weekday play time limit (server clock, Asia/Seoul)
+        if (!ACCESS_ALLOW.has(pathname) && !pathname.startsWith('/api/dev/')) {
+          await accessReady;
+          const a = accessNow();
+          if (a.locked) return reply(423, { ok: false, error: 'locked', message: `${a.text?.title ?? 'PIPA 이용 제한 시간입니다.'} ${a.text?.body ?? ''}`, access: a });
+        }
         const r = await fn(body ?? {}, ip);
         reply(r.status, r.body);
       } catch (e) {
@@ -1743,11 +1914,15 @@ export async function createAccounts({ databaseUrl, dataDir, catalog = null, log
     }
     return n;
   }
-  const sweep = returnDefenderListings().catch((e) => log(`market: defender sweep failed ${e.message}`));
+  // UPDATE 11 patch: defenders are back on the market — the UPDATE 10 sweep no longer runs
+  void returnDefenderListings;
+  const sweep = Promise.resolve(0);
 
   return {
     handleHttp,
-    ready: sweep,
+    /** UPDATE 11 patch: new online matches can't start during the weekday limit */
+    accessLocked: () => accessNow().locked,
+    ready: Promise.all([sweep, accessReady]),
     nicknameFor,
     isRegistered,
     nickKey,

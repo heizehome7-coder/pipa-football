@@ -86,6 +86,8 @@ const matches = createMatchManager({
   log: (line) => console.log(line),
   // PIPA_SLOW_TEST=1: longer timers for automated browser tests on slow machines
   rules: process.env.PIPA_SLOW_TEST ? { aimTimeoutMs: 180_000, resultShowMs: 7000, countdownMs: 6000 } : undefined,
+  // UPDATE 11 patch: the weekday play time limit (server clock)
+  isLocked: () => accounts.accessLocked?.() ?? false,
   send(peer, msg) {
     const c = clients.get(peer);
     if (c && c.ws.readyState === 1) c.ws.send(JSON.stringify(msg));

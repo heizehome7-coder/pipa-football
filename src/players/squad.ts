@@ -10,9 +10,12 @@ export interface Squad {
   penaltyOrder: string[];
   goalkeeperId: string;
   freeKickTakerId: string;
+  /** UPDATE 11: SUBSTITUTES — up to 5 owned players on the bench (5-a-side MATCH) */
+  subs?: string[];
 }
 
 export const SQUAD_SIZE = 5;
+export const SUBS_MAX = 5;
 
 const key = (nickname: string) => `pipa.squad.v1.${nickname.trim().toLowerCase()}`;
 
@@ -24,6 +27,10 @@ export function validSquad(s: unknown): s is Squad {
   if (new Set(q.penaltyOrder).size !== SQUAD_SIZE) return false;
   if (!q.penaltyOrder.every((id) => typeof id === 'string' && PLAYER_BY_ID[id] && PLAYER_BY_ID[id].role !== 'GK')) return false;
   if (typeof q.goalkeeperId !== 'string' || PLAYER_BY_ID[q.goalkeeperId]?.role !== 'GK') return false;
+  if (q.subs !== undefined) {
+    if (!Array.isArray(q.subs) || q.subs.length > SUBS_MAX || new Set(q.subs).size !== q.subs.length) return false;
+    if (!q.subs.every((id) => typeof id === 'string' && PLAYER_BY_ID[id] && !q.penaltyOrder.includes(id) && id !== q.goalkeeperId)) return false;
+  }
   return typeof q.freeKickTakerId === 'string' && q.penaltyOrder.includes(q.freeKickTakerId);
 }
 
@@ -61,5 +68,6 @@ export function sanitizeSquad(s: unknown): Squad {
   for (const id of DEFAULT_SQUAD.penaltyOrder) if (order.length < SQUAD_SIZE && !order.includes(id)) order.push(id);
   const gk = q.goalkeeperId && PLAYER_BY_ID[q.goalkeeperId]?.role === 'GK' ? q.goalkeeperId : DEFAULT_SQUAD.goalkeeperId;
   const fk = q.freeKickTakerId && order.includes(q.freeKickTakerId) ? q.freeKickTakerId : order[0];
-  return { penaltyOrder: order.slice(0, SQUAD_SIZE), goalkeeperId: gk, freeKickTakerId: fk };
+  const subs = Array.isArray(q.subs) ? [...new Set(q.subs.filter((id) => PLAYER_BY_ID[id] && !order.slice(0, SQUAD_SIZE).includes(id) && id !== gk))].slice(0, SUBS_MAX) : [];
+  return { penaltyOrder: order.slice(0, SQUAD_SIZE), goalkeeperId: gk, freeKickTakerId: fk, ...(subs.length ? { subs } : {}) };
 }

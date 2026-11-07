@@ -16,12 +16,15 @@ import { SquadScreen } from './screens/SquadScreen';
 import { getPlayer, PLAYER_BY_ID, type PlayerDef } from './players/players';
 
 /** market players in a squad (pre-UPDATE-6 squads keep them: grandfathered by the server) */
-const squadMarketIds = (s: Squad | null) => (s ? [...s.penaltyOrder, s.goalkeeperId].filter((id) => PLAYER_BY_ID[id] && !PLAYER_BY_ID[id].starter) : []);
+const squadMarketIds = (s: Squad | null) => (s ? [...s.penaltyOrder, s.goalkeeperId, ...(s.subs ?? [])].filter((id) => PLAYER_BY_ID[id] && !PLAYER_BY_ID[id].starter) : []);
 import { DEFAULT_SQUAD, loadSquad, saveSquad, validSquad, type Squad } from './players/squad';
 import { accountApi, storeSession } from './online/account';
 import { fitSquad, formatMP, localOwned, makeOwned, walletFrom, type Wallet } from './players/ownership';
 import type { AccountReply, SaleNotice } from './online/account';
 import { RankingScreen } from './screens/RankingScreen';
+import { MatchScreen, MatchWarning } from './match/MatchScreen';
+import { MatchSquadSetup } from './match/MatchSquadSetup';
+import type { MatchSquad } from './match/formation';
 import { LevelRewardsScreen } from './screens/LevelRewardsScreen';
 import { DailyRewardModal } from './components/ProgressHeader';
 import { MarketScreen } from './screens/MarketScreen';
@@ -33,6 +36,8 @@ import { EvolutionScreen, MaterialShopScreen } from './screens/EvolutionScreen';
 import { MissionsScreen } from './screens/MissionsScreen';
 import { StatsScreen } from './screens/StatsScreen';
 import { EvoContext } from './components/PlayerArt';
+import { LockScreen } from './screens/LockScreen';
+import { setLockedHandler, type AccessState } from './online/account';
 import type { DuelMode } from './online/LobbyClient';
 
 /** UPDATE 7: XP / LEVEL UP for a finished online match (pushed by the server) */
@@ -65,11 +70,17 @@ type Screen =
   | { name: 'developer' }
   | { name: 'ranking' }
   | { name: 'levels' }
-  | { name: 'match' };
+  | { name: 'match' }
+  // UPDATE 11: the 5-a-side MATCH (single player)
+  | { name: 'match5'; squad: MatchSquad }
+  | { name: 'match-setup' };
 
 export default function App() {
   const [user, setUser] = useState<PlayerProfile | null>(null);
   const [screen, setScreen] = useState<Screen>({ name: 'login' });
+  const [matchWarn, setMatchWarn] = useState(false);
+  // UPDATE 11 patch: the weekday limit (the server's answer; any 423 reply also sets it)
+  const [lock, setLock] = useState<AccessState | null>(null);
   const [lobby, setLobby] = useState<LobbyClient | null>(null);
   const [channel, setChannel] = useState<Channel | null>(null);
   const [squad, setSquad] = useState<Squad | null>(null);
@@ -127,7 +138,8 @@ export default function App() {
   /** any account reply (MP, owned, listed, level/XP/FV, daily) → state */
   const applyReply = (r: AccountReply, u: PlayerProfile | null = user) => {
     const w = walletFrom(r);
-    setWallet(w);
+    // UPDATE 11 patch: a reply without the MATCH squad keeps the one we have
+    setWallet((prev) => (r.matchSquad === undefined ? { ...w, matchSquad: prev.matchSquad ?? null } : w));
     setSquad((s) => fitSquad(s, w.owned));
     for (const n of r.notices ?? []) showSale(n, u?.token);
   };
@@ -140,6 +152,23 @@ export default function App() {
       .catch(() => {});
   };
   // UPDATE 10: WEEKLY MISSION "PLAY FOR 5 MINUTES" — real match time only (single game / online match)
+  const checkAccess = () => {
+    accountApi
+      .access()
+      .then((a) => setLock(a.locked ? a : null))
+      .catch(() => {});
+  };
+  useEffect(() => {
+    setLockedHandler((a) => setLock(a.locked ? a : null));
+    return () => void setLockedHandler(null);
+  }, []);
+  useEffect(() => {
+    if (!user?.token) return void setLock(null);
+    checkAccess();
+    const t = setInterval(checkAccess, 60_000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.token]);
   useEffect(() => {
     if (!user?.token || (screen.name !== 'game' && screen.name !== 'match')) return;
     const tok = user.token;
@@ -286,7 +315,7 @@ export default function App() {
     // other people's cards: never my own evolution levels
     body = (
       <EvoContext.Provider value={null}>
-        <DeveloperScreen onBack={() => setScreen({ name: 'playtype' })} />
+        <DeveloperScreen onBack={() => (checkAccess(), setScreen({ name: 'playtype' }))} />
       </EvoContext.Provider>
     );
   } else if (screen.name === 'online-modes') {
@@ -299,6 +328,18 @@ export default function App() {
         onBack={() => setScreen({ name: 'playtype' })}
       />
     );
+  } else if (screen.name === 'match-setup') {
+    body = (
+      <MatchSquadSetup
+        wallet={wallet}
+        token={user?.token ?? null}
+        onWallet={(r) => applyReply(r)}
+        onBack={() => setScreen({ name: 'modes' })}
+        onStart={(ms) => setScreen({ name: 'match5', squad: ms })}
+      />
+    );
+  } else if (screen.name === 'match5') {
+    body = <MatchScreen matchSquad={screen.squad} evo={wallet.evo ?? {}} nickname={user.nickname} onHome={() => setScreen({ name: 'playtype' })} />;
   } else if (screen.name === 'playtype') {
     body = home;
   } else if (screen.name === 'modes') {
@@ -312,8 +353,25 @@ export default function App() {
         }
         onLogout={() => setScreen({ name: 'playtype' })}
         topActionLabel="‹ 뒤로"
+        onMatch={() => setMatchWarn(true)}
       />
     );
+    if (matchWarn)
+      body = (
+        <>
+          {body}
+          <MatchWarning
+            onClose={() => {
+              setMatchWarn(false);
+              setScreen({ name: 'playtype' }); // X → HOME
+            }}
+            onContinue={() => {
+              setMatchWarn(false);
+              setScreen({ name: 'match-setup' });
+            }}
+          />
+        </>
+      );
   } else if (screen.name === 'select-kicker') {
     body = <SelectKickerScreen squad={mySquad} onPick={(p) => setScreen({ name: 'game', mode: 'penalty', player: p })} onBack={() => setScreen({ name: 'modes' })} />;
   } else if (screen.name === 'game') {
@@ -325,6 +383,10 @@ export default function App() {
   } else {
     body = home;
   }
+
+  // a game already being played finishes; everything else waits behind the limit screen
+  if (lock && user && !['developer', 'game', 'match', 'match5', 'login'].includes(screen.name))
+    body = <LockScreen access={lock} onRetry={checkAccess} onLogout={logout} onDeveloper={() => setScreen({ name: 'developer' })} />;
 
   return (
     <>

@@ -31,32 +31,56 @@ export function evoOvrBonus(level: number) {
 export const evoOvr = (p: PlayerDef, level: number) => ovr(p) + evoOvrBonus(level);
 
 /**
- * material OVR vs the player's current (evolved) OVR:
- *   lower  → × 0.85 … 0.6 (the bigger the gap, the lower)
- *   equal  → × 1.1
- *   higher → × 1.2 … 1.3
- * From +10 on a better material never makes it easier (× 1 at most). Final rate ≤ 95 %.
+ * UPDATE 11 — the material GRADE now clearly matters. Same player, same level:
+ *   OVR 130 < 135 < 140 < 145 < 150 (always strictly higher).
+ *   grade    × 0.65 / 0.775 / 0.90 / 1.025 / 1.15
+ *   vs the player's current (evolved) OVR: lower × 0.70 · equal × 1.00 · higher × 1.12
  */
-export function materialMultiplier(matOvr: number, playerOvr: number, targetLevel: number) {
-  let m: number;
-  if (matOvr < playerOvr) m = Math.max(0.6, 0.85 - 0.025 * (playerOvr - matOvr - 1));
-  else if (matOvr === playerOvr) m = 1.1;
-  else m = 1.2 + Math.min(0.1, 0.01 * (matOvr - playerOvr));
-  if (targetLevel >= 10) m = Math.min(m, 1);
-  return m;
+export const MATERIAL_GRADE_MUL: Record<number, number> = { 130: 0.65, 135: 0.775, 140: 0.9, 145: 1.025, 150: 1.15 };
+export function gradeMultiplier(matOvr: number) {
+  return MATERIAL_GRADE_MUL[matOvr] ?? 0.65;
+}
+export function compareMultiplier(matOvr: number, playerOvr: number) {
+  return matOvr < playerOvr ? 0.7 : matOvr === playerOvr ? 1 : 1.12;
+}
+export function materialMultiplier(matOvr: number, playerOvr: number) {
+  return gradeMultiplier(matOvr) * compareMultiplier(matOvr, playerOvr);
+}
+/**
+ * Upper limit per step (+n → +n+1). High steps stay very hard even with OVR 150:
+ * +9→+10 ≤ 8 %, +10→+11 ≤ 3 %, +11→+12 ≤ 1.25 %.
+ */
+export const EVO_RATE_CAP = [0.95, 0.95, 0.9, 0.85, 0.75, 0.6, 0.45, 0.3, 0.18, 0.08, 0.03, 0.0125];
+/** a soft limit: unchanged up to 80 % of the cap, then bends towards the cap (never reaches it),
+ *  so a better material is always a bit better — never two grades with the same rate */
+function softCap(raw: number, cap: number) {
+  const knee = cap * 0.8;
+  if (raw <= knee) return raw;
+  return knee + (cap - knee) * (1 - Math.exp(-(raw - knee) / (cap - knee)));
+}
+
+/** the base rate, the material correction and the final rate — exactly what the server rolls */
+export function evoRateParts(level: number, matOvr: number, playerOvr: number) {
+  if (level >= EVO_MAX || level < 0) return { base: 0, grade: 1, compare: 1, mul: 1, raw: 0, cap: 0, capped: false, rate: 0 };
+  const base = EVO_BASE_RATE[level];
+  const grade = gradeMultiplier(matOvr);
+  const compare = compareMultiplier(matOvr, playerOvr);
+  const mul = grade * compare;
+  const raw = base * mul;
+  const cap = EVO_RATE_CAP[level];
+  const rate = Math.round(softCap(raw, cap) * 1e7) / 1e7;
+  return { base, grade, compare, mul, raw, cap, capped: raw > cap * 0.8, rate };
 }
 
 /** the real success rate of evolving a player at `level` with a material of `matOvr` (0 when maxed) */
 export function evoSuccessRate(level: number, matOvr: number, playerOvr: number) {
-  if (level >= EVO_MAX || level < 0) return 0;
-  const r = EVO_BASE_RATE[level] * materialMultiplier(matOvr, playerOvr, level + 1);
-  return Math.min(0.95, Math.round(r * 1e6) / 1e6);
+  return evoRateParts(level, matOvr, playerOvr).rate;
 }
 
 /** "65%" · "0.75%" */
 export function rateLabel(r: number) {
   const p = r * 100;
-  return `${p >= 10 ? Math.round(p * 10) / 10 : Math.round(p * 100) / 100}%`;
+  return `${p >= 10 ? Math.round(p * 10) / 10 : p >= 1 ? Math.round(p * 100) / 100 : Math.round(p * 1000) / 1000}%`;
 }
 
 /** +10 / +11 / +12 titles */

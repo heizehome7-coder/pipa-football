@@ -23,6 +23,8 @@ export interface Wallet {
   evo?: Record<string, number>;
   starterEvo?: Record<string, number>;
   materials?: { id: string; ovr: number }[];
+  /** UPDATE 11 patch: the MATCH squad (4-3-3 HOLDING, separate from the penalty squad) */
+  matchSquad?: import('../match/formation').MatchSquad | null;
 }
 
 export interface OwnedCard {
@@ -68,6 +70,7 @@ export function walletFrom(r: {
   evo?: Record<string, number>;
   starterEvo?: Record<string, number>;
   materials?: { id: string; ovr: number }[];
+  matchSquad?: import('../match/formation').MatchSquad | null;
 }): Wallet {
   return {
     mp: r.mp ?? 0,
@@ -78,6 +81,7 @@ export function walletFrom(r: {
     evo: r.evo ?? {},
     starterEvo: r.starterEvo ?? {},
     materials: r.materials ?? [],
+    matchSquad: r.matchSquad ?? null,
     progress:
       typeof r.level === 'number'
         ? { level: r.level, xp: r.xp ?? 0, xpNext: r.xpNext ?? 0, fv: r.fv ?? 0, claimed: r.claimedLevelRewards ?? [], packs: r.unopenedPacks ?? 0, goodPacks: r.goodPacks ?? 0, legendPacks: r.legendPacks ?? 0, hong: r.hong ?? { bronze: 0, silver: 0, gold: 0, red: 0 }, daily: r.daily ?? null }
@@ -119,14 +123,17 @@ export function localOwned(nickname: string, localSquad: Squad | null): Set<stri
 /** a squad with only owned players (anything else is replaced by an owned starter) */
 export function fitSquad(s: Squad | null, owned: Set<string>): Squad | null {
   if (!s || !validSquad(s)) return s;
-  if ([...s.penaltyOrder, s.goalkeeperId].every((id) => owned.has(id))) return s;
+  // UPDATE 11: a sold / missing bench player just leaves the bench
+  const subsOk = (s.subs ?? []).every((id) => owned.has(id));
+  if ([...s.penaltyOrder, s.goalkeeperId].every((id) => owned.has(id))) return subsOk ? s : { ...s, subs: (s.subs ?? []).filter((id) => owned.has(id)) };
   const order = s.penaltyOrder.filter((id) => owned.has(id));
   for (const p of STARTER_PLAYERS) {
     if (order.length >= 5) break;
     if (p.role !== 'GK' && !order.includes(p.id)) order.push(p.id);
   }
   const gk = owned.has(s.goalkeeperId) ? s.goalkeeperId : DEFAULT_SQUAD.goalkeeperId;
-  return { penaltyOrder: order, goalkeeperId: gk, freeKickTakerId: order.includes(s.freeKickTakerId) ? s.freeKickTakerId : order[0] };
+  const subs = (s.subs ?? []).filter((id) => owned.has(id) && !order.includes(id) && id !== gk);
+  return { penaltyOrder: order, goalkeeperId: gk, freeKickTakerId: order.includes(s.freeKickTakerId) ? s.freeKickTakerId : order[0], ...(subs.length ? { subs } : {}) };
 }
 
 /** 30,000,000 MP */

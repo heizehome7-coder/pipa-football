@@ -36,3 +36,11 @@ document.addEventListener('dblclick', (e) => {
 });
 
 createRoot(document.getElementById('root')!).render(<App />);
+
+// test hook: render one card portrait now (from the 3D model)
+import { portraitNow } from './components/portrait';
+import { getPlayer } from './players/players';
+(window as unknown as { __pipaPortrait?: (id: string) => string | null }).__pipaPortrait = (id: string) => {
+  const p = getPlayer(id);
+  return p ? portraitNow(p) : null;
+};

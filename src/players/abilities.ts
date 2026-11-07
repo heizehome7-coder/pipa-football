@@ -14,7 +14,8 @@ import { evoShotBoost } from '../progress/evolution';
  * Specials fire by themselves when the stroke matches them (no buttons).
  */
 export interface ShotContext {
-  mode: GameMode;
+  /** UPDATE 11: 'match' = the 5-a-side MATCH mode (open play) */
+  mode: GameMode | 'match';
   power: number;
   /** curve level 0 straight · 1–3 light/medium/strong */
   level: number;
@@ -191,6 +192,61 @@ export function shotModifiers(p: PlayerDef | null | undefined, c: ShotContext): 
       break;
     case 'WILD_LEFT_CURL':
       if (instep) (spinMul *= 1.18), (errMul *= 1 + 0.25 * c.level), (special = p.special);
+      break;
+    // UPDATE 11
+    case 'PRECISION_MASTER':
+      // weak shot (POWER 63 already makes it slow) — but it goes exactly where he aims
+      comp = Math.max(comp, 0.9);
+      errMul *= 0.6;
+      if (c.low && !c.lofted) (errMul *= 0.7), (special = p.special);
+      if (instep) (spinMul *= 1.08), (errMul *= 0.85), (special = p.special);
+      break;
+    // UPDATE 11 patch
+    case 'TOE_POKE_SPECIALIST':
+      // a toe-poke: low, quick off the boot, straight — weak (POWER 43); the outside of the boot is natural
+      if (straight) (errMul *= 0.85), (special = p.special);
+      if (curl && !instep) (spinMul *= (1 / 0.88) * (1 + 0.25 * n(p.outsideFoot ?? 80, 80, 99))), (errMul *= 0.85), (special = p.special);
+      knuckle *= 0.5;
+      break;
+    case 'DEFENSIVE_WALL':
+      // a defender: shooting really is not his thing
+      errMul *= 1.6;
+      speedMul *= 0.97;
+      knuckle = 0;
+      break;
+    case 'ONE_FOOT_FINESSE':
+      // left foot only: sharp instep curls, accurate
+      if (instep) (spinMul *= 1.2), (errMul *= 0.8), (special = p.special);
+      else if (curl) spinMul *= 0.95;
+      break;
+    case 'CHAOTIC_CANNON':
+      // a brutal strike with a small, irregular wobble — but no finesse: a real curl is hard for him
+      if (straight && c.power > 0.72) (speedMul *= 1.05), (knuckle = Math.min(1, knuckle + 0.25)), (special = p.special);
+      if (instep) (spinMul *= 0.6), (errMul *= 1.25);
+      break;
+    case 'OUTSIDE_POWER':
+      // the outside of the right boot: a fast, strongly bending ball the other way — not very accurate
+      if (curl && !instep) (spinMul *= 1.42), (speedMul *= 1.06), (errMul *= 1.12), (special = p.special);
+      else if (straight && c.power > 0.7) speedMul *= 1.04;
+      break;
+    case 'GALLOPING_CANNON':
+      if (straight && c.power > 0.7) (speedMul *= 1.07), (errMul *= 0.8), (special = p.special);
+      break;
+    case 'BOX_BOMBER':
+      if (c.mode === 'penalty' || c.mode === 'match' || c.low) (errMul *= 0.55), (special = c.low || c.mode === 'match' ? p.special : null);
+      if (c.low && !c.lofted) speedMul *= 1.04;
+      break;
+    case 'FREE_KICK_ARTIST':
+      if (c.mode === 'freekick' && curl) (spinMul *= 1.18), (errMul *= 0.6), (special = p.special);
+      else if (curl && instep) spinMul *= 1.06;
+      break;
+    case 'MAESTRO_CURL':
+      if (curl && instep) (spinMul *= 1.12), (errMul *= 0.65), (special = p.special);
+      if (c.lofted) (errMul *= 0.7), (special = p.special);
+      if (c.mode === 'freekick') errMul *= 0.85;
+      break;
+    case 'MAGIC_LEFT':
+      if (instep && (c.low || c.level <= 2)) (spinMul *= 1.12), (errMul *= 0.65), (special = p.special);
       break;
   }
   // UPDATE 10: EVOLUTION — the higher the level, the faster, truer and bendier (physics caps stay)

@@ -34,6 +34,18 @@ export interface FieldStats {
   freeKick: number;
   composure: number;
 }
+/** UPDATE 11 patch: DEFENDER STATS (separate from the shooting stats) — every field player has them */
+export interface DefStats {
+  tackle: number;
+  interception: number;
+  marking: number;
+  strength: number;
+  positioning: number;
+  pace: number;
+}
+export const DEF_STAT_LABELS: [keyof DefStats, string][] = [
+  ['tackle', 'TACKLE'], ['interception', 'INTERCEPTION'], ['marking', 'MARKING'], ['strength', 'STRENGTH'], ['positioning', 'POSITIONING'], ['pace', 'PACE'],
+];
 export interface GkStats {
   reflex: number;
   diving: number;
@@ -51,7 +63,11 @@ export type SpecialId =
   | 'KOREAN_LEGEND' | 'RED_FINISHER' | 'KING_OF_FOOTBALL'
   // UPDATE 10 — PIPA ORIGINALS
   | 'TWO_FOOT_CURL_MASTER' | 'THUNDER_STRIKE' | 'UNSTABLE_CANNON' | 'SMALL_FLYING_KEEPER' | 'ICON_POWER_DRIVE'
-  | 'SILK_FINESSE' | 'CHIP_SHOT_ONLY' | 'WILD_POWER' | 'WILD_LEFT_CURL';
+  | 'SILK_FINESSE' | 'CHIP_SHOT_ONLY' | 'WILD_POWER' | 'WILD_LEFT_CURL'
+  // UPDATE 11
+  | 'PRECISION_MASTER' | 'OUTSIDE_POWER' | 'GALLOPING_CANNON' | 'BOX_BOMBER' | 'FREE_KICK_ARTIST' | 'MAESTRO_CURL' | 'MAGIC_LEFT'
+  // UPDATE 11 patch
+  | 'TOE_POKE_SPECIALIST' | 'DEFENSIVE_WALL' | 'ONE_FOOT_FINESSE' | 'CHAOTIC_CANNON';
 
 export const SPECIALS: Record<SpecialId, { name: string; desc: string }> = {
   POWER_BURST: { name: 'POWER BURST', desc: '빠르고 곧은 강한 스트로크에서 더 빠른 슛' },
@@ -87,6 +103,19 @@ export const SPECIALS: Record<SpecialId, { name: string; desc: string }> = {
   CHIP_SHOT_ONLY: { name: 'CHIP SHOT ONLY', desc: '모든 슛이 포물선을 그리는 칩슛으로 날아감' },
   WILD_POWER: { name: 'WILD POWER', desc: '강한 속도의 슛 · 풀파워에서 정확도 하락' },
   WILD_LEFT_CURL: { name: 'WILD LEFT CURL', desc: '매우 강력한 왼발 감아차기 · 강하게 감을수록 조금 빗나갈 위험' },
+  // UPDATE 11 patch
+  TOE_POKE_SPECIALIST: { name: 'TOE POKE SPECIALIST', desc: '발끝으로 밀어 차는 낮고 빠른 직선 슛 · 아웃프런트 능숙 · 슛 파워는 매우 약함' },
+  DEFENSIVE_WALL: { name: 'DEFENSIVE WALL', desc: '수비 전문 · 패스 차단과 슬라이딩 태클에 강함 · 슈팅은 매우 약함' },
+  ONE_FOOT_FINESSE: { name: 'ONE-FOOT FINESSE', desc: '왼발로만 차는 예리한 감아차기 · 오른발은 깁스' },
+  CHAOTIC_CANNON: { name: 'CHAOTIC CANNON', desc: '엄청난 강슛 · 작은 너클성 흔들림 · 일반 감아차기는 약함' },
+  // UPDATE 11
+  PRECISION_MASTER: { name: 'PRECISION MASTER', desc: '슛 파워는 약하지만 원하는 곳으로 매우 정교하게 · 낮은 구석 슛과 정확한 감아차기에 강함' },
+  OUTSIDE_POWER: { name: 'OUTSIDE POWER', desc: '오른발 아웃프런트 강슛 특화 · 바깥으로 휘는 궤적에서 빠르고 강하게 휨, 정확도는 낮음' },
+  GALLOPING_CANNON: { name: 'GALLOPING CANNON', desc: '전설의 왼발 대포알 · 곧은 강슛이 빠르고 정확하게 뻗음' },
+  BOX_BOMBER: { name: 'BOX BOMBER', desc: '골문 앞 마무리의 달인 · 낮은 슛과 페널티가 매우 정확' },
+  FREE_KICK_ARTIST: { name: 'FREE KICK ARTIST', desc: '프리킥 감아차기 최상급 · 벽을 넘어 구석으로 정확하게 휨' },
+  MAESTRO_CURL: { name: 'MAESTRO CURL', desc: '우아하고 정확한 감아차기와 칩슛 · 세트피스 정확도 보너스' },
+  MAGIC_LEFT: { name: 'MAGIC LEFT', desc: '부드러운 왼발 · 낮고 정교한 감아차기로 구석을 찌름' },
   BLACK_SPIDER: { name: 'BLACK SPIDER', desc: '폭발적인 다이빙과 긴 손끝 리치, 높은 체공 · 중간 속도 슛은 공중에서 잡아냄' },
 };
 
@@ -131,6 +160,14 @@ export interface PlayerDef {
   original?: boolean;
   /** UPDATE 10: real height in cm where it changes play (박사하 162 cm) */
   heightCm?: number;
+  /** UPDATE 11 patch: defending + pace (field players) */
+  def?: DefStats;
+  /** UPDATE 11 patch: OUTSIDE FOOT (장영광 97) */
+  outsideFoot?: number;
+  /** UPDATE 11 patch: a cast on the right leg (이주성 — he only kicks with the left) */
+  rightCast?: boolean;
+  /** UPDATE 11 patch: his signature skill move (MATCH) */
+  skillMove: SkillMoveId;
   /** UPDATE 10: a defender by main position (CB/LB/RB/LWB/RWB) — no longer sold on the market */
   defender?: boolean;
 }
@@ -178,12 +215,13 @@ export const COUNTRY_NAME: Record<CountryCode, string> = {
   MEX: 'MEXICO',
   SEN: 'SENEGAL',
   WAL: 'WALES',
+  GAB: 'GABON',
 };
 
 const p = (
   id: string, name: string, nameKo: string, first: string, last: string, shirt: string, number: string,
   positions: string[], role: PlayerRole, country: CountryCode, look: PlayerLook,
-): PlayerDef => ({ id, name, nameKo, first, last, shirt, number, positions, role, country, look, special: 'BALANCED_FINISH', foot: 'R', starter: true, isIcon: false, club: null, primaryPosition: positions[0], tradeable: false, koFirst: '', koLast: nameKo });
+): PlayerDef => ({ id, name, nameKo, first, last, shirt, number, positions, role, country, look, special: 'BALANCED_FINISH', foot: 'R', starter: true, isIcon: false, club: null, primaryPosition: positions[0], tradeable: false, koFirst: '', koLast: nameKo, skillMove: 'BODY_FEINT' });
 
 const L = (skin: number, hair: number, hairStyle: HairStyle, beard: Beard = 'none', height = 1, build = 1): PlayerLook => ({ skin, hair, hairStyle, beard, height, build });
 
@@ -255,6 +293,25 @@ for (const pl of PLAYERS) {
 }
 /** UPDATE 10: defender positions (the market stops selling these) */
 export const DEF_POSITIONS = ['CB', 'LB', 'RB', 'LWB', 'RWB'];
+
+/** UPDATE 11 patch: skill moves (MATCH · 질주/개인기 double tap) */
+export type SkillMoveId = 'BODY_FEINT' | 'STEPOVER' | 'ELASTICO' | 'BURST' | 'SIDE_STEP' | 'QUICK_TURN' | 'KNOCK_ON' | 'RAINBOW' | 'DRAG_BACK';
+export const SKILL_MOVES: Record<SkillMoveId, { name: string; ko: string }> = {
+  BODY_FEINT: { name: 'BODY FEINT', ko: '바디 페인트 · 빠른 방향 전환' },
+  STEPOVER: { name: 'STEPOVER', ko: '스텝오버' },
+  ELASTICO: { name: 'ELASTICO', ko: '엘라스티코' },
+  BURST: { name: 'EXPLOSIVE BURST', ko: '폭발적인 순간 가속' },
+  SIDE_STEP: { name: 'SIDE STEP', ko: '빠른 사이드 스텝' },
+  QUICK_TURN: { name: 'QUICK TURN', ko: '빠른 방향 전환' },
+  KNOCK_ON: { name: 'KNOCK ON', ko: '치고 달리기' },
+  RAINBOW: { name: 'RAINBOW FLICK', ko: '레인보우' },
+  DRAG_BACK: { name: 'DRAG BACK', ko: '드래그 백' },
+};
+const SIGNATURE_SKILL: Record<string, SkillMoveId> = {
+  messi: 'BODY_FEINT', ronaldo: 'STEPOVER', neymar: 'ELASTICO', mbappe: 'BURST', vinicius: 'SIDE_STEP', son: 'QUICK_TURN',
+  ronaldinho: 'ELASTICO', kimdongmin: 'KNOCK_ON', songinwoo: 'RAINBOW', yamal: 'BODY_FEINT', salah: 'QUICK_TURN',
+  haaland: 'KNOCK_ON', kane: 'DRAG_BACK', bellingham: 'BODY_FEINT', rodri: 'DRAG_BACK', zidane: 'BODY_FEINT',
+};
 const roleOf = (pos: string): PlayerRole =>
   pos === 'GK' ? 'GK' : DEF_POSITIONS.includes(pos) ? 'DF' : ['ST', 'CF', 'LW', 'RW'].includes(pos) ? 'FW' : 'MF';
 for (const r of MARKET_NEW) {
@@ -272,6 +329,35 @@ for (const r of MARKET_NEW) {
 }
 
 // ── UPDATE 8: one central record per player (pack + market read the same fields) ──
+/** a stable 0…1 from a player id (no randomness at run time) */
+function idHash(id: string, salt = 0) {
+  let h = 2166136261 ^ salt;
+  for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619);
+  return ((h >>> 0) % 10000) / 10000;
+}
+const FAST: Record<string, number> = { mbappe: 97, vinicius: 95, son: 90, salah: 90, yamal: 88, haaland: 89, neymar: 89, ronaldo: 88, messi: 85, kimdongmin: 86 };
+const DEF_OVERRIDE: Record<string, DefStats> = {
+  hanyujun: { tackle: 86, interception: 84, marking: 87, strength: 82, positioning: 84, pace: 72 },
+};
+/** defending stats: real defenders high, midfielders middle, forwards low (stable per player) */
+function defStatsFor(pl: PlayerDef): DefStats {
+  const r = (k: number) => idHash(pl.id, k);
+  const pos = pl.positions[0];
+  const base = pl.defender ? 82 : pos === 'CDM' ? 76 : pl.role === 'MF' ? 62 : 40;
+  const spread = pl.defender ? 12 : 14;
+  const v = (k: number, add = 0) => Math.round(Math.min(97, base + add + (r(k) - 0.35) * spread));
+  const pace = FAST[pl.id] ?? Math.round(Math.min(94, (pl.role === 'FW' ? 82 : pl.role === 'MF' ? 76 : 75) + (r(9) - 0.4) * 14 + (['POWER_BURST', 'SPEED_DRIBBLE'].includes(pl.special) ? 5 : 0)));
+  return { tackle: v(1), interception: v(2), marking: v(3), strength: v(4, pl.look.build > 1.02 ? 5 : 0), positioning: v(5), pace };
+}
+function skillFor(pl: PlayerDef): SkillMoveId {
+  const pos = pl.positions[0];
+  const pick = (a: SkillMoveId[]) => a[Math.floor(idHash(pl.id, 77) * a.length)];
+  if (pl.role === 'GK' || pl.defender) return 'DRAG_BACK';
+  if (['LW', 'RW'].includes(pos)) return pick(['STEPOVER', 'SIDE_STEP', 'BODY_FEINT', 'ELASTICO']);
+  if (['ST', 'CF'].includes(pos)) return pick(['KNOCK_ON', 'BURST', 'DRAG_BACK', 'STEPOVER']);
+  return pick(['BODY_FEINT', 'QUICK_TURN', 'DRAG_BACK', 'RAINBOW']);
+}
+
 for (const pl of PLAYERS) {
   pl.isIcon = !!pl.legend;
   pl.club = pl.isIcon ? null : CLUB[pl.id] ?? null;
@@ -285,6 +371,11 @@ for (const pl of PLAYERS) {
   pl.original = ORIGINAL_IDS.includes(pl.id);
   if (HEIGHT_CM[pl.id]) pl.heightCm = HEIGHT_CM[pl.id];
   pl.defender = DEF_POSITIONS.includes(pl.positions[0]);
+  // UPDATE 11 patch: defending / pace + signature skill move
+  if (pl.role !== 'GK') pl.def = DEF_OVERRIDE[pl.id] ?? defStatsFor(pl);
+  pl.skillMove = SIGNATURE_SKILL[pl.id] ?? skillFor(pl);
+  if (pl.id === 'jangyounggwang') pl.outsideFoot = 97;
+  if (pl.id === 'leejusung') pl.rightCast = true;
 }
 
 /** UPDATE 9: search by Korean or English name (spaces / accents / case ignored) */
@@ -302,9 +393,24 @@ export function matchesSearch(p: PlayerDef, q: string): boolean {
 }
 
 /** OVR: plain average of the seven abilities (no position weighting) */
-export function ovr(p: PlayerDef) {
+/** the average of the player's own abilities (shooting / keeping; defenders mostly defending) */
+export function statOvr(p: PlayerDef) {
   const v = p.stats ? Object.values(p.stats) : p.gk ? Object.values(p.gk) : [];
-  return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : 0;
+  const shoot = v.length ? v.reduce((a, b) => a + b, 0) / v.length : 0;
+  if (p.defender && p.def) {
+    const d = p.def;
+    return Math.round(0.75 * ((d.tackle + d.interception + d.marking + d.strength + d.positioning) / 5) + 0.25 * shoot);
+  }
+  return Math.round(shoot);
+}
+/**
+ * OVR shown on the card (= base OVR). UPDATE 11 patch: TRANSFER MARKET players are rated
+ * 135–150 (normal 135–140 · good 141–145 · elite 146–148 · top ICONS 149–150) from their
+ * price and abilities; free starters keep their own rating. Evolution adds on top of it
+ * (effective OVR = base + evolution bonus — never capped at 150).
+ */
+export function ovr(p: PlayerDef) {
+  return BASE_OVR[p.id] ?? statOvr(p);
 }
 
 export const FIELD_STAT_LABELS: [keyof FieldStats, string][] = [
@@ -330,10 +436,34 @@ export const isStarter = (id: string) => !!PLAYER_BY_ID[id]?.starter;
  */
 export const isBuyable = (id: string) => {
   const pl = typeof id === 'string' ? PLAYER_BY_ID[id] ?? null : null;
-  return !!pl && !pl.starter && typeof pl.price === 'number' && !pl.defender;
+  // UPDATE 11 patch: defenders are back on the market
+  return !!pl && !pl.starter && typeof pl.price === 'number';
 };
 /** the market players you can still buy (UPDATE 10: no defenders) */
-export const BUYABLE_PLAYERS: PlayerDef[] = MARKET_ORDER.map((id) => PLAYER_BY_ID[id]).filter((pl) => !pl.defender);
+export const BUYABLE_PLAYERS: PlayerDef[] = MARKET_ORDER.map((id) => PLAYER_BY_ID[id]);
+
+/** UPDATE 11 patch: base OVR 135–150 for every TRANSFER MARKET player (stable, from price + abilities) */
+export const BASE_OVR: Record<string, number> = Object.create(null);
+{
+  const list = MARKET_ORDER.map((id) => PLAYER_BY_ID[id]).filter((pl) => pl && !pl.starter && typeof pl.price === 'number');
+  const byPrice = [...list].sort((a, b) => a.price! - b.price! || statOvr(a) - statOvr(b));
+  const byStat = [...list].sort((a, b) => statOvr(a) - statOvr(b));
+  const pr = new Map(byPrice.map((pl, i) => [pl.id, i / Math.max(1, list.length - 1)]));
+  const st = new Map(byStat.map((pl, i) => [pl.id, i / Math.max(1, list.length - 1)]));
+  const score = (pl: PlayerDef) => 0.65 * pr.get(pl.id)! + 0.35 * st.get(pl.id)!;
+  const ranked = [...list].sort((a, b) => score(b) - score(a) || a.id.localeCompare(b.id));
+  const icons = ranked.filter((pl) => pl.isIcon && pl.price! >= 1300 * 1_000_000);
+  const rest = ranked.filter((pl) => !icons.includes(pl));
+  icons.forEach((pl, i) => (BASE_OVR[pl.id] = i < Math.ceil(icons.length * 0.45) ? 150 : 149));
+  const n = rest.length;
+  const tier = (from: number, to: number, lo: number, hi: number) => {
+    const part = rest.slice(Math.floor(n * from), Math.floor(n * to));
+    part.forEach((pl, i) => (BASE_OVR[pl.id] = Math.round(hi - ((hi - lo) * i) / Math.max(1, part.length - 1))));
+  };
+  tier(0, 0.12, 146, 148);
+  tier(0.12, 0.45, 141, 145);
+  tier(0.45, 1, 135, 140);
+}
 export const marketPrice = (id: string): number | null => {
   const pl = PLAYER_BY_ID[id];
   return pl && !pl.starter && typeof pl.price === 'number' ? pl.price : null;

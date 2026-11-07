@@ -22,7 +22,7 @@ const SPONSORS = [
   { t: 'NOVA', bg: '#141414', fg: '#5ad1ff' },
 ];
 
-function skyTexture() {
+export function skyTexture() {
   return canvasTexture(4, 256, (ctx, w, h) => {
     const g = ctx.createLinearGradient(0, 0, 0, h);
     g.addColorStop(0, '#4f8fc9');
@@ -33,7 +33,7 @@ function skyTexture() {
   });
 }
 
-function grassTexture(repeat: [number, number]) {
+export function grassTexture(repeat: [number, number]) {
   return canvasTexture(128, 128, (ctx, w, h) => {
     ctx.fillStyle = '#4f9b3d';
     ctx.fillRect(0, 0, w, h / 2);
@@ -49,7 +49,7 @@ function grassTexture(repeat: [number, number]) {
   }, { repeat });
 }
 
-function boardTexture(repeatX: number) {
+export function boardTexture(repeatX: number) {
   return canvasTexture(1536, 64, (ctx) => {
     const bw = 256;
     SPONSORS.forEach((s, i) => {
@@ -64,7 +64,7 @@ function boardTexture(repeatX: number) {
   }, { repeat: [repeatX, 1] });
 }
 
-function bannerTexture(text: string, bg: string, fg: string, repeatX: number) {
+export function bannerTexture(text: string, bg: string, fg: string, repeatX: number) {
   return canvasTexture(512, 48, (ctx) => {
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, 512, 48);
@@ -96,7 +96,7 @@ const CROWD_COLORS = [
   '#3a7bd5', '#2b2b2b', '#d6d6d6', '#8a4fff', '#ff8a1f', '#0f5f4c',
 ];
 
-function crowdMesh(seats: THREE.Vector3[], seed: number) {
+export function crowdMesh(seats: THREE.Vector3[], seed: number) {
   const rnd = mulberry32(seed);
   const geo = new THREE.BoxGeometry(0.44, 0.58, 0.34);
   geo.translate(0, 0.29, 0);

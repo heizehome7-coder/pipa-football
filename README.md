@@ -1,4 +1,4 @@
-# PIPA · FOOTBALL GAME  — UPDATE 10 · SEASON 1
+# PIPA · FOOTBALL GAME  — UPDATE 11 · SEASON 1
 
 > 버전 표시는 `src/version.ts`의 `GAME_VERSION` 하나로 관리 (다음 큰 업데이트 때 숫자만 올리기)
 
@@ -50,6 +50,50 @@ npm run build:single   # dist-single/ — index.html 한 파일 (어디서나 �
 - GK: 6방향 블렌딩 다이브, 능력 반영(팔 길이/이동 거리), 선방·실점 리액션 — `Goalkeeper.ts`
 - 골 세리머니: 모든 선수 공통 "두 손 들고 환호" + 실패(SAVE/MISS/POST/CROSSBAR) 리액션 — `reactions.ts`; 리액션 중 입력 잠금(~2초)
 - 카드 앞면 OVR + POWER/ACCURACY/CURVE, 상세에 전체 능력 + SPECIAL ABILITY. 등 이름 크기 확대
+
+## UPDATE 11 — THE MATCH UPDATE (`GAME_VERSION = 11`, 시즌은 계속 "SEASON 1")
+- **HOME**: 혼자서 · 온라인 · **경기** · SQUAD · TRANSFER MARKET · EVOLUTION · 진화 재료 상점 · PACKS · EVENT CENTER · WEEKLY MISSIONS · RANKING · MATCH STATISTICS · DEVELOPER MODE
+- **진화 확률** (`src/progress/evolution.ts`, 서버와 화면이 같은 함수): 기본 확률(+0~+12) × 재료 등급(130 ×0.65 · 135 ×0.775 · 140 ×0.90 · 145 ×1.025 · 150 ×1.15) × 선수 OVR 비교(재료가 낮음 ×0.70 · 같음 ×1.00 · 높음 ×1.12). 단계별 상한(부드러운 상한 — 좋은 재료가 항상 조금 더 높음): +9→+10 < 8 %, +10→+11 < 3 %, +11→+12 < 1.25 %. 화면에 기본 성공 확률 · 재료 OVR 보정 · 최종 성공 확률, 재료 칸마다 그 재료의 확률 표시
+- **조현선** 20억 MP(능력·SPECIAL 그대로, 기존 소유·등록 매물 가격은 그대로)
+- **신규 선수 32명** (총 282명, 판매 247명): PIPA ORIGINAL 김태이(PRECISION MASTER — POWER 63이 실제로 느리고 매우 정확, 낮은 구석·감아차기 강함) · 김동민(OUTSIDE POWER — 바깥으로 휘는 슛일 때만 강하게 휨, 정확도 낮음) · 일반 25명(수비수 없음, GK 5명) · ICON 5명(푸스카스 GALLOPING CANNON · 게르트 뮐러 BOX BOMBER · 지쿠 FREE KICK ARTIST · 플라티니 MAESTRO CURL · 다비드 실바 MAGIC LEFT). 현역 소속 팀은 마지막으로 알려진 기준(`clubs.ts` 한 줄로 변경)
+- **개발자 모드 · 재화 회수** (`/api/dev/remove-currency`): MP 또는 FV, 보유량보다 많으면 거부(음수 불가), 확인 창(현재 → 회수 후), 서버가 개발자 토큰 확인, 로그 `DEVELOPER_REMOVE_CURRENCY {targetUserId, currency, amount, timestamp}`
+- **SUBSTITUTES**: SQUAD → STARTING PLAYERS / SUBSTITUTES. 보유 선수 중 최대 5명(선발·GK와 중복 불가, 같은 선수 중복 불가), 카드에 이름·포지션·OVR·진화·SPECIAL. 서버 저장(`squad.subs`), 교체 선수는 판매 등록 불가(스쿼드 소속)
+- **경기 (MATCH · 5 vs 5, 싱글)** — `src/match/` (나중 확장을 위해 분리: `config.ts` 숫자 · `MatchEngine.ts` 규칙/AI · `MatchBall.ts` 공 · `MatchPlayer.ts` 선수 · `MatchStadium.ts` 경기장 · `MatchView.ts` 렌더/카메라 · `MatchScreen.tsx` UI)
+  - 들어가기 전 경고창("아직 개발 단계이므로 많은 버그와 작동이 안 될 수 있습니다." · 오른쪽 위 큰 X → HOME · [계속하기])
+  - 56 × 36 m 경기장(양쪽 골대·그물·박스·센터서클·관중석·광고판·조명탑·그림자), 팀당 필드 4 + GK 1. 내 팀 = 키커 1~4번 선발, 5번 + SUBSTITUTES 벤치(페널티 순서·프리킥 키커는 그대로)
+  - **중계 카메라**: 옆 관중석 쪽에서 비스듬히 내려다보며 공을 부드럽게 따라감(1인칭·선수 뒤 카메라 없음). 세로 화면은 더 높이서 경기장 폭 전체, 가로 화면은 더 넓게
+  - 조작: 왼쪽 아래 조이스틱(아날로그 8방향 이상) · 오른쪽 아래 질주/개인기(길게 = 질주, 짧게 = 개인기 — 방향 전환 컷 / 스텝오버) · 그 위 스루 · 스루 왼쪽 패스 · 패스 위 슛. 슛 버튼 제스처(pointer capture): 탭 일반 슛 · ↑ 칩슛 · → 파워슛 · ↓ 감아차기 · ← 아웃프런트(대각선은 더 강한 방향 하나). PC: WASD/방향키 · Shift 질주 · J 패스 · K 스루 · L 슛 · 1~5 슛 종류 · Space 개인기
+  - 공을 가진 선수 = 조작 선수(라임 삼각형 + 발밑 링), 패스하면 받는 선수로 전환, 수비 땐 가장 가까운 선수(패스 버튼 = 선수 전환, 슛 버튼 = 태클, 스루 = 동료 압박)
+  - 공: PIPA 물리(중력·공기저항·Magnus·너클·바운드·잔디 마찰)를 실시간으로, 골대·크로스바·그물·선수·GK 충돌. 패스/스루는 실제로 굴러감(순간이동 없음), 드리블은 짧은 터치 반복. 슛은 자유킥과 같은 슛 계산(골대 기준 좌표)에 선수 능력·SPECIAL·진화 반영
+  - GK: PIPA Goalkeeper(실제 다이빙·손/몸 충돌로 SAVE/잡기/쳐내기), 능력치(REFLEX/DIVING/POSITIONING)·진화가 판단 오차와 반응에 반영. 각도 좁히기·느린 공 줍기·동료에게 던지기
+  - AI: 공 운반·패스·스루·슛·개인기, 수비 압박·커버·포메이션. 사이드 아웃 = 스로인, 골라인 아웃 = 골킥(GK)
+  - 시간: 실제 3분 = 90분(1초 = 30초) · 전반 45분 → 하프타임 5초(시계 정지, 선수들 휴식 포즈, 넓은 카메라) → 공수 교대 후반 → FULL TIME(VICTORY/DRAW/DEFEAT, [다시 경기] [HOME])
+  - GOAL!: 득점자 이름·분 → 세레머니 → 왼쪽에서 대형 선수 카드(UPDATE 6 카드, OVR·SPECIAL·진화·능력치) → 상대 센터킥
+  - SUB(위쪽 작은 버튼, 하프타임에도): OUT/IN 선택 → [교체 확정], 경기당 3회, GK는 GK와만. 교체 화면 동안 경기·하프타임 타이머 정지. AI도 후반에 1명 교체
+  - 보상·온라인 시즌 전적 없음. 기록은 기기에 별도 저장(`pipa.match5.v1.<닉네임>`)
+- 테스트: `npx tsx scripts/update11-test.ts`, `node scripts/update11-server-test.mjs`, `python3 scripts/update11-e2e.py`
+
+### UPDATE 11 패치 — MATCH SYSTEM EXPANSION (같은 `GAME_VERSION = 11` · SEASON 1, 위 5 vs 5 내용을 대체)
+- **HOME**: 경기 카드는 HOME에서 빠지고 **혼자서 → PENALTY KICK · FREE KICK · MATCH(11 vs 11, BETA)**. 경고창(같은 문구 · 큰 X → HOME · [계속하기]) → **MATCH SQUAD SETUP** → 경기
+- **MATCH SQUAD SETUP** (`src/match/MatchSquadSetup.tsx`, `formation.ts`): 4-3-3 HOLDING(GK · LB · CB×2 · RB · CDM · CM×2 · LW · ST · RW)을 경기장 위 카드로 표시, 자리 탭 → 선수 탭(이미 다른 자리에 있으면 자리 교환), 선발 11 + 교체 4. 페널티 스쿼드(키커 순서·프리킥 키커)와 별도로 계정에 저장(`data.matchSquad`, `/api/match-squad` — 보유 선수만, 중복·GK 자리 규칙 서버 검사). 무료 스타터(15명 = 필드 12 + GK 3)만으로도 11 + 4 구성 가능. 수비 자리에 수비수가 아닌 선수 = 허용, ⚠ 부적합 표시 + 경고 + 수비 성능 감소(태클 성공률·이동)
+- **수비수 다시 이적시장·팩**(CB/LB/RB/LWB/RWB 36명, 구매·판매·팩 가능). **DEFENDER STATS**: TACKLE · INTERCEPTION · MARKING · STRENGTH · POSITIONING · PACE(모든 선수 보유, 수비수는 높음). 수비수는 페널티킥·프리킥 키커 불가(화면 + 서버 `defender_kicker`), MATCH에는 출전
+- **OVR 135–150** (판매 선수): 일반 135–140 · 좋은 선수 141–145 · 엘리트 146–148 · 최상위 ICON 149–150(가격 + 능력치 순위로 계산, `BASE_OVR`). playerId·가격·보유·진화 그대로, 실제 OVR = 기본 + 진화 보너스(150 상한 없음). 무료 스타터는 기존 OVR 유지
+- **SKILL MOVE — 개인기**: 선수마다 고유 개인기(메시 BODY FEINT · 호날두 STEPOVER · 네이마르/호나우지뉴 ELASTICO · 음바페 BURST · 비니시우스 SIDE STEP · 손흥민 QUICK TURN · 김동민 KNOCK ON · 송인우 RAINBOW · 그 외 공통 동작 배정), 이적시장·스쿼드 상세에 표시
+- **신규 PIPA ORIGINAL 4명 (잠신중 FC, KOR)**: 장영광 JANG CDM 1.6억 TOE POKE SPECIALIST(OUTSIDE FOOT 97) · 한유준 HAN Y.J. CB 4,500만 DEFENSIVE WALL(TKL 86 · INT 84 · MRK 87 · STR 82 · POS 84, 키커 불가) · 이주성 LEE J.S. LW 2.7억 ONE-FOOT FINESSE(왼발만, 오른 다리 깁스 — 모든 킥 왼발) · 김근호 KIM G.H. ST 8.5억 CHAOTIC CANNON(POWER 105 — 표시·계산 모두 100 초과 허용, 90° 꺾이는 감아차기 없음)
+- **카드 초상화**: 실제 3D 선수 모델을 오프스크린 WebGL로 렌더(`src/components/portrait.ts`, 한 장씩 캐시, 실패 시 기존 그림). 머리카락이 얼굴을 뚫거나 사라지던 문제 수정(헤어 캡 최소 크기 — z-fighting 제거), 눈 추가
+- **경기 11 vs 11** (`src/match/`): 100 × 64 m, 팀당 필드 10 + GK. 첫 킥오프는 항상 내 팀(센터 스팟, ST가 공) — 첫 패스 전까지 시계 정지 → "MATCH START". 3분 = 90분 · 하프타임 5초 · 중계 카메라(11 vs 11에 맞게 더 넓게)
+  - **가로 화면**: [KICK OFF] 탭에서 전체 화면 + 가로 고정 요청(Screen Orientation API, 지원 브라우저만), 세로면 "휴대폰을 가로로 돌려주세요." + 경기 일시정지, 나가면 세로 HOME
+  - **HUD**(FC 스타일): 왼쪽 위 스코어보드(팀 · 점수 · 팀 · 초록 시계), 오른쪽 위 메뉴(SUB · HOME · 계속하기, 열면 일시정지), 금색 조이스틱, 질주&개인기(가장 큼·초록) · 패스(파랑) · 스루(노랑) · 슈팅(주황) + 방향 화살표, 조작 선수 = 청록 삼각형 + 노란 점선 링 + 이름
+  - **상황별 슈팅 버튼**: 상대 진영 공격 = 슈팅(탭/↑칩/→파워/↓감아/←아웃) · 우리 진영에서 공 = 걷어내기(물리로 멀리, 소유 보장 없음) · 상대 공 = 태클(슬라이딩: 달려듦 → 낮춤 → 다리 → 미끄러짐 → 접촉 판정 → 일어남, TACKLE 능력치로 성공률, 공이 멀면 실패, 회복 쿨다운) · 공이 머리 높이 = HEADER AVAILABLE → 헤딩(점프·목 동작, 조이스틱 방향)
+  - 패스 버튼 오른쪽 스와이프 = 크로스(중력·공기저항, 순간이동 없음) · 질주&개인기: 길게 = 질주, 두 번 탭(320 ms) = 개인기(두 번 탭이 질주만 되던 문제 없음)
+  - 속도 약 −13 %(달리기 6.2 → 5.4, 질주 8.3 → 7.15 m/s), PACE 차이 유지, 드리블 약간 느림. AI: 포메이션·마킹·슬라이딩 태클·측면 돌파·크로스·걷어내기·헤딩
+  - 교체 4명(경기당 최대 3번, 모델·능력치 실제 교체), 보상·온라인 전적 없음
+- **평일 이용 제한** (서버 시계 기준, `src/progress/access.ts`): 월–금 08:35–15:00(서울). 제한 중에는 "PIPA 이용 제한 시간입니다. / 평일 오전 8시 35분부터 오후 3시까지 게임을 이용할 수 없습니다. / 오후 3시 이후 다시 이용해주세요." 화면. 로그인·개발자 모드는 가능, 그 외 게임 API는 서버가 423으로 거부
+  - **DEVELOPER MODE → SERVER ACCESS**: [전체 게임 열기] / [자동 시간 제한 복구], 서버 저장(재시작 후에도 유지, 파일 `settings.json` / 테이블 `pipa_settings`), 개발자 토큰 필요, 로그 `DEVELOPER_ACCESS_CONTROL`
+  - 온라인 대전: 제한 중에는 새 매칭(`match:join`)을 바로 거부(`match:error locked` — 무한 대기 없음), 대기 중이던 방은 닫힘. 이미 진행 중인 경기는 끝까지 진행되고 보상은 기존 규칙대로 한 번만. 진행 중인 싱글 경기도 끝난 뒤 제한 화면
+  - 테스트 전용 `PIPA_CLOCK_OVERRIDE`(서버 시계 고정 — 운영에는 설정하지 않음)
+- API: `/api/match-squad {token, matchSquad:{formation:'4-3-3H', xi:{GK…RW}, subs[≤4]}}`, `/api/access` → `{locked, mode, window, endsAt, serverTime}`, `/api/dev/access {devToken, mode: open|auto}`
+- 테스트: `npx tsx scripts/update11-test.ts`, `node scripts/update11-server-test.mjs`, `python3 scripts/update11-e2e.py`
 
 ## UPDATE 10 — EVOLUTION & SEASON 1 (`GAME_VERSION = 10`, 화면 표시 "UPDATE 10" + 별도 "SEASON 1")
 - **HOME**: 혼자서 · 온라인 · SQUAD · TRANSFER MARKET · **EVOLUTION** · **진화 재료 상점** · PACKS · EVENT CENTER · **WEEKLY MISSIONS** · RANKING · **MATCH STATISTICS** · 개발자 모드

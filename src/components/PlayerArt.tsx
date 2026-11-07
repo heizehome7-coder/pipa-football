@@ -1,7 +1,8 @@
-import { createContext, useContext } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
+import { portraitOf, requestPortrait } from './portrait';
 import { evoOvrBonus } from '../progress/evolution';
 import type { CountryCode, PlayerDef } from '../players/players';
-import { accentHue, COUNTRY_NAME, FIELD_STAT_LABELS, GK_STAT_LABELS, ovr, SPECIALS } from '../players/players';
+import { accentHue, COUNTRY_NAME, DEF_STAT_LABELS, FIELD_STAT_LABELS, GK_STAT_LABELS, ovr, SKILL_MOVES, SPECIALS } from '../players/players';
 
 const hex = (n: number) => `#${n.toString(16).padStart(6, '0')}`;
 
@@ -310,6 +311,10 @@ export function Flag({ code, size = 18 }: { code: CountryCode; size?: number }) 
         </>
       );
       break;
+    // UPDATE 11
+    case 'GAB':
+      body = stripesH('#009e60', '#fcd116', '#3a75c4');
+      break;
     // UPDATE 8
     case 'SRB':
       body = stripesH('#c6363c', '#0c4076', '#ffffff');
@@ -359,6 +364,35 @@ export function Flag({ code, size = 18 }: { code: CountryCode; size?: number }) 
 
 /** Stylised portrait: skin, hair style, beard and the PIPA shirt with the player's number. */
 export function PlayerAvatar({ player, size = 110 }: { player: PlayerDef; size?: number }) {
+  // UPDATE 11 patch: a portrait rendered from the 3D game model (falls back to the drawing)
+  const [url, setUrl] = useState<string | null>(() => portraitOf(player));
+  useEffect(() => {
+    let live = true;
+    setUrl(portraitOf(player));
+    requestPortrait(player, (u) => live && setUrl(u));
+    return () => {
+      live = false;
+    };
+  }, [player]);
+  if (url) {
+    const hue2 = accentHue(player.id);
+    return (
+      <svg className="avatar portrait" viewBox="0 0 100 110" width={size} height={size * 1.1} aria-hidden data-portrait="3d">
+        <defs>
+          <radialGradient id={`ag3-${player.id}`} cx="50%" cy="38%" r="60%">
+            <stop offset="0" stopColor={`hsl(${hue2} 70% 55% / .45)`} />
+            <stop offset="1" stopColor="rgba(0,0,0,0)" />
+          </radialGradient>
+        </defs>
+        <circle cx="50" cy="48" r="46" fill={`url(#ag3-${player.id})`} />
+        <image href={url} x="0" y="0" width="100" height="110" preserveAspectRatio="xMidYMid slice" />
+      </svg>
+    );
+  }
+  return <DrawnAvatar player={player} size={size} />;
+}
+
+function DrawnAvatar({ player, size = 110 }: { player: PlayerDef; size?: number }) {
   const l = player.look;
   const skin = hex(l.skin);
   const hair = hex(l.hair);
@@ -456,7 +490,7 @@ export function StatSheet({ player }: { player: PlayerDef }) {
         <div key={l} className="stat-row">
           <span>{l}</span>
           <i>
-            <s style={{ width: `${Math.max(0, (v - 60) / 39) * 100}%` }} className={v >= 95 ? 'elite' : ''} />
+            <s style={{ width: `${Math.min(1, Math.max(0, (v - 60) / 39)) * 100}%` }} className={v >= 100 ? 'elite over' : v >= 95 ? 'elite' : ''} />
           </i>
           <b>{v}</b>
         </div>
@@ -466,6 +500,36 @@ export function StatSheet({ player }: { player: PlayerDef }) {
         <b>{sp.name}</b>
         <span>{sp.desc}</span>
       </div>
+      {/* UPDATE 11 patch: defending stats (separate from shooting) + the signature skill move */}
+      {player.def && (
+        <div className="def-sheet" data-testid="def-sheet">
+          <em>DEFENDER STATS</em>
+          {DEF_STAT_LABELS.map(([k, l]) => (
+            <div key={k} className="stat-row" data-testid={`def-${k}`}>
+              <span>{l}</span>
+              <i>
+                <s style={{ width: `${Math.min(1, Math.max(0, (player.def![k] - 30) / 69)) * 100}%` }} className={player.def![k] >= 90 ? 'elite' : ''} />
+              </i>
+              <b>{player.def![k]}</b>
+            </div>
+          ))}
+        </div>
+      )}
+      {player.outsideFoot && (
+        <div className="stat-row" data-testid="stat-outside">
+          <span>OUTSIDE FOOT</span>
+          <i>
+            <s style={{ width: `${Math.min(1, Math.max(0, (player.outsideFoot - 60) / 39)) * 100}%` }} className="elite" />
+          </i>
+          <b>{player.outsideFoot}</b>
+        </div>
+      )}
+      <div className="special skill" data-testid="skill-move">
+        <em>SKILL MOVE — 개인기</em>
+        <b>{SKILL_MOVES[player.skillMove].name}</b>
+        <span>{SKILL_MOVES[player.skillMove].ko}</span>
+      </div>
+      {player.rightCast && <p className="cast-note">오른발 깁스 · 모든 킥은 왼발로</p>}
     </div>
   );
 }

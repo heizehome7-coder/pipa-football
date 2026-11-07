@@ -28,16 +28,21 @@ function FreeKickIcon() {
   );
 }
 
+import { MatchIcon } from './PlayTypeScreen';
+
 export function ModeSelectScreen({
   user,
   onSelect,
   onLogout,
   topActionLabel = '로그아웃',
+  onMatch,
 }: {
   user: PlayerProfile;
   onSelect: (m: GameMode) => void;
   onLogout: () => void;
   topActionLabel?: string;
+  /** UPDATE 11 patch: 혼자서 → MATCH (11 vs 11) */
+  onMatch?: () => void;
 }) {
   return (
     <div className="screen modes">
@@ -85,6 +90,22 @@ export function ModeSelectScreen({
             ›
           </span>
         </button>
+        {onMatch && (
+          <button className="mode-card match-card" onClick={onMatch} data-testid="mode-match">
+            <div className="mode-icon">
+              <MatchIcon />
+            </div>
+            <div className="mode-text">
+              <strong>MATCH</strong>
+              <span className="mode-ko">경기 · 11 vs 11</span>
+              <span className="mode-desc">내 MATCH 스쿼드로 3분 축구 경기 (개발 중)</span>
+            </div>
+            <span className="dev-badge">BETA</span>
+            <span className="mode-arrow" aria-hidden>
+              ›
+            </span>
+          </button>
+        )}
       </div>
       <div className="how">
         <p className="eyebrow">HOW TO PLAY</p>

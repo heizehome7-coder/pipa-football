@@ -335,6 +335,11 @@ export function createMatchManager(o) {
       return true;
     }
     if (t === 'match:join') {
+      // UPDATE 11 patch: no NEW online match during the weekday play time limit
+      if (o.isLocked?.()) {
+        send(peer, { t: 'match:error', code: 'locked', message: 'PIPA 이용 제한 시간입니다.' });
+        return true;
+      }
       join(peer, msg);
       return true;
     }
@@ -354,6 +359,14 @@ export function createMatchManager(o) {
 
     if (t === 'match:ready') {
       if (m.phase !== 'waiting') return true;
+      // UPDATE 11 patch: a match that has not started yet when the limit begins is closed
+      // (nobody waits forever, no result → no reward). A match already being played finishes
+      // normally and its result counts once, as always.
+      if (o.isLocked?.()) {
+        for (const p of m.players) send(p.peer, { t: 'match:error', code: 'locked', message: 'PIPA 이용 제한 시간입니다.' });
+        destroy(m);
+        return true;
+      }
       me.ready = !!msg.ready;
       // the server starts the match — never one client on its own
       if (m.players.every((p) => p.ready)) startMatch(m);

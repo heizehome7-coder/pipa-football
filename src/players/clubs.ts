@@ -55,6 +55,15 @@ export const CLUB: Record<string, string> = {
   nicolasjackson: 'BAYERN MUNICH', merino: 'ARSENAL', brahim: 'REAL MADRID', icardi: 'GALATASARAY',
   ennesyri: 'FENERBAHÇE', toney: 'AL AHLI', solanke: 'TOTTENHAM', boniface: 'WERDER BREMEN', retegui: 'AL QADSIAH',
   dovbyk: 'ROMA',
+  // UPDATE 11 — PIPA ORIGINALS + 25 current players (clubs as last known — change one line on a transfer)
+  kimtaei: '잠신중 FC', kimdongmin: '잠신중 FC',
+  jangyounggwang: '잠신중 FC', hanyujun: '잠신중 FC', leejusung: '잠신중 FC', kimgeunho: '잠신중 FC',
+  grealish: 'EVERTON', trossard: 'ARSENAL', ferrantorres: 'BARCELONA', ansufati: 'AS MONACO', malen: 'ASTON VILLA',
+  diaby: 'AL ITTIHAD', brennanjohnson: 'TOTTENHAM', nicogonzalez: 'ATLÉTICO MADRID', correa: 'TIGRES UANL',
+  depaul: 'INTER MIAMI', locelso: 'REAL BETIS', nkunku: 'AC MILAN', morata: 'COMO', asensio: 'FENERBAHÇE',
+  pedrogoncalves: 'SPORTING CP', isco: 'REAL BETIS', zaha: 'CHARLOTTE FC', aubameyang: 'MARSEILLE', haller: 'FC UTRECHT',
+  dimaria: 'ROSARIO CENTRAL', unaisimon: 'ATHLETIC CLUB', ramsdale: 'NEWCASTLE', petrovic: 'BOURNEMOUTH', pope: 'NEWCASTLE',
+  leno: 'FULHAM',
 };
 
 /**

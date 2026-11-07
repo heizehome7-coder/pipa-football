@@ -4,7 +4,7 @@ import { PlayerAvatar, PlayerCard } from '../components/PlayerArt';
 import { AccountError, accountApi, accountsAvailable, newNonce, type AccountReply } from '../online/account';
 import { formatFV, formatMP, type Wallet } from '../players/ownership';
 import { getPlayer, matchesSearch, ovr, STARTER_PLAYERS, type PlayerDef } from '../players/players';
-import { EVO_BASE_RATE, EVO_MAX, EVO_TITLE, evoOvr, evoSuccessRate, MATERIALS, materialOf, rateLabel } from '../progress/evolution';
+import { EVO_MAX, EVO_TITLE, evoOvr, evoRateParts, evoSuccessRate, MATERIALS, materialOf, rateLabel } from '../progress/evolution';
 
 /**
  * UPDATE 10 — EVOLUTION (+0 … +12). Every owned card (free starters, bought, pack, ICON, GK)
@@ -42,7 +42,8 @@ export function EvolutionScreen({ wallet, token, onReply, onBack, onShop }: { wa
   const mats = wallet.materials ?? [];
   const count = (o: number) => mats.filter((m) => m.ovr === o).length;
   const curOvr = item ? evoOvr(item.player, item.level) : 0;
-  const rate = item && matOvr ? evoSuccessRate(item.level, matOvr, curOvr) : 0;
+  const parts = item && matOvr ? evoRateParts(item.level, matOvr, curOvr) : null;
+  const rate = parts?.rate ?? 0;
 
   const go = async () => {
     if (!token || !item || !matOvr || busyRef.current) return;
@@ -137,13 +138,31 @@ export function EvolutionScreen({ wallet, token, onReply, onBack, onShop }: { wa
                     >
                       <b>{m.ovr}</b>
                       <em>×{count(m.ovr)}</em>
+                      <i data-testid={`evo-slot-rate-${m.ovr}`}>{rateLabel(evoSuccessRate(item.level, m.ovr, curOvr))}</i>
                     </button>
                   ))}
                 </div>
                 <div className="evo-rate" data-testid="evo-rate" data-rate={rate}>
-                  <span>성공 확률</span>
-                  <b>{matOvr ? rateLabel(rate) : '—'}</b>
-                  {matOvr && <em>재료 OVR {matOvr} · 선수 OVR {curOvr} · 기본 {rateLabel(EVO_BASE_RATE[item.level])}</em>}
+                  <div className="evo-rate-rows">
+                    <span>기본 성공 확률</span>
+                    <b data-testid="evo-rate-base">{rateLabel(parts?.base ?? evoRateParts(item.level, 130, curOvr).base)}</b>
+                    <span>재료 OVR 보정</span>
+                    <b data-testid="evo-rate-mul">
+                      {parts ? `×${parts.mul.toFixed(3).replace(/0+$/, '').replace(/\.$/, '')}` : '—'}
+                      {parts && (
+                        <em>
+                          {' '}
+                          (등급 ×{parts.grade} · {parts.compare < 1 ? '선수보다 낮음' : parts.compare > 1 ? '선수보다 높음' : '선수와 같음'} ×{parts.compare})
+                        </em>
+                      )}
+                    </b>
+                  </div>
+                  <div className="evo-rate-final">
+                    <span>최종 성공 확률</span>
+                    <b data-testid="evo-rate-final">{matOvr ? rateLabel(rate) : '—'}</b>
+                  </div>
+                  {parts?.capped && <em>+{item.level + 1} 단계 상한 {rateLabel(parts.cap)} 근처 — 고단계 진화는 좋은 재료로도 어려워요</em>}
+                  {matOvr && <em>재료 OVR {matOvr} · 선수 OVR {curOvr}</em>}
                 </div>
                 <p className="evo-note">재료는 성공/실패와 관계없이 사용돼요 · 실패해도 진화 단계는 내려가지 않아요</p>
                 {!mats.length && (

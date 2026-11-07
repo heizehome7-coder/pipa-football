@@ -11,27 +11,27 @@ export type StrikeType = 'drive' | 'instep' | 'outside' | 'knuckle' | 'low';
 // 1 ready · 2 run-up · 3 lean in · 4 plant beside the ball · 5 hips open/rotate ·
 // 6 backswing · 7 knee drives through · 8 contact · 9 arms counter-balance ·
 // 10 follow-through · 11 land and settle
-const STANCE: Pose = {
+export const STANCE: Pose = {
   spine: [-0.04, 0, 0],
   lShoulder: [0.05, 0, -0.13], rShoulder: [0.05, 0, 0.13],
   lElbow: [0.3, 0, 0], rElbow: [0.3, 0, 0],
   lHip: [0.04, 0, -0.04], rHip: [-0.02, 0, 0.05],
 };
-const READY: Pose = {
+export const READY: Pose = {
   spine: [-0.22, 0, 0], head: [0.12, 0, 0],
   lHip: [0.3, 0, -0.04], rHip: [0.12, 0, 0.04], lKnee: [-0.42, 0, 0], rKnee: [-0.3, 0, 0],
   lAnkle: [0.12, 0, 0], rAnkle: [0.18, 0, 0],
   lShoulder: [0.25, 0, -0.28], rShoulder: [-0.1, 0, 0.28], lElbow: [0.7, 0, 0], rElbow: [0.6, 0, 0],
   hipsPos: [0, -0.06, 0],
 };
-const RUN_R: Pose = {
+export const RUN_R: Pose = {
   spine: [-0.3, 0.08, 0], head: [0.16, 0, 0],
   rHip: [0.8, 0, 0.02], rKnee: [-0.55, 0, 0], rAnkle: [0.15, 0, 0],
   lHip: [-0.45, 0, -0.02], lKnee: [-1.0, 0, 0], lAnkle: [-0.35, 0, 0],
   lShoulder: [0.65, 0, -0.18], rShoulder: [-0.55, 0, 0.18], lElbow: [1.1, 0, 0], rElbow: [0.9, 0, 0],
   hipsPos: [0, -0.04, 0],
 };
-const RUN_L: Pose = mirrorPose(RUN_R);
+export const RUN_L: Pose = mirrorPose(RUN_R);
 /** long last stride: body leans in, support (left) leg reaching for the plant */
 const LEAN_IN: Pose = {
   spine: [-0.34, 0.12, 0.06], head: [0.25, 0, 0],
@@ -49,21 +49,21 @@ const PLANT: Pose = {
   hipsPos: [0, -0.1, 0],
 };
 /** top of the backswing, hips rotating back towards the ball, knee leading */
-const BACKSWING: Pose = {
+export const BACKSWING: Pose = {
   spine: [-0.18, 0.12, 0.22], head: [0.3, -0.05, 0],
   lHip: [0.3, 0, -0.08], lKnee: [-0.42, 0, 0], lAnkle: [0.1, 0, 0],
   rHip: [-0.35, 0, 0], rKnee: [-1.75, 0, 0], rAnkle: [-0.8, 0, 0],
   lShoulder: [0.22, 0, -1.35], rShoulder: [0.2, 0, 0.55], lElbow: [0.35, 0, 0], rElbow: [0.5, 0, 0],
   hipsPos: [0, -0.09, 0],
 };
-const CONTACT: Pose = {
+export const CONTACT: Pose = {
   spine: [-0.22, -0.05, 0.16], head: [0.34, 0, 0],
   lHip: [0.18, 0, -0.08], lKnee: [-0.34, 0, 0], lAnkle: [0.05, 0, 0],
   rHip: [0.55, 0, 0], rKnee: [-0.35, 0, 0], rAnkle: [-0.85, 0, 0],
   lShoulder: [0.15, 0, -1.2], rShoulder: [-0.45, 0, 0.6], lElbow: [0.35, 0, 0], rElbow: [0.4, 0, 0],
   hipsPos: [0, -0.06, 0],
 };
-const FOLLOW: Pose = {
+export const FOLLOW: Pose = {
   spine: [0.1, -0.2, 0.06], head: [0.12, 0, 0],
   lHip: [-0.06, 0, -0.05], lKnee: [-0.15, 0, 0], lAnkle: [-0.35, 0, 0],
   rHip: [1.35, 0, 0], rKnee: [-0.15, 0, 0], rAnkle: [-0.55, 0, 0],
@@ -142,6 +142,8 @@ export interface KickerLook {
   foot?: 'R' | 'L' | 'B';
   /** player id → his goal celebration */
   celebration?: string;
+  /** UPDATE 11 patch: a cast on the right leg (이주성) */
+  rightCast?: boolean;
 }
 
 const yawOf = (d: THREE.Vector3) => Math.atan2(-d.x, -d.z);
@@ -150,7 +152,7 @@ const add = (a: [number, number, number] | undefined, b: [number, number, number
   return [x[0] + b[0] * w, x[1] + b[1] * w, x[2] + b[2] * w];
 };
 
-function sampleReact(keys: ReactKey[], t: number, out: Pose) {
+export function sampleReact(keys: ReactKey[], t: number, out: Pose) {
   let i = 0;
   while (i < keys.length - 2 && keys[i + 1].t < t) i++;
   const a = keys[i];
@@ -191,7 +193,7 @@ export class Kicker {
       ...KICKER_KIT,
       backName: look?.shirt ?? nickname,
       backNumber: look?.number ?? '10',
-      ...(look ? { skin: look.skin, hair: look.hair, hairStyle: look.hairStyle, beard: look.beard } : {}),
+      ...(look ? { skin: look.skin, hair: look.hair, hairStyle: look.hairStyle, beard: look.beard, rightCast: look.rightCast } : {}),
     });
     // UPDATE 4: height/build are cosmetic — the run-up and strike timing stay identical
     if (look) this.body.root.scale.set(look.build, look.height, look.build);

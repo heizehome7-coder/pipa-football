@@ -14,3 +14,6 @@ export { SEASON } from '../../progress/season';
 export { MISSIONS, weekKey, msToReset } from '../../progress/missions';
 export { MATERIALS, materialOf, evoOvr, evoSuccessRate, EVO_MAX } from '../../progress/evolution';
 export { EMOTES } from './protocol';
+// UPDATE 11 patch
+export { validMatchSquad, FORMATION_433H, SLOT_IDS, MATCH_SUBS } from '../../match/formation';
+export { accessWindow, ACCESS_TEXT } from '../../progress/access';
