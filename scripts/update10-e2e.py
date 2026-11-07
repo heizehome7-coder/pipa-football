@@ -99,8 +99,8 @@ try:
         login(P, 'EVO')
         order = P.eval_on_selector_all('.mode-list .mode-card', 'els => els.map(e => e.dataset.testid)')
         want = ['play-solo', 'play-online', 'play-squad', 'play-market', 'play-evolution', 'play-shop', 'play-packs', 'play-events', 'play-missions', 'play-ranking', 'play-stats', 'play-developer']
-        check('HOME order: 혼자서 · 온라인 · SQUAD · MARKET · EVOLUTION · 진화 재료 상점 · PACKS · EVENT · WEEKLY MISSIONS · RANKING · MATCH STATISTICS · DEVELOPER', order == want, order)
-        check('UPDATE 10 badge', P.inner_text('[data-testid=version-badge]') == 'UPDATE 10' and game_version() == 10, P.inner_text('[data-testid=version-badge]'))
+        check('HOME order: 혼자서 · 온라인 · SQUAD · MARKET · EVOLUTION · 진화 재료 상점 · PACKS · EVENT · WEEKLY MISSIONS · RANKING · MATCH STATISTICS · DEVELOPER (UPDATE 11: + 경기)', [x for x in order if x != 'play-match'] == want, order)
+        check('UPDATE badge (current version, ≥ 10)', P.inner_text('[data-testid=version-badge]') == f'UPDATE {game_version()}' and game_version() >= 10, P.inner_text('[data-testid=version-badge]'))
         check('SEASON 1 badge (separate from the update number)', P.inner_text('[data-testid=season-badge]').strip() == 'SEASON 1', P.inner_text('[data-testid=season-badge]'))
         P.screenshot(path=f'{OUT}/01_home.png', full_page=True)
 
@@ -116,7 +116,7 @@ try:
         n = P.locator('[data-testid=market-grid] [data-testid=player-card]').count()
         P.fill('[data-testid=market-search]', '살리바')
         time.sleep(0.3)
-        check('market: 215 players, a defender (살리바) is not for sale', n == 215 and P.locator('[data-testid=market-grid] [data-testid=player-card]').count() == 0, n)
+        check('market: 215+ players (UPDATE 11 patch: 286), a defender (살리바) is for sale again', n >= 215 and P.locator('[data-testid=market-grid] [data-testid=player-card]').count() == 1, n)
         P.fill('[data-testid=market-search]', '박사하')
         time.sleep(0.3)
         card = P.locator('[data-testid=market-grid] [data-testid=player-card]')
@@ -124,7 +124,7 @@ try:
         P.screenshot(path=f'{OUT}/02_market_original.png')
         P.click('[data-testid=market-tab-mine]')
         P.wait_for_selector('[data-testid=my-players]')
-        check('MY PLAYERS: the owned defender stays, but "판매 불가 · 수비수"', P.locator('[data-testid=sell-defender]').count() == 1)
+        check('MY PLAYERS: the owned defender stays and is no longer blocked as a defender (UPDATE 11 patch)', P.locator('[data-testid=sell-defender]').count() == 0)
         P.click('[data-testid=market-back]')
 
         # ── 진화 재료 상점 ─────────────────────────────────────────────
@@ -151,7 +151,7 @@ try:
         P.wait_for_selector('[data-testid=evo-detail]')
         P.click('[data-testid=evo-slot-150]')
         rate = float(P.get_attribute('[data-testid=evo-rate]', 'data-rate') or 0)
-        check('+0 → +1 with OVR 150 shows the capped 95 % rate', abs(rate - 0.95) < 1e-9, rate)
+        check('+0 → +1 with OVR 150 shows a high rate under the 95 % cap (UPDATE 11 grades)', 0.9 < rate < 0.95, rate)
         P.screenshot(path=f'{OUT}/04_evolution_detail.png')
         level = 0
         tries = 0

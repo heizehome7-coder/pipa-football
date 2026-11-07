@@ -117,7 +117,7 @@ try:
         login(P, 'PACKER')
         check('UPDATE badge (current version)', P.inner_text('[data-testid=version-badge]') == f'UPDATE {game_version()}' and game_version() >= 8)
         order = P.eval_on_selector_all('.mode-list .mode-card', 'els => els.map(e => e.dataset.testid)')
-        check('HOME: 혼자서 · 온라인 · SQUAD · TRANSFER MARKET · PACKS · (UPDATE 9: EVENT CENTER) · RANKING · DEVELOPER MODE', [x for x in order if x not in ('play-events', 'play-evolution', 'play-shop', 'play-missions', 'play-stats')] == ['play-solo', 'play-online', 'play-squad', 'play-market', 'play-packs', 'play-ranking', 'play-developer'], order)
+        check('HOME: 혼자서 · 온라인 · SQUAD · TRANSFER MARKET · PACKS · (UPDATE 9: EVENT CENTER) · RANKING · DEVELOPER MODE', [x for x in order if x not in ('play-events', 'play-match', 'play-evolution', 'play-shop', 'play-missions', 'play-stats')] == ['play-solo', 'play-online', 'play-squad', 'play-market', 'play-packs', 'play-ranking', 'play-developer'], order)
         check('no SOUND toggle anywhere', P.locator('[data-testid=sound-toggle]').count() == 0)
         P.click('[data-testid=play-packs]')
         P.wait_for_selector('[data-testid=packs]')
@@ -212,7 +212,7 @@ try:
         P.click('[data-testid=play-market]')
         P.wait_for_selector('[data-testid=market-grid]')
         n = P.locator('[data-testid=market-grid] [data-testid=player-card]').count()
-        check('TRANSFER MARKET: 215 buyable players (UPDATE 10)', n == 215, n)
+        check('TRANSFER MARKET: 286 buyable players (UPDATE 11 patch)', n == 286, n)
         P.click('[data-testid=market-tab-mine]')
         rows = P.eval_on_selector_all('[data-testid=mine-row][data-card]:not([data-card=""])', 'els => els.map(e => [e.dataset.id, e.dataset.card, e.dataset.tag, e.innerText.includes("PACK")])')
         mods = [r for r in rows if r[0] == 'modric']

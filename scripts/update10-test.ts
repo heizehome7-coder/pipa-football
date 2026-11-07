@@ -29,10 +29,10 @@ const BALL0 = new THREE.Vector3(0, FIELD.ballRadius, FIELD.penaltySpot);
 
 // ── 1. players ───────────────────────────────────────────────────────────
 {
-  check('250 catalogue players, all ids unique (PLAYERS 265)', MARKET_ORDER.length === 250 && new Set(MARKET_ORDER).size === 250 && new Set(PLAYERS.map((p) => p.id)).size === PLAYERS.length && PLAYERS.length === 265);
+  check('250+ catalogue players (UPDATE 11: 282), all ids unique', MARKET_ORDER.length >= 250 && new Set(MARKET_ORDER).size === MARKET_ORDER.length && new Set(PLAYERS.map((p) => p.id)).size === PLAYERS.length && PLAYERS.length === MARKET_ORDER.length + 15);
   const want: [string, string, string, string, string, number, string, string][] = [
     ['songinwoo', '송인우', 'SONG', 'RW', '잠신중 FC', 360, 'B', 'TWO_FOOT_CURL_MASTER'],
-    ['chohyunsun', '조현선', 'CHO', 'LW', '잠신중 FC', 390, 'R', 'THUNDER_STRIKE'],
+    ['chohyunsun', '조현선', 'CHO', 'LW', '잠신중 FC', 2000, 'R', 'THUNDER_STRIKE'], // UPDATE 11: 3.9억 → 20억
     ['parkseungho', '박승호', 'PARK S.H.', 'LW', 'PARIS SAINT-GERMAIN', 270, 'R', 'UNSTABLE_CANNON'],
     ['parksaha', '박사하', 'PARK SAHA', 'GK', '잠신중 FC', 1300, 'R', 'SMALL_FLYING_KEEPER'],
     ['kimtaein', '김태인', 'KIM T.I.', 'CAM', 'ICON', 1150, 'R', 'ICON_POWER_DRIVE'],
@@ -53,13 +53,13 @@ const BALL0 = new THREE.Vector3(0, FIELD.ballRadius, FIELD.penaltySpot);
     s('choigeonwoo').power === 97 && s('choigeonwoo').accuracy === 66 && s('handongyeon').curve === 99 && s('handongyeon').accuracy === 67 && s('handongyeon').power === 84);
   const g = getPlayer('parksaha')!.gk!;
   check('박사하 GK 97/98/89/94/98/88/95, 162 cm', JSON.stringify(Object.values(g)) === JSON.stringify([97, 98, 89, 94, 98, 88, 95]) && getPlayer('parksaha')!.heightCm === 162);
-  const newIds = MARKET_ORDER.slice(200);
+  const newIds = MARKET_ORDER.slice(200, 250);
   check('50 new players: 9 originals + 31 current + 10 ICONS, all with Korean names, stats and a special', newIds.length === 50 && newIds.filter((id) => getPlayer(id)!.legend).length === 11 && newIds.every((id) => /[가-힣]/.test(getPlayer(id)!.nameKo) && (getPlayer(id)!.stats || getPlayer(id)!.gk)), newIds.length);
   check('ICONS: 아구에로 11.5억 · 베일 12.5억 · 판 페르시 10억', getPlayer('aguero')!.price === 1150 * M && getPlayer('bale')!.price === 1250 * M && getPlayer('vanpersie')!.price === 1000 * M && getPlayer('bale')!.isIcon);
   check('31 current prices (쇠를로트 2.4억 · 마운트 9천만 · 엔네시리 7.5천만 · 도우비크 1.45억)', getPlayer('sorloth')!.price === 240 * M && getPlayer('mount')!.price === 90 * M && getPlayer('ennesyri')!.price === 75 * M && getPlayer('dovbyk')!.price === 145 * M);
   // defenders
   const defs = MARKET_ORDER.map((id) => getPlayer(id)!).filter((p) => p.defender);
-  check('defenders (CB/LB/RB/LWB/RWB main position) not buyable, not in packs; CM with RB elsewhere stays', defs.length > 0 && defs.every((p) => !BUYABLE_PLAYERS.includes(p)) && packPool().every((p) => !p.defender) && BUYABLE_PLAYERS.length === 250 - defs.length, defs.length);
+  check('defenders (CB/LB/RB/LWB/RWB main position) flagged; since the UPDATE 11 patch buyable + in packs again', defs.length > 0 && defs.every((p) => BUYABLE_PLAYERS.includes(p)) && packPool().some((p) => p.defender) && BUYABLE_PLAYERS.length === MARKET_ORDER.length, defs.length);
   check('defender records are kept (player ids still exist)', defs.every((p) => getPlayer(p.id) === p));
 }
 
@@ -143,7 +143,7 @@ const BALL0 = new THREE.Vector3(0, FIELD.ballRadius, FIELD.penaltySpot);
   check('… but less static reach for a high ball (short)', highP.best < highC.best + 0.02, { highP: +highP.best.toFixed(2), highC: +highC.best.toFixed(2) });
   const sp = simulateRound(5, calculateShotParameters(BALL0, { target: new THREE.Vector3(-2.6, 0.6, 0), spin: 0, profile: 'STRAIGHT', curveLevel: 0, apex: null, power: 0.7 }, pen), { dir: 'lowLeft', at: -1 }, 'parksaha');
   check('server judge uses 박사하’s small body too (a round plays)', ['SAVE', 'GOAL', 'MISS', 'POST', 'CROSSBAR'].includes(sp.outcome), sp.outcome);
-  check('evolution rates shown = rates rolled (+3 with OVR 140 vs 101)', Math.abs(evoSuccessRate(3, 140, evoOvr(getPlayer('kane')!, 3)) - Math.min(0.95, 0.6 * (1.2 + Math.min(0.1, 0.01 * (140 - evoOvr(getPlayer('kane')!, 3)))))) < 1e-9);
+  check('evolution rates shown = rates rolled (+3 with OVR 140 vs Kane)', Math.abs(evoSuccessRate(3, 140, evoOvr(getPlayer('kane')!, 3)) - Math.round(0.6 * 0.9 * 1.12 * 1e7) / 1e7) < 1e-9 || evoOvr(getPlayer('kane')!, 3) >= 140);
 }
 
 // ── 4. specials of the originals ──────────────────────────────────────────

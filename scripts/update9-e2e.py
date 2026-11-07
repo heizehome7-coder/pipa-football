@@ -104,14 +104,14 @@ try:
         check('UPDATE badge (current version)', P.inner_text('[data-testid=version-badge]') == f'UPDATE {game_version()}' and game_version() >= 9)
         order = P.eval_on_selector_all('.mode-list .mode-card', 'els => els.map(e => e.dataset.testid)')
         check('HOME: 혼자서 · 온라인 · SQUAD · TRANSFER MARKET · PACKS · EVENT CENTER · RANKING · DEVELOPER MODE',
-              [x for x in order if x not in ('play-evolution', 'play-shop', 'play-missions', 'play-stats')] == ['play-solo', 'play-online', 'play-squad', 'play-market', 'play-packs', 'play-events', 'play-ranking', 'play-developer'], order)
+              [x for x in order if x not in ('play-match', 'play-evolution', 'play-shop', 'play-missions', 'play-stats')] == ['play-solo', 'play-online', 'play-squad', 'play-market', 'play-packs', 'play-events', 'play-ranking', 'play-developer'], order)
         P.screenshot(path=f'{OUT}/01_home.png', full_page=True)
 
         # ── TRANSFER MARKET: Korean names + search ───────────────────────
         P.click('[data-testid=play-market]')
         P.wait_for_selector('[data-testid=market-grid]')
         n = P.locator('[data-testid=market-grid] [data-testid=player-card]').count()
-        check('TRANSFER MARKET: 215 players (UPDATE 10)', n == 215, n)
+        check('TRANSFER MARKET: 286 players (UPDATE 11 patch, defenders back)', n == 286, n)
         txt = P.inner_text('[data-testid=market-grid]')
         check('cards show Korean names (야신, 박지성, 펠레, 모드리치 …)', all(k in txt for k in ['야신', '박지성', '펠레', '모드리치']), txt[:120].replace('\n', ' '))
 

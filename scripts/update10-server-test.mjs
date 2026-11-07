@@ -24,13 +24,14 @@ const M = 1_000_000;
 // ── 1. shared rules ───────────────────────────────────────────────────────
 {
   const base = [0.9, 0.8, 0.7, 0.6, 0.5, 0.38, 0.28, 0.18, 0.1, 0.05, 0.02, 0.0075];
-  check('evolution base rates +0→+1 90 % … +11→+12 0.75 %', base.every((b, l) => Math.abs(judge.evoSuccessRate(l, 100, 100) - Math.min(0.95, b * 1.1 * (l + 1 >= 10 ? 1 / 1.1 : 1))) < 1e-9));
+  // UPDATE 11: grade × (0.65 … 1.15) · vs player × (0.7 / 1 / 1.12), soft cap per step
+  check('evolution base rates +0→+1 90 % … +11→+12 0.75 % (equal OVR 140 material ×0.9 → below the soft knee)', base.every((b, l) => l < 2 || Math.abs(judge.evoSuccessRate(l, 140, 140) - Math.round(b * 0.9 * 1e7) / 1e7) < 1e-9 || b * 0.9 > [0.95, 0.95, 0.9, 0.85, 0.75, 0.6, 0.45, 0.3, 0.18, 0.08, 0.03, 0.0125][l] * 0.8));
   const lower = judge.evoSuccessRate(3, 130, 140);
   const equal = judge.evoSuccessRate(3, 140, 140);
   const higher = judge.evoSuccessRate(3, 150, 140);
-  check('material lower → × 0.6–0.85 · equal → × 1.1 · higher → × 1.2–1.3', lower >= 0.6 * 0.6 - 1e-9 && lower <= 0.85 * 0.6 + 1e-9 && Math.abs(equal - 0.66) < 1e-9 && higher >= 0.72 - 1e-9 && higher <= 0.78 + 1e-9, { lower, equal, higher });
-  check('never above 95 %', judge.evoSuccessRate(0, 150, 90) === 0.95);
-  check('+10 and up: a better material does not make it easier', judge.evoSuccessRate(9, 150, 100) === 0.05 && judge.evoSuccessRate(11, 150, 100) === 0.0075 && judge.evoSuccessRate(10, 120, 140) < 0.02);
+  check('material lower / equal / higher than the player', Math.abs(lower - 0.6 * 0.65 * 0.7) < 1e-6 && Math.abs(equal - 0.6 * 0.9) < 1e-6 && higher > equal && higher < 0.85, { lower, equal, higher });
+  check('never above the cap (95 %)', judge.evoSuccessRate(0, 150, 90) < 0.95);
+  check('+11 → +12 stays very hard even with OVR 150 (< 1.25 %)', judge.evoSuccessRate(11, 150, 100) < 0.0125 && judge.evoSuccessRate(9, 150, 100) < 0.08);
   check('+12 cannot evolve', judge.evoSuccessRate(12, 150, 100) === 0);
   const p = judge.getPlayer('messi');
   check('OVR +3 per step to +9, +6 for +10…+12 (90 → +12 = 135)', judge.evoOvr(p, 1) === judge.evoOvr(p, 0) + 3 && judge.evoOvr(p, 9) === judge.evoOvr(p, 0) + 27 && judge.evoOvr(p, 12) === judge.evoOvr(p, 0) + 45);
@@ -39,8 +40,9 @@ const M = 1_000_000;
   check('weekly key = Monday KST (Sun 23:59 KST still last week, Mon 00:00 KST new week)',
     judge.weekKey(Date.parse('2026-11-08T23:59:00+09:00')) === '2026-11-02' && judge.weekKey(Date.parse('2026-11-09T00:00:00+09:00')) === '2026-11-09');
   check('season = 1', judge.SEASON === 1);
-  check('defenders not buyable, others are', !judge.isBuyable('vandijk') && !judge.isBuyable('maldini') && !judge.isBuyable('kimminjae') && judge.isBuyable('modric') && judge.isBuyable('parksaha') && !judge.isBuyable('messi'));
-  check('packs: no defenders', judge.packPool().every((x) => !x.defender));
+  // UPDATE 11 patch: defenders are back on the market and in packs
+  check('defenders buyable again (UPDATE 11 patch), free starters never', judge.isBuyable('vandijk') && judge.isBuyable('maldini') && judge.isBuyable('kimminjae') && judge.isBuyable('modric') && judge.isBuyable('parksaha') && !judge.isBuyable('messi'));
+  check('packs: defenders back in the pool', judge.packPool().some((x) => x.defender));
   check('9 emotes', judge.EMOTES.length === 9 && judge.EMOTES.includes('동') && judge.EMOTES.includes('EZ'));
 }
 
@@ -102,11 +104,8 @@ try {
 
   // ── defenders
   const sl = await api('/api/me', { token: ST });
-  check('an open defender listing was cancelled and the card returned to its owner', sl.owned.includes('saliba') && !sl.listed.includes('saliba') && sl.cards.some((c) => c.id === 'csal'), { owned: sl.owned, listed: sl.listed });
-  const ms = await api('/api/market/state', { token: VT });
-  check('…and is no longer on the market', !ms.listings?.saliba);
-  check('buying a defender → refused', (await api('/api/market/buy', { token: VT, playerId: 'saliba' })).status === 400);
-  check('listing an owned defender → refused', (await api('/api/market/sell', { token: VT, playerId: 'vandijk', price: 500 * M, cardId: 'cvdj' })).status >= 400);
+  check('UPDATE 11 patch: an open defender listing is left alone (no sweep, user data untouched)', sl.owned.includes('saliba') && sl.listed.includes('saliba'), { owned: sl.owned, listed: sl.listed });
+  check('listing a defender who is in the squad → refused (squad member)', (await api('/api/market/sell', { token: VT, playerId: 'vandijk', price: 500 * M, cardId: 'cvdj' })).status >= 400);
   const vv = await api('/api/me', { token: VT });
   check('owned defender card stays owned and in the squad', vv.owned.includes('vandijk') && vv.squad.penaltyOrder.includes('vandijk'));
 
@@ -171,7 +170,7 @@ try {
   const cap = await api('/api/evo/evolve', { token: VT, cardKey: 'starter:kane', materialId: 'mx1', nonce: nonce() });
   check('+12 → refused, material kept', cap.status === 409 && (await api('/api/me', { token: VT })).materials.length === 2);
   const s11 = await api('/api/evo/evolve', { token: VT, cardKey: 'starter:son', materialId: 'mx1', nonce: nonce() });
-  check('+11 → +12 uses the 0.75 % rate even with an OVR 150 material', s11.ok && Math.abs(s11.rate - 0.0075) < 1e-9);
+  check('+11 → +12 stays very hard even with an OVR 150 material (UPDATE 11: < 1.25 %, = the shared rule)', s11.ok && s11.rate < 0.0125 && Math.abs(s11.rate - judge.evoSuccessRate(11, 150, s11.ovr - 54 + 48)) < 1 && s11.rate === judge.evoSuccessRate(11, 150, judge.evoOvr(judge.getPlayer(s11.playerId), 11)));
 
   // ── weekly missions
   const w0 = await api('/api/missions/state', { token: VT });

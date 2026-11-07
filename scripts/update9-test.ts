@@ -24,7 +24,7 @@ const BALL0 = new THREE.Vector3(0, FIELD.ballRadius, FIELD.penaltySpot);
   const all = MARKET_ORDER.map((id) => getPlayer(id)!).concat(PLAYERS.filter((p) => !MARKET_ORDER.includes(p.id)));
   const hangul = /[가-힣]/;
   check('every player has a Korean name (nameKo) and an English shirt name', all.every((p) => hangul.test(p.nameKo) && /^[A-Z0-9 .'\-ÁÉÍÓÚÃÕÇÜÖİĞŞÑÆØ]+$/i.test(p.shirt)), all.filter((p) => !hangul.test(p.nameKo)).map((p) => p.id));
-  check('250 catalogue players (UPDATE 10), unique ids', MARKET_ORDER.length === 250 && new Set(MARKET_ORDER).size === 250);
+  check('286 catalogue players (UPDATE 11 patch), unique ids', MARKET_ORDER.length === 286 && new Set(MARKET_ORDER).size === 286);
   const find = (q: string) => all.filter((p) => matchesSearch(p, q)).map((p) => p.id);
   check('search 메시 / messi → Messi', find('메시').includes('messi') && find('messi').includes('messi'));
   check('search 호날두 → Ronaldo (and Ronaldo Nazário 호나우두 not required)', find('호날두').includes('ronaldo'));
