@@ -1,0 +1,16 @@
+# Render Blueprint — PIPA (게임 화면 + 실시간 대결 서버를 하나의 무료 웹 서비스로)
+services:
+  - type: web
+    name: pipa-football
+    runtime: node
+    plan: free
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: node server/realtime-server.mjs
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # 계정 영구 저장용 PostgreSQL 주소 (예: Neon 무료 DB). 비워두면 서버 재시작 때 계정이 초기화돼요.
+      - key: DATABASE_URL
+        sync: false
